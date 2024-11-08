@@ -269,7 +269,7 @@ WIFIReturnCode_t WIFI_ConnectAP( const WIFINetworkParams_t * const pxNetworkPara
 
     home_nw.type = WLAN_BSS_TYPE_STA;
     home_nw.role = WLAN_BSS_ROLE_STA;
-    home_nw.ip.ipv4.addr_type = ADDR_TYPE_DHCP;
+    home_nw.ip.ipv4.addr_type = ADDR_TYPE_STATIC;
 
     ret = wlan_remove_network("aws_network");
     if (ret != WM_SUCCESS && ret != -WM_E_INVAL) {
