@@ -1,0 +1,464 @@
+cmake_minimum_required(VERSION 3.23)
+
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/afr_utils.cmake")
+set(CMAKE_C_COMPILER_FORCED TRUE CACHE INTERNAL "")
+set(CMAKE_CXX_COMPILER_FORCED TRUE CACHE INTERNAL "")
+
+project(
+  sesame
+  VERSION 0.1
+  LANGUAGES C ASM)
+
+set(mw320_dir "${CMAKE_CURRENT_LIST_DIR}/marvell/WMSDK/mw320")
+set(afr_ports_dir "${CMAKE_CURRENT_LIST_DIR}/marvell/boards/mw300_rd/ports")
+
+set(exe_target sesame)
+set(CMAKE_BUILD_TYPE Debug)
+
+get_filename_component(FREERTOS_DIR "${CMAKE_CURRENT_LIST_DIR}/FreeRTOS/FreeRTOS" REALPATH)
+message(DEBUG "FREERTOS_DIR is ${FREERTOS_DIR}")
+get_filename_component(FREERTOS_PLUS_DIR "${CMAKE_CURRENT_LIST_DIR}/FreeRTOS/FreeRTOS-Plus" REALPATH)
+message(DEBUG "FREERTOS_PLUS_DIR is ${FREERTOS_PLUS_DIR}")
+
+set(KERNEL_DIR "${FREERTOS_DIR}/Source")
+message(DEBUG "KERNEL_DIR is ${KERNEL_DIR_PATH}")
+
+add_executable(${exe_target})
+
+target_sources(${exe_target}
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/idle_task.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mbedtls_error_dummy.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mqtt.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/network_manager.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ota.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/pic_uart.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/random.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/subscription_manager.c"
+    "${afr_ports_dir}/wifi/iot_wifi.c"
+    "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_agent_message.c"
+    "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_command_pool.c"
+)
+target_include_directories(${exe_target}
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "libraries/abstractions/wifi/include"
+    "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/include"
+)
+
+add_library(freertos_config INTERFACE)
+
+target_include_directories(freertos_config
+    INTERFACE
+    include/config
+    libraries/abstractions/platform/freertos/include
+)
+
+target_compile_definitions(freertos_config
+    INTERFACE
+    projCOVERAGE_TEST=0
+)
+
+# -------------------------------------------------------------------------------------------------
+# Compiler settings
+# -------------------------------------------------------------------------------------------------
+
+# Compiler flags
+set(SDK_VERSION_INTERNAL "\"v1.2.r6.p1\"")
+set(SDK_VERSION ${SDK_VERSION_INTERNAL})
+
+set(global-cflags-y
+    "-mcpu=cortex-m4"
+    "-mthumb"
+    "-g"
+    "-Os"
+    "-fdata-sections"
+    "-ffunction-sections"
+    "-ffreestanding"
+    "-MMD"
+    "-Wall"
+    "-fno-strict-aliasing"
+    "-fno-common"
+    "-Wextra"
+    "-Wno-unused-parameter"
+    "-Wno-empty-body"
+    "-Wno-missing-field-initializers"
+    "-Wno-sign-compare"
+    "-Wno-type-limits"
+    "-std=c99"
+    "-DSDK_VERSION=${SDK_VERSION}"
+)
+
+# ARM Cortex M4 flags
+set(tc-lflags-tc-cortex-m4-y
+    "-mcpu=cortex-m4"
+    "-mthumb"
+    "-g"
+    "-Os"
+    "-fdata-sections"
+    "-ffunction-sections"
+    "-ffreestanding"
+    "-MMD"
+    "-Wall"
+    "-fno-strict-aliasing"
+    "-fno-common"
+    "-mfloat-abi=softfp"
+    "-mfpu=fpv4-sp-d16"
+    "-D__FPU_PRESENT"
+)
+
+target_compile_options(freertos_config
+    INTERFACE ${global-cflags-y} ${tc-lflags-tc-cortex-m4-y}
+    -include "${mw320_dir}/sdk/src/incl/autoconf.h"
+)
+
+# Linker flags
+# gcc specific extra linker flags
+set(tc-lflags-y
+    "-nostartfiles"
+    "-specs=nosys.specs"
+    "-Wl,--wrap,malloc"
+    "-Wl,--wrap,free"
+    "-Wl,--wrap,calloc"
+    "-Wl,--wrap,realloc"
+    "-Wl,--wrap,printf"
+    "-Wl,--wrap,fprintf"
+)
+
+# Xlinker flags
+set(CMAKE_C_LINKER_WRAPPER_FLAG "-Xlinker" " ")
+target_link_options(${exe_target}
+    PRIVATE
+    "LINKER:--undefined"
+    "LINKER:uxTopUsedPriority"
+    "LINKER:--cref"
+    "LINKER:--gc-sections"
+    "LINKER:--defsym=_rom_data=64"
+    "LINKER:-M"
+    "LINKER:-Map"
+    "LINKER:${exe_target}.map"
+)
+
+# Linker Script
+set(global-linkerscript-y "${mw320_dir}/build/toolchains/arm_gcc/mw300.ld")
+
+target_link_options(freertos_config
+     INTERFACE ${tc-lflags-y} ${tc-lflags-tc-cortex-m4-y}
+)
+
+# -------------------------------------------------------------------------------------------------
+# FreeRTOS portable layers
+# -------------------------------------------------------------------------------------------------
+# ==================== Marvell ====================
+
+#set(FREERTOS_HEAP "2" CACHE STRING "" FORCE)
+set(FREERTOS_PORT "GCC_ARM_CM4F" CACHE STRING "" FORCE)
+
+set(FREERTOS_PLUS_TCP_BUFFER_ALLOCATION "1" CACHE STRING "" FORCE)
+set(FREERTOS_PLUS_TCP_NETWORK_IF "MW300_RD" CACHE STRING "" FORCE)
+
+add_subdirectory("${KERNEL_DIR}" freertos_kernel)
+
+add_library(freertos_plus_tcp STATIC)
+target_sources(freertos_plus_tcp
+    PRIVATE
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_ARP.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_DNS_Cache.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_DNS_Parser.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_IP_Timers.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_Stream_Buffer.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_TCP_State_Handling.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_TCP_WIN.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_DHCP.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_DNS_Callback.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_ICMP.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_IP_Utils.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_TCP_IP.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_TCP_Transmission.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_Tiny_TCP.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_DNS.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_DNS_Networking.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_IP.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_Sockets.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_TCP_Reception.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_TCP_Utils.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_UDP_IP.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/portable/NetworkInterface/mw300_rd/NetworkInterface.c"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/portable/BufferManagement/BufferAllocation_2.c"
+    "${mw320_dir}/sdk/src/platform/net/freertos-plus-tcp/net.c"
+)
+target_include_directories(freertos_plus_tcp
+    PUBLIC
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/include"
+    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/portable/Compiler/GCC"
+    PRIVATE
+    "${mw320_dir}/sdk/src/platform/net/freertos-plus-tcp"
+)
+target_link_libraries(freertos_plus_tcp
+    PUBLIC
+    wmsdk
+    freertos_kernel
+)
+
+add_library(freertos_plus_transport STATIC)
+target_sources(freertos_plus_transport
+    PRIVATE
+    "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport/transport_plaintext.c"
+    "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport/tcp_sockets_wrapper/ports/freertos_plus_tcp/tcp_sockets_wrapper.c"
+)
+target_include_directories(freertos_plus_transport
+    PUBLIC
+    "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport"
+    "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport/tcp_sockets_wrapper/include"
+)
+target_link_libraries(freertos_plus_transport
+    PUBLIC
+    coreHTTP
+    freertos_plus_tcp
+    logging
+)
+
+add_library(c_sdk STATIC)
+target_sources(c_sdk
+    PRIVATE
+    "libraries/c_sdk/standard/common/iot_static_memory_common.c"
+)
+target_include_directories(c_sdk
+    PUBLIC
+    "libraries/c_sdk/standard/common/include"
+    PRIVATE
+    "libraries/c_sdk/standard/common/include/private"
+)
+target_link_libraries(c_sdk
+    PUBLIC
+    iot_platform
+    freertos_kernel
+)
+
+add_library(iot_platform STATIC)
+target_sources(iot_platform
+    PRIVATE
+    "libraries/abstractions/platform/freertos/iot_clock_freertos.c"
+    "libraries/abstractions/platform/freertos/iot_threads_freertos.c"
+)
+target_include_directories(iot_platform
+    PUBLIC
+    "libraries/abstractions/platform/include"
+    PRIVATE
+    "libraries/abstractions/platform/freertos/include"
+)
+target_link_libraries(iot_platform
+    PUBLIC
+    c_sdk
+    freertos_kernel
+)
+
+add_library(logging STATIC)
+target_sources(logging
+    PRIVATE
+    "libraries/logging/iot_logging.c"
+    "libraries/logging/iot_logging_task_dynamic_buffers.c"
+)
+target_include_directories(logging
+    PUBLIC
+    "libraries/logging/include"
+)
+target_compile_options(logging
+    PRIVATE
+    -DLOGGING_ENABLE_METADATA_WITH_C99_AND_GNU_EXTENSION=1
+)
+target_link_libraries(logging
+    PRIVATE
+    iot_platform
+    freertos_plus_tcp
+)
+
+include("${FREERTOS_PLUS_DIR}/Source/Utilities/backoff_algorithm/backoffAlgorithmFilePaths.cmake")
+add_library(backoff_algorithm STATIC)
+target_sources(backoff_algorithm
+    PRIVATE
+    "${BACKOFF_ALGORITHM_SOURCES}"
+)
+target_include_directories(backoff_algorithm
+    PUBLIC
+    "${BACKOFF_ALGORITHM_INCLUDE_PUBLIC_DIRS}"
+)
+
+# do not build mbedtls programs and tests
+set(ENABLE_PROGRAMS OFF CACHE BOOL INTERNAL)
+set(ENABLE_TESTING OFF CACHE BOOL INTERNAL)
+
+add_subdirectory("${FREERTOS_PLUS_DIR}/ThirdParty/mbedtls" mbedtls)
+
+target_link_libraries(mbedtls
+    PRIVATE
+    freertos_kernel
+)
+target_link_libraries(mbedx509
+    PRIVATE
+    freertos_kernel
+)
+target_link_libraries(mbedcrypto
+    PRIVATE
+    freertos_kernel
+)
+target_compile_definitions(mbedcrypto
+    PUBLIC
+    MBEDTLS_CONFIG_FILE="mbedtls_app_config.h"
+)
+
+include("${FREERTOS_PLUS_DIR}/Source/corePKCS11/pkcsFilePaths.cmake")
+add_library(core_pkcs11 STATIC)
+target_sources(core_pkcs11
+    PRIVATE
+    "${PKCS_SOURCES}"
+    "libraries/crypto/src/iot_crypto.c"
+    "${afr_ports_dir}/pkcs11/core_pkcs11_pal.c"
+)
+target_include_directories(core_pkcs11
+    PUBLIC
+    "${PKCS_INCLUDE_PUBLIC_DIRS}"
+    "${PKCS_PAL_INCLUDE_PUBLIC_DIRS}"
+    "libraries/crypto/include"
+)
+target_link_libraries(core_pkcs11
+    PRIVATE
+    wmsdk
+    PUBLIC
+    freertos_kernel
+    mbedtls
+    logging
+)
+
+include("${FREERTOS_PLUS_DIR}/Source/Application-Protocols/coreHTTP/httpFilePaths.cmake")
+add_library(coreHTTP STATIC)
+target_sources(coreHTTP
+    PRIVATE
+    "${HTTP_SOURCES}"
+)
+target_include_directories(coreHTTP
+    PUBLIC
+    "${HTTP_INCLUDE_PUBLIC_DIRS}"
+)
+target_link_libraries(coreHTTP
+    PUBLIC
+    freertos_plus_tcp
+    logging
+)
+
+include("${FREERTOS_PLUS_DIR}/Source/Application-Protocols/coreMQTT/mqttFilePaths.cmake")
+add_library(coreMQTT STATIC)
+target_sources(coreMQTT
+    PRIVATE
+    "${MQTT_SOURCES}"
+    "${MQTT_SERIALIZER_SOURCES}"
+)
+target_include_directories(coreMQTT
+    PUBLIC
+    "${MQTT_INCLUDE_PUBLIC_DIRS}"
+)
+target_link_libraries(coreMQTT
+    PUBLIC
+    freertos_plus_tcp
+    logging
+)
+
+include("${FREERTOS_PLUS_DIR}/Source/Application-Protocols/coreMQTT-Agent/mqttAgentFilePaths.cmake")
+add_library(coreMQTT_agent STATIC)
+target_sources(coreMQTT_agent
+    PRIVATE
+    "${MQTT_AGENT_SOURCES}"
+)
+target_include_directories(coreMQTT_agent
+    PUBLIC
+    "${MQTT_AGENT_INCLUDE_PUBLIC_DIRS}"
+)
+target_link_libraries(coreMQTT_agent
+    PUBLIC
+    coreMQTT
+    logging
+)
+
+afr_glob_src(driver_src RECURSE DIRECTORY "${mw320_dir}/sdk/src")
+list(REMOVE_ITEM driver_src "${mw320_dir}/sdk/src/libc/src/atox.c")
+list(REMOVE_ITEM driver_src "${mw320_dir}/sdk/src/libc/src/strtox.c")
+list(REMOVE_ITEM driver_src "${mw320_dir}/sdk/src/boards/mw300_rd.c")
+list(REMOVE_ITEM driver_src "${mw320_dir}/sdk/src/boards/modules/gti-mw300.c")
+list(REMOVE_ITEM driver_src "${mw320_dir}/sdk/src/platform/net/freertos-plus-tcp/net.c")
+
+add_library(wmsdk STATIC)
+target_sources(wmsdk
+    PRIVATE
+    ${driver_src}
+    "board/board.c"
+    "${mw320_dir}/sdk/external/FreeRTOS/portable/MemMang/heap_marvell.c"
+    "${mw320_dir}/sdk/external/FreeRTOS/Source/FreeRTOS-openocd.c"
+)
+#target_include_directories(wmsdk
+#    SYSTEM PUBLIC
+#    "${mw320_dir}/sdk/src/incl/libc"
+#    "${mw320_dir}/sdk/src/incl/libc/arm_gcc"
+#)
+target_include_directories(wmsdk
+    PUBLIC
+    "${mw320_dir}/sdk/src/incl"
+    "${mw320_dir}/sdk/src/incl/sdk"
+    "${mw320_dir}/sdk/src/incl/libc/arm_gcc"
+    "${mw320_dir}/sdk/src/incl/sdk/drivers"
+    "${mw320_dir}/sdk/src/incl/sdk/drivers/wlan"
+    "${mw320_dir}/sdk/src/incl/sdk/drivers/mw300"
+    "${mw320_dir}/sdk/src/incl/sdk/drivers/mw300/regs"
+    "${mw320_dir}/sdk/src/incl/platform/os/freertos"
+    "${mw320_dir}/sdk/src/incl/platform/net/freertos-plus-tcp"
+    "${mw320_dir}/sdk/src/boards"
+    "${mw320_dir}/sdk/src/drivers/common/hardfault"
+)
+target_link_libraries(wmsdk
+    PUBLIC
+    freertos_kernel
+    mbedcrypto
+)
+
+target_link_libraries(${exe_target}
+    PUBLIC
+    "${mw320_dir}/bin/libs/libwifidriver.a"
+    "${mw320_dir}/bin/libs/libwlcmgr.a"
+    "${mw320_dir}/bin/libs/librfget.a"
+    coreHTTP
+    coreMQTT_agent
+    freertos_plus_transport
+    freertos_plus_tcp
+    mbedtls
+    core_pkcs11
+    "${mw320_dir}/bin/libs/libpsm.a"
+    "${mw320_dir}/bin/libs/libpart.a"
+    logging
+    backoff_algorithm
+)
+
+set(CMAKE_EXECUTABLE_SUFFIX ".axf")
+
+target_link_libraries(${exe_target}
+    PRIVATE
+    ${default_modules}
+    -T${global-linkerscript-y}
+)
+
+# Convert afx file to bin file
+if("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")
+    set(axf2fw "${mw320_dir}/sdk/tools/bin/Linux/axf2firmware")
+    execute_process(COMMAND chmod +x "${axf2fw}")  # TODO, workaround for FreeRTOS console permission issue.
+else()
+    message(FATAL_ERROR "Only Linux host is supported for marvell.")
+endif()
+
+add_custom_command(
+    TARGET ${exe_target} POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E remove "${exe_target}.bin"
+    COMMAND "${axf2fw}" "${exe_target}.axf" "${exe_target}.bin"
+)
+
+set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES "${exe_target}.bin" "${exe_target}.map")

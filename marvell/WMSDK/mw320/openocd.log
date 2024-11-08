@@ -1,0 +1,40 @@
+Info : Listening on port 6666 for tcl connections
+Info : Listening on port 4444 for telnet connections
+Info : clock speed 2000 kHz
+Info : JTAG tap: wmcore.cpu tap/device found: 0x4ba00477 (mfg: 0x23b (ARM Ltd), part: 0xba00, ver: 0x4)
+Info : [wmcore.cpu] Cortex-M4 r0p1 processor detected
+Info : [wmcore.cpu] target has 6 breakpoints, 4 watchpoints
+Info : starting gdb server for wmcore.cpu on pipe
+Info : accepting 'gdb' connection from pipe
+Configuring OS Awareness
+Warn : GDB connection 1 on target wmcore.cpu not halted
+undefined debug reason 8 - target needs reset
+Error: JTAG-DP STICKY ERROR
+Error: Failed to read memory at 0xfffff000
+Error: JTAG-DP STICKY ERROR
+Error: Failed to read memory at 0xfffff000
+Error: JTAG-DP STICKY ERROR
+Error: Failed to read memory at 0xfffff000
+Error: JTAG-DP STICKY ERROR
+Error: Failed to read memory at 0xfffffffe
+Error: JTAG-DP STICKY ERROR
+Error: Failed to read memory at 0xfffff000
+Error: JTAG-DP STICKY ERROR
+Error: Failed to read memory at 0xfffffffe
+Error: JTAG-DP STICKY ERROR
+Error: Failed to read memory at 0xfffff000
+Error: JTAG-DP STICKY ERROR
+Error: Failed to read memory at 0xfffff000
+Info : Auto-detected RTOS: FreeRTOS
+[wmcore.cpu] halted due to debug-request, current mode: Thread 
+xPSR: 0x61000000 pc: 0x0011e010 psp: 0x20000d40
+Info : JTAG tap: wmcore.cpu tap/device found: 0x4ba00477 (mfg: 0x23b (ARM Ltd), part: 0xba00, ver: 0x4)
+[wmcore.cpu] halted due to debug-request, current mode: Thread 
+xPSR: 0x01000000 pc: 0x00007f14 msp: 0x20001000
+DEPRECATED! use 'read_memory' not 'mem2array'
+Info : JTAG tap: wmcore.cpu tap/device found: 0x4ba00477 (mfg: 0x23b (ARM Ltd), part: 0xba00, ver: 0x4)
+[wmcore.cpu] halted due to debug-request, current mode: Thread 
+xPSR: 0x01000000 pc: 0x00007f14 msp: 0x20001000
+Shutting down
+shutdown command invoked
+Info : dropped 'gdb' connection

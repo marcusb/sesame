@@ -1,0 +1,16 @@
+FC_COMP_BOOT2             0x0     0x4000  0 boot2
+FC_COMP_USER_APP       0x6000     0xa000  0 ed_data
+FC_COMP_WLAN_FW       0x10000    0x80000  0 wififw
+FC_COMP_USER_APP      0x90000    0x40000  0 dsfw
+FC_COMP_FW            0xd0000   0x200000  0 mcufw
+FC_COMP_FTFS         0x2d0000    0x80000  0 miscfs
+FC_COMP_BT_FW        0x350000    0x10000  0 certfs
+FC_COMP_USER_APP     0x360000    0x9e000  0 spare
+FC_COMP_WLAN_FW      0x400000    0x80000  0 wififw
+FC_COMP_USER_APP     0x480000    0x40000  0 dsfw
+FC_COMP_FW           0x4c0000   0x200000  0 mcufw
+FC_COMP_FTFS         0x6c0000    0x80000  0 miscfs
+FC_COMP_BT_FW        0x740000    0x10000  0 certfs
+FC_COMP_PSM          0x750000    0xa3000  0 psm
+FC_COMP_USER_APP     0x7f3000     0xa000  0 ed_data
+FC_COMP_USER_APP     0x7fd000     0x3000  0 mfg
