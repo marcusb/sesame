@@ -32,7 +32,7 @@
 #include <lowlevel_drivers.h>
 #include <mdev_aes.h>
 #ifdef CONFIG_ENABLE_TLS
-#include <ccm.h>
+#include <mbedtls/ccm.h>
 #else
 #define MBEDTLS_ERR_CCM_AUTH_FAILED -0x000F
 #endif /* CONFIG_ENABLE_TLS */
