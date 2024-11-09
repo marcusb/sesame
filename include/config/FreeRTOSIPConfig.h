@@ -35,6 +35,9 @@
 #ifndef FREERTOS_IP_CONFIG_H
 #define FREERTOS_IP_CONFIG_H
 
+#define ipTRUE_BOOL         ( 1 == 1 )
+#define ipFALSE_BOOL        ( 1 == 2 )
+
 #define ipconfigIPv4_BACKWARD_COMPATIBLE 1
 
 /* Set to 1 to print out debug messages.  If ipconfigHAS_DEBUG_PRINTF is set to
