@@ -303,7 +303,7 @@ void vApplicationTickHook( void )
 			g_os_tick_hooks[i]();
 	}
 }
-#if 0
+
 void vApplicationIdleHook(void)
 {
 	int i;
@@ -312,7 +312,7 @@ void vApplicationIdleHook(void)
 			g_os_idle_hooks[i]();
 	}
 }
-#endif
+
 /* Freertos handles this internally? */
 void os_thread_stackmark(char *name)
 {
