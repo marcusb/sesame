@@ -1,15 +1,16 @@
 
 #include "pic_uart.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "FreeRTOS.h"
 #include "app_logging.h"
+#include "controller.h"
 #include "idcm_msg.h"
 #include "mdev_gpio.h"
 #include "mdev_uart.h"
-#include "mqtt.h"
 #include "queue.h"
 #include "rtc.h"
 #include "task.h"
@@ -22,7 +23,7 @@ typedef enum { READ_START = 0, READ_LENGTH = 1, READ_BODY = 2 } read_state_t;
 
 static mdev_t *gpio_dev;
 static mdev_t *uart_dev;
-static uint8_t send_buf[32];
+static QueueHandle_t ctrl_queue;
 
 static void debug_hexdump(char dir, const uint8_t *data, unsigned len) {
     static char s[3 * 16 + 4];
@@ -77,14 +78,28 @@ void handle_msg(const dcm_msg_t *msg) {
             LogInfo((
                 "door status: state=%d, dir=%d, pos=%d, up_lim=%d, down_lim=%d",
                 p->state, p->direction, p->pos, p->up_limit, p->down_limit));
-            publish_state(p);
+            int pos = 0;
+            if (p->down_limit != p->up_limit) {
+                pos = 100 * (p->up_limit - p->pos) /
+                      (float)(p->up_limit - p->down_limit);
+            }
+            if (pos < 0) {
+                pos = 0;
+            }
+            if (pos > 100) {
+                pos = 100;
+            }
+            ctrl_msg_t state_upd = {
+                CTRL_MSG_DOOR_STATE_UPDATE,
+                {.door_state = {p->state, p->direction, pos}}};
+
+            xQueueSendToBack(ctrl_queue, &state_upd, 0);
             break;
         }
 
-        case DCM_AUDIO_RESPONSE: {
+        case DCM_AUDIO_RESPONSE:
             vTaskDelay(2);
             break;
-        }
 
         case DCM_MSG_SENSOR_VERSION: {
             const dcm_sensor_version_msg_t *p = &msg->payload.sensor_version;
@@ -198,75 +213,55 @@ static void uart_write(const uint8_t *buf, int n) {
     }
 }
 
-static void cmd_0x12(uint8_t val) {
-    memset(send_buf, 0, 8);
-    send_buf[0] = 0x55;
-    send_buf[1] = 3;
-    send_buf[2] = next_token();
-    send_buf[3] = 0x12;
-    send_buf[4] = val;
-    send_buf[7] = calc_chk_sum(send_buf, 8);
-    uart_write(send_buf, 8);
+static void send_msg(dcm_msg_t *msg) {
+    // 4 bytes header, 1 byte checksum
+    int frame_len = msg->len + 5;
+    uint8_t *p = (uint8_t *)msg;
+    msg->payload.buf[msg->len] = calc_chk_sum(p, frame_len);
+    uart_write(p, frame_len);
 }
 
-static void post_test() { cmd_0x12(5); }
-
-static void sound_buzzer() { cmd_0x12(1); }
-
-static void buzzer_alert() { cmd_0x12(2); }
-
-static void cmd_0x11(uint8_t val) {
-    memset(send_buf, 0, 8);
-    send_buf[0] = 0x55;
-    send_buf[1] = 3;
-    send_buf[2] = next_token();
-    send_buf[3] = 0x11;
-    send_buf[4] = val;
-    send_buf[7] = calc_chk_sum(send_buf, 8);
-    uart_write(send_buf, 8);
+static void audio_cmd(uint8_t val) {
+    dcm_msg_t msg = {DCM_HEADER_BYTE,
+                     sizeof(dcm_audio_cmd_msg_t),
+                     next_token(),
+                     DCM_MSG_AUDIO_CMD,
+                     {.audio_cmd = {val, 0}}};
+    send_msg(&msg);
 }
 
-static void cmd_0x04() {
-    memset(send_buf, 0, 14);
-    send_buf[0] = 0x55;
-    send_buf[1] = 9;
-    send_buf[2] = next_token();
-    send_buf[3] = 0x04;
-    send_buf[13] = calc_chk_sum(send_buf, 14);
-    uart_write(send_buf, 14);
-}
+static void post_test() { audio_cmd(5); }
+
+static void sound_buzzer() { audio_cmd(1); }
+
+static void buzzer_alert() { audio_cmd(2); }
 
 static void send_door_cmd(uint8_t val) {
-    memset(send_buf, 0, 7);
-    send_buf[0] = 0x55;
-    send_buf[1] = 2;
-    send_buf[2] = next_token();
-    send_buf[3] = 0x10;
-    send_buf[4] = val;
-    send_buf[5] = 0;
-    send_buf[6] = calc_chk_sum(send_buf, 7);
-    uart_write(send_buf, 7);
+    dcm_msg_t msg = {DCM_HEADER_BYTE,
+                     sizeof(dcm_door_cmd_msg_t),
+                     next_token(),
+                     DCM_MSG_DOOR_CMD,
+                     {.door_cmd = {val, 0}}};
+    send_msg(&msg);
 }
 
 static void send_door_status_msg(int16_t last_pos, int16_t up_limit,
                                  int16_t down_limit) {
-    memset(send_buf, 0, 17);
-    dcm_msg_t *msg = (dcm_msg_t *)send_buf;
-    msg->header = 0x55;
-    msg->len = sizeof(dcm_door_status_msg_t);
-    msg->seq = next_token();
-    msg->type = DCM_MSG_DOOR_STATUS_REQUEST;
-    msg->payload.door_status.time = rtc_time_get();
-    msg->payload.door_status.pos = last_pos;
-    msg->payload.door_status.up_limit = up_limit;
-    msg->payload.door_status.down_limit = down_limit;
-    send_buf[16] = calc_chk_sum(send_buf, 17);
-    uart_write(send_buf, 17);
+    dcm_msg_t msg = {DCM_HEADER_BYTE,
+                     sizeof(dcm_door_status_msg_t),
+                     next_token(),
+                     DCM_MSG_DOOR_STATUS_REQUEST,
+                     {.door_status = {rtc_time_get(), 0, 0, last_pos, up_limit,
+                                      down_limit}}};
+    send_msg(&msg);
 }
 
 void pic_uart_task(void *const params) {
     LogInfo(("PIC comm task running"));
-    QueueHandle_t queue = (QueueHandle_t)params;
+    pic_uart_task_params_t *const task_params =
+        (pic_uart_task_params_t *)params;
+    QueueHandle_t queue = (QueueHandle_t)task_params->pic_queue;
+    ctrl_queue = (QueueHandle_t)task_params->ctrl_queue;
 
     if (init_gpio() != 0 || init_uart() != 0) {
         vTaskDelete(NULL);
@@ -275,7 +270,7 @@ void pic_uart_task(void *const params) {
 
     post_test();
     sound_buzzer();
-    cmd_0x11(1);
+    audio_cmd(1);
 
     pic_cmd_t cmd;
     TickType_t door_poll_tstamp = 0;

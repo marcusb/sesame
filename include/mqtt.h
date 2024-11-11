@@ -1,10 +1,10 @@
 #ifndef MQTT_H_
 #define MQTT_H_
 
-#include "idcm_msg.h"
+#include "controller.h"
 
 void mqtt_task(void *params);
-
-void publish_state(const dcm_door_status_msg_t *msg);
+void mqtt_subscribe(void);
+void publish_state(const door_state_msg_t *msg);
 
 #endif /* #ifndef MQTT_H_ */

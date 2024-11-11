@@ -8,14 +8,11 @@
 #include "FreeRTOS_IP.h"
 #include "FreeRTOS_Sockets.h"
 #include "app_logging.h"
-#include "ota.h"
+#include "controller.h"
 #include "queue.h"
 #include "task.h"
-#include "pic_uart.h"
 
 #define BUF_SIZE 1024
-
-extern QueueHandle_t pic_queue;
 
 enum {
     REPLY_OK = 200,
@@ -48,7 +45,7 @@ typedef struct http_method_desc {
     const unsigned char type;
 } http_method_desc_t;
 
-static QueueHandle_t ota_queue;
+static QueueHandle_t ctrl_queue;
 
 static const http_method_desc_t http_methods[METHODS_COUNT] = {
     {3, "GET", METHOD_GET},         {4, "HEAD", METHOD_HEAD},
@@ -91,8 +88,8 @@ static const char* status_desc(int aCode) {
 // static char empty[1] = {'\0'};
 
 static void handle_fwupgrade() {
-    ota_cmd_t cmd = OTA_CMD_UPGRADE;
-    xQueueSendToBack(ota_queue, &cmd, 100);
+    ctrl_msg_t msg = {CTRL_MSG_OTA_UPGRADE};
+    xQueueSendToBack(ctrl_queue, &msg, 100);
 }
 
 static void send_status(Socket_t socket, char* buf, int status) {
@@ -113,13 +110,19 @@ static void do_request(Socket_t socket, char* buf,
                 send_status(socket, buf, REPLY_OK);
                 return;
             } else if (strcmp(url, "/open") == 0) {
-                pic_cmd_t cmd = PIC_CMD_OPEN;
-                xQueueSendToBack(pic_queue, &cmd, 100);
+                ctrl_msg_t msg = {CTRL_MSG_DOOR_CONTROL,
+                                  {.door_control = {DOOR_CMD_OPEN}}};
+                xQueueSendToBack(ctrl_queue, &msg, 100);
             } else if (strcmp(url, "/close") == 0) {
-                pic_cmd_t cmd = PIC_CMD_CLOSE;
-                xQueueSendToBack(pic_queue, &cmd, 100);
+                ctrl_msg_t msg = {CTRL_MSG_DOOR_CONTROL,
+                                  {.door_control = {DOOR_CMD_CLOSE}}};
+                xQueueSendToBack(ctrl_queue, &msg, 100);
+            } else {
+                send_status(socket, buf, NOT_FOUND);
+                break;
             }
-            // fall through
+            send_status(socket, buf, REPLY_OK);
+            break;
         default:
             send_status(socket, buf, NOT_FOUND);
             break;
@@ -190,7 +193,7 @@ ret:
 }
 
 void httpd_task(void* params) {
-    ota_queue = (QueueHandle_t)params;
+    ctrl_queue = (QueueHandle_t)params;
     static const TickType_t recv_tmout = portMAX_DELAY;
     const BaseType_t backlog = 20;
     Socket_t socket = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_STREAM,

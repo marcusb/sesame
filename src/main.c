@@ -12,6 +12,7 @@
 #include "app_logging.h"
 #include "boot_flags.h"
 #include "cli.h"
+#include "controller.h"
 #include "flash.h"
 #include "httpd.h"
 #include "iot_crypto.h"
@@ -38,8 +39,9 @@
 
 psm_hnd_t psm_hnd;
 flash_desc_t fl;
+static QueueHandle_t ctrl_queue;
 static QueueHandle_t ota_queue;
-QueueHandle_t pic_queue;
+static QueueHandle_t pic_queue;
 
 // IP configuration to use when DHCP does not succeed
 static uint8_t mac_addr[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
@@ -151,19 +153,50 @@ int main(void) {
     FreeRTOS_IPInit(default_ip_addr, netmask, gateway_addr, dns_server_addr,
                     mac_addr);
 
+    ctrl_queue = xQueueCreate(8, sizeof(ctrl_msg_t));
+    configASSERT(ctrl_queue);
+
     ota_queue = xQueueCreate(5, sizeof(ota_cmd_t));
     configASSERT(ota_queue);
     xTaskCreate(ota_task, "OTA", 1024, ota_queue, tskIDLE_PRIORITY, NULL);
 
     pic_queue = xQueueCreate(5, sizeof(pic_cmd_t));
     configASSERT(pic_queue);
-    xTaskCreate(pic_uart_task, "PIC Comm", 512, pic_queue, tskIDLE_PRIORITY + 3,
-                NULL);
+    pic_uart_task_params_t pic_task_params = {ctrl_queue, pic_queue};
+    xTaskCreate(pic_uart_task, "PIC Comm", 512, &pic_task_params,
+                tskIDLE_PRIORITY + 3, NULL);
+
     xTaskCreate(led_task, "LED Ctrl", 512, NULL, tskIDLE_PRIORITY, NULL);
     xTaskCreate(network_manager_task, "Network Manager", 512, NULL,
                 tskIDLE_PRIORITY, NULL);
 
-    vTaskDelete(NULL);
+    ctrl_msg_t ctrl_msg;
+    for (;;) {
+        if (xQueueReceive(ctrl_queue, &ctrl_msg, portMAX_DELAY) == pdPASS) {
+            switch (ctrl_msg.type) {
+                case CTRL_MSG_OTA_UPGRADE: {
+                    ota_cmd_t cmd = OTA_CMD_UPGRADE;
+                    xQueueSendToBack(ota_queue, &cmd, 100);
+                    break;
+                }
+                case CTRL_MSG_DOOR_CONTROL: {
+                    pic_cmd_t cmd =
+                        ctrl_msg.msg.door_control.command == DOOR_CMD_OPEN
+                            ? PIC_CMD_OPEN
+                            : PIC_CMD_CLOSE;
+                    xQueueSendToBack(pic_queue, &cmd, 100);
+                    break;
+                }
+                case CTRL_MSG_DOOR_STATE_UPDATE:
+                    publish_state(&ctrl_msg.msg.door_state);
+                    break;
+                default:
+                    LogError(("unknown message type %d", ctrl_msg.type));
+            }
+        }
+    }
+
+    // not reached
     return 0;
 }
 
@@ -200,9 +233,9 @@ void vApplicationIPNetworkEventHook(eIPCallbackEvent_t event) {
             // Create the tasks that use the TCP/IP stack if they have not
             // already been created.
             tasks_created = true;
-            xTaskCreate(httpd_task, "HTTPd", 512, ota_queue, tskIDLE_PRIORITY,
+            xTaskCreate(httpd_task, "HTTPd", 512, ctrl_queue, tskIDLE_PRIORITY,
                         NULL);
-            xTaskCreate(mqtt_task, "MQTT", 1024, NULL, tskIDLE_PRIORITY + 1,
+            xTaskCreate(mqtt_task, "MQTT", 1024, ctrl_queue, tskIDLE_PRIORITY + 5,
                         NULL);
         }
     }
