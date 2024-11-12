@@ -1,31 +1,27 @@
-#include <FreeRTOS_IP.h>
-#include <board.h>
-#include <lowlevel_drivers.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+// FreeRTOS
+#include <FreeRTOS_IP.h>
+#include <board.h>
+#include <lowlevel_drivers.h>
 #include <task.h>
 #include <wmstdio.h>
 
 #include "FreeRTOS.h"
-#include "app_logging.h"
 #include "boot_flags.h"
 #include "cli.h"
 #include "controller.h"
 #include "flash.h"
-#include "httpd.h"
 #include "iot_crypto.h"
 #include "iot_logging_task.h"
 #include "iot_wifi.h"
-#include "leds.h"
 #include "mbedtls/entropy.h"
 #include "mdev_gpio.h"
 #include "mdev_pinmux.h"
 #include "mdev_rtc.h"
-#include "mqtt.h"
-#include "network.h"
-#include "ota.h"
 #include "partition.h"
 #include "pic_uart.h"
 #include "psm-v2.h"
@@ -33,6 +29,17 @@
 #include "queue.h"
 #include "wifi.h"
 #include "wmtime.h"
+
+// Application
+#include "app_logging.h"
+#include "httpd.h"
+#include "leds.h"
+#include "mqtt.h"
+#include "network.h"
+#include "ota.h"
+
+#define BTN_WIFI GPIO_22
+#define BTN_OTA GPIO_23
 
 /* Logging Task Defines. */
 #define mainLOGGING_MESSAGE_QUEUE_LENGTH (64)
@@ -42,6 +49,7 @@ flash_desc_t fl;
 static QueueHandle_t ctrl_queue;
 static QueueHandle_t ota_queue;
 static QueueHandle_t pic_queue;
+static QueueHandle_t nm_queue;
 
 // IP configuration to use when DHCP does not succeed
 static uint8_t mac_addr[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
@@ -59,7 +67,26 @@ void wm_printf(const char *format, ...) {
     va_end(args);
 }
 
-void init_gpio() {
+static void gpio_cb(int pin, void *data) {
+    if (pin == BTN_WIFI) {
+        ctrl_msg_t msg = {CTRL_MSG_WIFI_BUTTON};
+        xQueueSendToBackFromISR(ctrl_queue, &msg, NULL);
+    } else if (pin == BTN_OTA) {
+        ctrl_msg_t msg = {CTRL_MSG_OTA_BUTTON};
+        xQueueSendToBackFromISR(ctrl_queue, &msg, NULL);
+    }
+}
+
+static void init_gpio_input(mdev_t *gpio_dev, int pin) {
+    gpio_drv_setdir(gpio_dev, pin, GPIO_INPUT);
+    int res =
+        gpio_drv_set_cb(gpio_dev, pin, GPIO_INT_FALLING_EDGE, NULL, gpio_cb);
+    if (res != WM_SUCCESS) {
+        LogError(("failed to regiser GPIO ISR"));
+    }
+}
+
+static void init_gpio() {
     gpio_drv_init();
     PMU_VbatBrndetConfig_Type vbat_brndet_cfg = {PMU_VBAT_BRNDET_TRIGVOLT_7,
                                                  PMU_VBAT_BRNDET_HYST_3,
@@ -103,6 +130,12 @@ void init_gpio() {
     gpio_drv_setdir(gpio_dev, GPIO_49, GPIO_OUTPUT);
     gpio_drv_write(gpio_dev, GPIO_49, GPIO_IO_HIGH);
     vTaskDelay(800);
+
+    // set up buttons
+    pinmux_drv_setfunc(pinmux_dev, BTN_WIFI, GPIO22_GPIO22);
+    init_gpio_input(gpio_dev, BTN_WIFI);
+    pinmux_drv_setfunc(pinmux_dev, BTN_OTA, GPIO23_GPIO23);
+    init_gpio_input(gpio_dev, BTN_OTA);
 
     pinmux_drv_close(pinmux_dev);
     gpio_drv_close(gpio_dev);
@@ -167,7 +200,10 @@ int main(void) {
                 tskIDLE_PRIORITY + 3, NULL);
 
     xTaskCreate(led_task, "LED Ctrl", 512, NULL, tskIDLE_PRIORITY, NULL);
-    xTaskCreate(network_manager_task, "Network Manager", 512, NULL,
+
+    nm_queue = xQueueCreate(5, sizeof(nm_cmd_t));
+    configASSERT(nm_queue);
+    xTaskCreate(network_manager_task, "Network Manager", 512, nm_queue,
                 tskIDLE_PRIORITY, NULL);
 
     ctrl_msg_t ctrl_msg;
@@ -176,7 +212,7 @@ int main(void) {
             switch (ctrl_msg.type) {
                 case CTRL_MSG_OTA_UPGRADE: {
                     ota_cmd_t cmd = OTA_CMD_UPGRADE;
-                    xQueueSendToBack(ota_queue, &cmd, 100);
+                    xQueueSendToBack(ota_queue, &cmd, 0);
                     break;
                 }
                 case CTRL_MSG_DOOR_CONTROL: {
@@ -184,12 +220,22 @@ int main(void) {
                         ctrl_msg.msg.door_control.command == DOOR_CMD_OPEN
                             ? PIC_CMD_OPEN
                             : PIC_CMD_CLOSE;
-                    xQueueSendToBack(pic_queue, &cmd, 100);
+                    xQueueSendToBack(pic_queue, &cmd, 0);
                     break;
                 }
                 case CTRL_MSG_DOOR_STATE_UPDATE:
                     publish_state(&ctrl_msg.msg.door_state);
                     break;
+                case CTRL_MSG_WIFI_BUTTON: {
+                    nm_cmd_t cmd = NM_CMD_AP_MODE;
+                    LogDebug(("WiFi button pressed"));
+                    xQueueSendToBack(nm_queue, &cmd, 0);
+                    break;
+                }
+                case CTRL_MSG_OTA_BUTTON:
+                    LogDebug(("OTA button pressed"));
+                    break;
+
                 default:
                     LogError(("unknown message type %d", ctrl_msg.type));
             }
@@ -235,8 +281,8 @@ void vApplicationIPNetworkEventHook(eIPCallbackEvent_t event) {
             tasks_created = true;
             xTaskCreate(httpd_task, "HTTPd", 512, ctrl_queue, tskIDLE_PRIORITY,
                         NULL);
-            xTaskCreate(mqtt_task, "MQTT", 1024, ctrl_queue, tskIDLE_PRIORITY + 5,
-                        NULL);
+            xTaskCreate(mqtt_task, "MQTT", 1024, ctrl_queue,
+                        tskIDLE_PRIORITY + 5, NULL);
         }
     }
 }

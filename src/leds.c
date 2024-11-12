@@ -16,38 +16,14 @@
 #define LED5 GPIO_42  // wifi green
 #define LED6 GPIO_43  // wifi red
 
-static QueueHandle_t msg_queue;
-
-static void gpio_cb(int pin, void* data) {
-    xQueueSendToBackFromISR(msg_queue, &pin, NULL);
-}
-
-static void init_gpio_input(mdev_t* gpio_dev, int pin) {
-    gpio_drv_setdir(gpio_dev, pin, GPIO_INPUT);
-    int res =
-        gpio_drv_set_cb(gpio_dev, pin, GPIO_INT_BOTH_EDGES, NULL, gpio_cb);
-    if (res != WM_SUCCESS) {
-        LogError(("failed to regiser GPIO ISR"));
-    }
-}
-
 static void init_led(mdev_t* gpio_dev, mdev_t* pinmux_dev, int pin) {
     pinmux_drv_setfunc(pinmux_dev, pin, PINMUX_FUNCTION_0);
     gpio_drv_setdir(gpio_dev, pin, GPIO_OUTPUT);
     gpio_drv_write(gpio_dev, pin, GPIO_IO_HIGH);
 }
 
-static void process_queue() {
-    int pin;
-    if (xQueueReceive(msg_queue, &pin, 800) == pdPASS) {
-        LogInfo(("GPIO pin %d activated", pin));
-    }
-}
-
 void led_task(void* const params) {
     LogInfo(("LED control task running"));
-
-    msg_queue = xQueueCreate(5, sizeof(int));
 
     mdev_t* gpio_dev = gpio_drv_open("MDEV_GPIO");
     if (gpio_dev == NULL) {
@@ -61,13 +37,6 @@ void led_task(void* const params) {
     }
     pinmux_drv_setfunc(pinmux_dev, GPIO_22, GPIO22_GPIO22);
     pinmux_drv_setfunc(pinmux_dev, GPIO_23, GPIO23_GPIO23);
-    pinmux_drv_setfunc(pinmux_dev, GPIO_24, GPIO24_GPIO24);
-    pinmux_drv_setfunc(pinmux_dev, GPIO_47, GPIO47_GPIO47);
-
-    init_gpio_input(gpio_dev, GPIO_22);
-    init_gpio_input(gpio_dev, GPIO_23);
-    init_gpio_input(gpio_dev, GPIO_24);
-    init_gpio_input(gpio_dev, GPIO_47);
 
     init_led(gpio_dev, pinmux_dev, LED1);
     init_led(gpio_dev, pinmux_dev, LED2);
@@ -82,26 +51,13 @@ void led_task(void* const params) {
         gpio_drv_write(gpio_dev, LED2, GPIO_IO_HIGH);
         gpio_drv_write(gpio_dev, LED4, GPIO_IO_HIGH);
         gpio_drv_write(gpio_dev, LED5, GPIO_IO_LOW);
-        process_queue();
+        vTaskDelay(800);
 
         gpio_drv_write(gpio_dev, LED1, GPIO_IO_HIGH);
         gpio_drv_write(gpio_dev, LED2, GPIO_IO_LOW);
         gpio_drv_write(gpio_dev, LED4, GPIO_IO_LOW);
         gpio_drv_write(gpio_dev, LED5, GPIO_IO_HIGH);
-        process_queue();
-
-        // char s[GPIO_MaxNo + 2];
-        // s[sizeof(s) - 1] = 0;
-        // for (int i = 0; i <= GPIO_MaxNo; i++) {
-        //     int state;
-        //     int err = gpio_drv_read(gpio_dev, i, &state);
-        //     if (err == WM_SUCCESS) {
-        //         s[i] = state ? 'H' : 'L';
-        //     } else {
-        //         s[i] = 'x';
-        //     }
-        // }
-        // LogInfo((s));
+        vTaskDelay(800);
     }
 err:
     vTaskDelete(NULL);

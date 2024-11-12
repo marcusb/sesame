@@ -8,6 +8,8 @@ typedef enum {
     CTRL_MSG_OTA_UPGRADE,
     CTRL_MSG_DOOR_CONTROL,
     CTRL_MSG_DOOR_STATE_UPDATE,
+    CTRL_MSG_WIFI_BUTTON,
+    CTRL_MSG_OTA_BUTTON,
 } ctrl_msg_type_t;
 
 typedef enum { DOOR_CMD_UNKNOWN, DOOR_CMD_OPEN, DOOR_CMD_CLOSE } door_cmd_t;
