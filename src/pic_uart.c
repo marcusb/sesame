@@ -5,15 +5,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+// FreeRTOS
+
 #include "FreeRTOS.h"
+#include "queue.h"
+#include "task.h"
+
+// wmsdk
+#include "mdev_gpio.h"
+#include "mdev_uart.h"
+#include "rtc.h"
+
+// Application
 #include "app_logging.h"
 #include "controller.h"
 #include "idcm_msg.h"
-#include "mdev_gpio.h"
-#include "mdev_uart.h"
-#include "queue.h"
-#include "rtc.h"
-#include "task.h"
+#include "util.h"
 
 #define READ_TIMEOUT_TICKS pdMS_TO_TICKS(10000)
 #define RX_BUF_SIZE 256
@@ -24,27 +31,6 @@ typedef enum { READ_START = 0, READ_LENGTH = 1, READ_BODY = 2 } read_state_t;
 static mdev_t *gpio_dev;
 static mdev_t *uart_dev;
 static QueueHandle_t ctrl_queue;
-
-static void debug_hexdump(char dir, const uint8_t *data, unsigned len) {
-    static char s[3 * 16 + 4];
-    char *p = s;
-
-    if (len == 0) {
-        return;
-    }
-    p += sprintf(p, "%c: %02x ", dir, data[0]);
-    for (int i = 1; i < len; i++) {
-        if ((i & 0x0f) == 0) {
-            *p = '\0';
-            LogDebug((s));
-            p = s;
-            p += sprintf(p, "   ");
-        }
-        p += sprintf(p, "%02x ", data[i]);
-    }
-    *p = '\0';
-    LogDebug((s));
-}
 
 static uint8_t next_token() {
     static int seq = -1;
