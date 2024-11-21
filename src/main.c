@@ -4,39 +4,43 @@
 #include <string.h>
 
 // FreeRTOS
-#include <FreeRTOS_IP.h>
-#include <board.h>
-#include <lowlevel_drivers.h>
-#include <task.h>
-#include <wmstdio.h>
-
 #include "FreeRTOS.h"
+#include "FreeRTOS_IP.h"
+#include "NetworkInterface.h"
+#include "mw300_rd_net.h"
+#include "task.h"
+
+// wmsdk
+#include <board.h>
+
 #include "boot_flags.h"
 #include "cli.h"
-#include "controller.h"
 #include "flash.h"
 #include "iot_crypto.h"
 #include "iot_logging_task.h"
 #include "iot_wifi.h"
+#include "lowlevel_drivers.h"
 #include "mbedtls/entropy.h"
 #include "mdev_gpio.h"
 #include "mdev_pinmux.h"
 #include "mdev_rtc.h"
 #include "partition.h"
-#include "pic_uart.h"
 #include "psm-v2.h"
 #include "pwrmgr.h"
 #include "queue.h"
 #include "wifi.h"
+#include "wmstdio.h"
 #include "wmtime.h"
 
 // Application
 #include "app_logging.h"
+#include "controller.h"
 #include "httpd.h"
 #include "leds.h"
 #include "mqtt.h"
 #include "network.h"
 #include "ota.h"
+#include "pic_uart.h"
 
 #define BTN_WIFI GPIO_22
 #define BTN_OTA GPIO_23
@@ -55,7 +59,7 @@ static QueueHandle_t nm_queue;
 static uint8_t mac_addr[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
 static const uint8_t default_ip_addr[4] = {192, 168, 4, 1};
 static const uint8_t netmask[4] = {255, 255, 255, 0};
-static const uint8_t gateway_addr[4] = {192, 168, 1, 1};
+static const uint8_t gateway_addr[4] = {192, 168, 4, 1};
 static const uint8_t dns_server_addr[4] = {1, 1, 1, 1};
 
 static const char HOSTNAME[] = "sesame";
@@ -161,6 +165,14 @@ static void platform_init(void) {
     CRYPTO_Init();
     init_gpio();
     flash_drv_init();
+
+    wmtime_init();
+    pm_init();
+
+    cli_init();
+    pm_cli_init();
+    wmtime_cli_init();
+    pm_mcu_cli_init();
 }
 
 /**
@@ -168,13 +180,6 @@ static void platform_init(void) {
  */
 int main(void) {
     platform_init();
-    cli_init();
-    wmtime_init();
-    pm_init();
-
-    pm_cli_init();
-    wmtime_cli_init();
-    pm_mcu_cli_init();
 
     /* Create tasks that are not dependent on the Wi-Fi being initialized. */
     struct freertos_sockaddr udp_log_addr = {
@@ -183,8 +188,14 @@ int main(void) {
     xLoggingTaskInitialize(512, tskIDLE_PRIORITY,
                            mainLOGGING_MESSAGE_QUEUE_LENGTH, &udp_log_addr);
 
-    FreeRTOS_IPInit(default_ip_addr, netmask, gateway_addr, dns_server_addr,
-                    mac_addr);
+    static NetworkInterface_t iface;
+    static NetworkEndPoint_t endpoint;
+    pxMW300_FillInterfaceDescriptor(BSS_TYPE_STA, &iface);
+    FreeRTOS_FillEndPoint(&iface, &endpoint, default_ip_addr, netmask,
+                          gateway_addr, dns_server_addr, mac_addr);
+    endpoint.bits.bWantDHCP = pdTRUE;
+    int res = FreeRTOS_IPInit_Multi();
+    configASSERT(res);
 
     ctrl_queue = xQueueCreate(8, sizeof(ctrl_msg_t));
     configASSERT(ctrl_queue);
@@ -203,7 +214,7 @@ int main(void) {
 
     nm_queue = xQueueCreate(5, sizeof(nm_cmd_t));
     configASSERT(nm_queue);
-    xTaskCreate(network_manager_task, "Network Manager", 512, nm_queue,
+    xTaskCreate(network_manager_task, "NetMgr", 1024, nm_queue,
                 tskIDLE_PRIORITY, NULL);
 
     ctrl_msg_t ctrl_msg;
@@ -246,35 +257,16 @@ int main(void) {
     return 0;
 }
 
-void print_ip_config() {
-    uint32_t ip_addr;
-    uint32_t netmask;
-    uint32_t gateway;
-    uint32_t dns_server;
-
-    FreeRTOS_GetAddressConfiguration(&ip_addr, &netmask, &gateway, &dns_server);
-
-    char ip_addr_s[16];
-    char netmask_s[16];
-    char gateway_s[16];
-    char dns_server_s[16];
-
-    FreeRTOS_inet_ntop4(&ip_addr, ip_addr_s, sizeof(ip_addr_s));
-    FreeRTOS_inet_ntop4(&netmask, netmask_s, sizeof(netmask_s));
-    FreeRTOS_inet_ntop4(&gateway, gateway_s, sizeof(gateway_s));
-    FreeRTOS_inet_ntop4(&dns_server, dns_server_s, sizeof(dns_server_s));
-    LogInfo(("IPv4 %s/%s, gw %s, dns %s", ip_addr_s, netmask_s, gateway_s,
-             dns_server_s));
-}
-
-void vApplicationIPNetworkEventHook(eIPCallbackEvent_t event) {
+void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
+                                          NetworkEndPoint_t *endpoint) {
     static bool tasks_created = false;
 
-    LogDebug(("network event: %s", event == eNetworkUp ? "UP" : "DOWN"));
+    LogDebug(("network event: %s", event == eNetworkUp ? "UP" : ""));
 
     if (event == eNetworkUp) {
-        print_ip_config();
+        print_ip_config(endpoint);
 
+        notify_dhcp_configured();
         if (!tasks_created) {
             // Create the tasks that use the TCP/IP stack if they have not
             // already been created.

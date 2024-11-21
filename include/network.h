@@ -1,7 +1,10 @@
 #ifndef _NETWORK_H
 #define _NETWORK_H
 
-void network_manager_task(void *const params);
+void network_manager_task(void* params);
+
+struct xNetworkEndPoint;
+void print_ip_config(struct xNetworkEndPoint* endpoint);
 
 typedef enum {
     NM_CMD_UNKNOWN = 0,

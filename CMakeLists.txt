@@ -51,13 +51,11 @@ target_include_directories(${exe_target}
 )
 
 add_library(freertos_config INTERFACE)
-
 target_include_directories(freertos_config
     INTERFACE
     include/config
     libraries/abstractions/platform/freertos/include
 )
-
 target_compile_definitions(freertos_config
     INTERFACE
     projCOVERAGE_TEST=0
@@ -155,53 +153,38 @@ target_link_options(freertos_config
 # -------------------------------------------------------------------------------------------------
 # ==================== Marvell ====================
 
-#set(FREERTOS_HEAP "2" CACHE STRING "" FORCE)
+set(FREERTOS_HEAP "${mw320_dir}/sdk/external/FreeRTOS/portable/MemMang/heap_marvell.c" CACHE STRING "" FORCE)
 set(FREERTOS_PORT "GCC_ARM_CM4F" CACHE STRING "" FORCE)
 
-set(FREERTOS_PLUS_TCP_BUFFER_ALLOCATION "1" CACHE STRING "" FORCE)
+set(FREERTOS_PLUS_TCP_BUFFER_ALLOCATION "2" CACHE STRING "" FORCE)
 set(FREERTOS_PLUS_TCP_NETWORK_IF "MW300_RD" CACHE STRING "" FORCE)
 
-add_subdirectory("${KERNEL_DIR}" freertos_kernel)
+add_subdirectory("${KERNEL_DIR}")
+add_subdirectory("${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP")
+#FetchContent_Declare(freertos_plus_tcp
+#    GIT_REPOSITORY https://github.com/FreeRTOS/FreeRTOS-Plus-TCP.git
+#    GIT_TAG        V4.1.0
+#    GIT_SUBMODULES ""
+#)
+#FetchContent_MakeAvailable(freertos_plus_tcp)
 
-add_library(freertos_plus_tcp STATIC)
-target_sources(freertos_plus_tcp
+target_link_libraries(freertos_kernel
     PRIVATE
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_ARP.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_DNS_Cache.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_DNS_Parser.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_IP_Timers.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_Stream_Buffer.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_TCP_State_Handling.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_TCP_WIN.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_DHCP.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_DNS_Callback.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_ICMP.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_IP_Utils.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_TCP_IP.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_TCP_Transmission.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_Tiny_TCP.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_DNS.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_DNS_Networking.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_IP.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_Sockets.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_TCP_Reception.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_TCP_Utils.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/FreeRTOS_UDP_IP.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/portable/NetworkInterface/mw300_rd/NetworkInterface.c"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/portable/BufferManagement/BufferAllocation_2.c"
-    "${mw320_dir}/sdk/src/platform/net/freertos-plus-tcp/net.c"
-)
-target_include_directories(freertos_plus_tcp
-    PUBLIC
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/include"
-    "${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP/source/portable/Compiler/GCC"
-    PRIVATE
-    "${mw320_dir}/sdk/src/platform/net/freertos-plus-tcp"
-)
-target_link_libraries(freertos_plus_tcp
-    PUBLIC
     wmsdk
-    freertos_kernel
+)
+
+target_compile_options(freertos_plus_tcp_network_if
+    PRIVATE
+    $<$<COMPILE_LANG_AND_ID:C,Clang,GNU>:-Wno-pedantic>
+    $<$<COMPILE_LANG_AND_ID:C,Clang,GNU>:-Wno-conversion>
+)
+target_include_directories(freertos_plus_tcp_network_if
+    PUBLIC
+    "${mw320_dir}/sdk/src/incl/platform/net/freertos-plus-tcp"
+)
+target_link_libraries(freertos_plus_tcp_network_if
+    PRIVATE
+    wmsdk
 )
 
 add_library(freertos_plus_transport STATIC)
@@ -292,7 +275,7 @@ target_include_directories(backoff_algorithm
 set(ENABLE_PROGRAMS OFF CACHE BOOL INTERNAL)
 set(ENABLE_TESTING OFF CACHE BOOL INTERNAL)
 
-add_subdirectory("${FREERTOS_PLUS_DIR}/ThirdParty/mbedtls" mbedtls)
+add_subdirectory("${FREERTOS_PLUS_DIR}/ThirdParty/mbedtls")
 
 target_link_libraries(mbedtls
     PRIVATE
@@ -347,6 +330,7 @@ target_include_directories(coreHTTP
 target_link_libraries(coreHTTP
     PUBLIC
     freertos_plus_tcp
+    freertos_kernel
     logging
 )
 
@@ -364,6 +348,7 @@ target_include_directories(coreMQTT
 target_link_libraries(coreMQTT
     PUBLIC
     freertos_plus_tcp
+    freertos_kernel
     logging
 )
 
@@ -395,7 +380,6 @@ target_sources(wmsdk
     PRIVATE
     ${driver_src}
     "board/board.c"
-    "${mw320_dir}/sdk/external/FreeRTOS/portable/MemMang/heap_marvell.c"
     "${mw320_dir}/sdk/external/FreeRTOS/Source/FreeRTOS-openocd.c"
 )
 #target_include_directories(wmsdk
@@ -413,7 +397,6 @@ target_include_directories(wmsdk
     "${mw320_dir}/sdk/src/incl/sdk/drivers/mw300"
     "${mw320_dir}/sdk/src/incl/sdk/drivers/mw300/regs"
     "${mw320_dir}/sdk/src/incl/platform/os/freertos"
-    "${mw320_dir}/sdk/src/incl/platform/net/freertos-plus-tcp"
     "${mw320_dir}/sdk/src/boards"
     "${mw320_dir}/sdk/src/drivers/common/hardfault"
 )
@@ -432,8 +415,10 @@ target_link_libraries(${exe_target}
     coreMQTT_agent
     freertos_plus_transport
     freertos_plus_tcp
+    freertos_plus_tcp_network_if
     mbedtls
     core_pkcs11
+    wmsdk
     "${mw320_dir}/bin/libs/libpsm.a"
     "${mw320_dir}/bin/libs/libpart.a"
     logging
