@@ -59,8 +59,8 @@ static QueueHandle_t nm_queue;
 static uint8_t mac_addr[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
 static const uint8_t default_ip_addr[4] = {192, 168, 4, 1};
 static const uint8_t netmask[4] = {255, 255, 255, 0};
-static const uint8_t gateway_addr[4] = {192, 168, 4, 1};
-static const uint8_t dns_server_addr[4] = {1, 1, 1, 1};
+static const uint8_t gateway_addr[4] = {0};
+static const uint8_t dns_server_addr[4] = {0};
 
 static const char HOSTNAME[] = "sesame";
 
@@ -188,12 +188,19 @@ int main(void) {
     xLoggingTaskInitialize(512, tskIDLE_PRIORITY,
                            mainLOGGING_MESSAGE_QUEUE_LENGTH, &udp_log_addr);
 
-    static NetworkInterface_t iface;
-    static NetworkEndPoint_t endpoint;
-    pxMW300_FillInterfaceDescriptor(BSS_TYPE_STA, &iface);
-    FreeRTOS_FillEndPoint(&iface, &endpoint, default_ip_addr, netmask,
+    static NetworkInterface_t sta_iface;
+    static NetworkEndPoint_t sta_endpoint;
+    pxMW300_FillInterfaceDescriptor(BSS_TYPE_STA, &sta_iface);
+    FreeRTOS_FillEndPoint(&sta_iface, &sta_endpoint, default_ip_addr, netmask,
                           gateway_addr, dns_server_addr, mac_addr);
-    endpoint.bits.bWantDHCP = pdTRUE;
+    sta_endpoint.bits.bWantDHCP = pdTRUE;
+
+    static NetworkInterface_t uap_iface;
+    static NetworkEndPoint_t uap_endpoint;
+    pxMW300_FillInterfaceDescriptor(BSS_TYPE_UAP, &uap_iface);
+    FreeRTOS_FillEndPoint(&uap_iface, &uap_endpoint, default_ip_addr, netmask,
+                          gateway_addr, dns_server_addr, mac_addr);
+
     int res = FreeRTOS_IPInit_Multi();
     configASSERT(res);
 

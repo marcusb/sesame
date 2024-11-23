@@ -166,6 +166,11 @@ static bool wifi_connect(void) {
 }
 
 void start_ap() {
+    if (WIFI_On() != eWiFiSuccess) {
+        LogError(("wifi init failed"));
+        return;
+    }
+
     struct wlan_network nw;
     wlan_initialize_uap_network(&nw);
     strncpy(nw.name, "ap", sizeof(nw.name));
@@ -216,20 +221,20 @@ void network_manager_task(void *params) {
     // }
 
     wifi_connect();
-    //  start_ap();
+    //start_ap();
 
     for (;;) {
         vTaskDelay(1000);
-        // nm_cmd_t cmd;
-        // if (xQueueReceive(nm_queue, &cmd, portMAX_DELAY) == pdPASS) {
-        //     switch (cmd) {
-        //         case NM_CMD_AP_MODE:
-        //             start_ap();
-        //             break;
-        //         default:
-        //             LogError(("unknown nm_cmd_t %d", cmd));
-        //     }
-        // }
+        nm_cmd_t cmd;
+        if (xQueueReceive(nm_queue, &cmd, portMAX_DELAY) == pdPASS) {
+            switch (cmd) {
+                case NM_CMD_AP_MODE:
+                    start_ap();
+                    break;
+                default:
+                    LogError(("unknown nm_cmd_t %d", cmd));
+            }
+        }
     }
 
 err:
