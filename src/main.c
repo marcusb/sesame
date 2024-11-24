@@ -268,8 +268,6 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                                           NetworkEndPoint_t *endpoint) {
     static bool tasks_created = false;
 
-    LogDebug(("network event: %s", event == eNetworkUp ? "UP" : ""));
-
     if (event == eNetworkUp) {
         print_ip_config(endpoint);
 

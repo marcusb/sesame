@@ -151,8 +151,6 @@ void vNetworkInterfaceAllocateRAMToBuffers(
 
 static BaseType_t xMW300_NetworkInterfaceInitialise(NetworkInterface_t* iface) {
     uint8_t if_index = (int)iface->pvArgument;
-    net_d("NET INITIALIZE IFACE %u ret %d\r\n", if_index,
-          iface->bits.bInterfaceUp);
     configASSERT(if_index < NUM_INTERFACES);
     interfaces[if_index] = iface;
 
@@ -184,7 +182,6 @@ static BaseType_t xMW300_NetworkInterfaceInitialise(NetworkInterface_t* iface) {
         net_e("wlan get connection state failed\r\n");
         return pdFALSE;
     }
-    net_d("wlan_connection_state %d\r\n", state);
     return state == WLAN_ASSOCIATED || state == WLAN_CONNECTING ||
            state == WLAN_CONNECTED || state == WLAN_UAP_STARTED;
 }
