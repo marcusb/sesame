@@ -1,6 +1,2 @@
-#ifndef _HTTPD_H
-#define _HTTPD_H
-
+#pragma once
 void httpd_task(void *);
-
-#endif

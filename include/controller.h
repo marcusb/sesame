@@ -1,5 +1,4 @@
-#ifndef _CONTROLLER_H
-#define _CONTROLLER_H
+#pragma once
 
 #include "idcm_msg.h"
 
@@ -36,5 +35,3 @@ typedef struct {
         door_state_msg_t door_state;
     } msg;
 } ctrl_msg_t;
-
-#endif

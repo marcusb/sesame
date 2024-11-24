@@ -1,6 +1,3 @@
-#ifndef _LEDS_H
-#define _LEDS_H
+#pragma once
 
 void led_task(void *params);
-
-#endif

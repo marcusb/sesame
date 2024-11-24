@@ -1,5 +1,4 @@
-#ifndef _IDCM_MSG_H
-#define _IDCM_MSG_H
+#pragma once
 
 #include <stdint.h>
 
@@ -118,5 +117,3 @@ typedef struct {
     } payload;
     // checksum byte follows payload
 } __attribute__((packed)) dcm_msg_t;
-
-#endif

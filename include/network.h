@@ -1,5 +1,4 @@
-#ifndef _NETWORK_H
-#define _NETWORK_H
+#pragma once
 
 void network_manager_task(void* params);
 
@@ -10,5 +9,3 @@ typedef enum {
     NM_CMD_UNKNOWN = 0,
     NM_CMD_AP_MODE = 1,
 } nm_cmd_t;
-
-#endif
