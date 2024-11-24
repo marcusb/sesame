@@ -158,7 +158,7 @@ set(FREERTOS_HEAP "${mw320_dir}/sdk/external/FreeRTOS/portable/MemMang/heap_marv
 set(FREERTOS_PORT "GCC_ARM_CM4F" CACHE STRING "" FORCE)
 
 set(FREERTOS_PLUS_TCP_BUFFER_ALLOCATION "2" CACHE STRING "" FORCE)
-set(FREERTOS_PLUS_TCP_NETWORK_IF "MW300_RD" CACHE STRING "" FORCE)
+set(FREERTOS_PLUS_TCP_NETWORK_IF "A_CUSTOM_NETWORK_IF" CACHE STRING "" FORCE)
 
 add_subdirectory("${KERNEL_DIR}")
 add_subdirectory("${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP")
@@ -174,17 +174,23 @@ target_link_libraries(freertos_kernel
     wmsdk
 )
 
-target_compile_options(freertos_plus_tcp_network_if
+add_library(freertos_plus_tcp_network_if STATIC)
+target_sources(freertos_plus_tcp_network_if
     PRIVATE
-    $<$<COMPILE_LANG_AND_ID:C,Clang,GNU>:-Wno-pedantic>
-    $<$<COMPILE_LANG_AND_ID:C,Clang,GNU>:-Wno-conversion>
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mw300_rd_net.c"
 )
 target_include_directories(freertos_plus_tcp_network_if
     PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${mw320_dir}/sdk/src/incl/platform/net/freertos-plus-tcp"
 )
 target_link_libraries(freertos_plus_tcp_network_if
+    PUBLIC
+    freertos_plus_tcp_port
+    freertos_plus_tcp_network_if_common
     PRIVATE
+    freertos_kernel
+    freertos_plus_tcp
     wmsdk
 )
 
