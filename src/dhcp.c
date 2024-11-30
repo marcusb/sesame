@@ -333,18 +333,20 @@ void dhcpd_task(void *params) {
     dhcp_task_params_t p;
     memcpy(&p, params, sizeof(dhcp_task_params_t));
 
-    Socket_t listen_sock = FreeRTOS_socket(
+    Socket_t socket = FreeRTOS_socket(
         FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM, FREERTOS_IPPROTO_UDP);
-    if (listen_sock == FREERTOS_INVALID_SOCKET) {
+    if (socket == FREERTOS_INVALID_SOCKET) {
         LogError(("failed to open socket"));
         goto err;
     }
+    const TickType_t recv_tmout = portMAX_DELAY;
+    FreeRTOS_setsockopt(socket, 0, FREERTOS_SO_RCVTIMEO, &recv_tmout, 0);
 
     struct freertos_sockaddr bind_addr;
     memset(&bind_addr, 0, sizeof(bind_addr));
     bind_addr.sin_port = FreeRTOS_htons(DHCP_SERVER_PORT);
     bind_addr.sin_family = FREERTOS_AF_INET;
-    BaseType_t res = FreeRTOS_bind(listen_sock, &bind_addr, sizeof(bind_addr));
+    BaseType_t res = FreeRTOS_bind(socket, &bind_addr, sizeof(bind_addr));
     if (res) {
         LogError(("bind failed %d", res));
         goto err;
@@ -354,15 +356,16 @@ void dhcpd_task(void *params) {
     for (;;) {
         struct freertos_sockaddr client;
         uint32_t client_len = sizeof(client);
-        int32_t n_bytes = FreeRTOS_recvfrom(listen_sock, buf, sizeof(buf), 0,
+        int32_t n_bytes = FreeRTOS_recvfrom(socket, buf, sizeof(buf), 0,
                                             &client, &client_len);
 
         if (n_bytes >= 0) {
             LogInfo(("got %d bytes", n_bytes));
             process_dhcp_msg((dhcp_msg_t *)buf, n_bytes, p.ip_addr, p.netmask);
         } else {
-            FreeRTOS_strerror_r(n_bytes, (char *)buf, sizeof(buf));
-            LogWarn(("socket read failed: %s", buf));
+            // FreeRTOS_strerror_r(n_bytes, (char *)buf, sizeof(buf));
+            // LogWarn(("socket read failed: %s", buf));
+            LogWarn(("socket read failed: %d", n_bytes));
         }
     }
 err:

@@ -259,4 +259,21 @@ void wm_printf(const char *format, ...);
    *  take up unnecessary RAM. */
 #define configCOMMAND_INT_MAX_OUTPUT_SIZE           1
 
+#define max(a,b)             \
+({                           \
+    __typeof__ (a) _a = (a); \
+    __typeof__ (b) _b = (b); \
+    _a > _b ? _a : _b;       \
+})
+
+#define min(a,b)             \
+({                           \
+    __typeof__ (a) _a = (a); \
+    __typeof__ (b) _b = (b); \
+    _a < _b ? _a : _b;       \
+})
+
+#define configMAX(a,b) max(a,b)
+#define configMIN(a,b) min(a,b)
+
 #endif /* FREERTOS_CONFIG_H */

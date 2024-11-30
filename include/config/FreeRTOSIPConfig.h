@@ -53,7 +53,7 @@ extern void vLoggingPrintf(const char* pcFormatString, ...);
 #define FreeRTOS_debug_printf(X) vLoggingPrintf X
 #endif
 
-#define ipconfigHAS_PRINTF 1
+#define ipconfigHAS_PRINTF 0
 #if (ipconfigHAS_PRINTF == 1)
 #define FreeRTOS_printf(X) vLoggingPrintf X
 #endif

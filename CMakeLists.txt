@@ -28,6 +28,7 @@ add_executable(${exe_target})
 target_sources(${exe_target}
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/fault.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/idle_task.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
@@ -42,25 +43,25 @@ target_sources(${exe_target}
     "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
     "${afr_ports_dir}/wifi/iot_wifi.c"
     "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_agent_message.c"
-    "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_command_pool.c"
-)
+    "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_command_pool.c")
 target_include_directories(${exe_target}
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "libraries/abstractions/wifi/include"
-    "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/include"
-)
+    "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/include")
+
+add_library(globals INTERFACE)
 
 add_library(freertos_config INTERFACE)
 target_include_directories(freertos_config
     INTERFACE
     include/config
-    libraries/abstractions/platform/freertos/include
-)
+    libraries/abstractions/platform/freertos/include)
 target_compile_definitions(freertos_config
     INTERFACE
-    projCOVERAGE_TEST=0
-)
+    projCOVERAGE_TEST=0)
+target_link_libraries(freertos_config
+    INTERFACE globals)
 
 # -------------------------------------------------------------------------------------------------
 # Compiler settings
@@ -90,7 +91,9 @@ set(global-cflags-y
     "-Wno-type-limits"
     "-std=c99"
     "-DSDK_VERSION=${SDK_VERSION}"
-)
+    "-funwind-tables"
+    "-mpoke-function-name"
+    "-fno-omit-frame-pointer")
 
 # ARM Cortex M4 flags
 set(tc-lflags-tc-cortex-m4-y
@@ -107,13 +110,10 @@ set(tc-lflags-tc-cortex-m4-y
     "-fno-common"
     "-mfloat-abi=softfp"
     "-mfpu=fpv4-sp-d16"
-    "-D__FPU_PRESENT"
-)
+    "-D__FPU_PRESENT")
 
-target_compile_options(freertos_config
-    INTERFACE ${global-cflags-y} ${tc-lflags-tc-cortex-m4-y}
-    -include "${mw320_dir}/sdk/src/incl/autoconf.h"
-)
+target_compile_options(globals
+    INTERFACE ${global-cflags-y} ${tc-lflags-tc-cortex-m4-y})
 
 # Linker flags
 # gcc specific extra linker flags
@@ -125,8 +125,7 @@ set(tc-lflags-y
     "-Wl,--wrap,calloc"
     "-Wl,--wrap,realloc"
     "-Wl,--wrap,printf"
-    "-Wl,--wrap,fprintf"
-)
+    "-Wl,--wrap,fprintf")
 
 # Xlinker flags
 set(CMAKE_C_LINKER_WRAPPER_FLAG "-Xlinker" " ")
@@ -139,15 +138,24 @@ target_link_options(${exe_target}
     "LINKER:--defsym=_rom_data=64"
     "LINKER:-M"
     "LINKER:-Map"
-    "LINKER:${exe_target}.map"
-)
-
-# Linker Script
-set(global-linkerscript-y "${mw320_dir}/build/toolchains/arm_gcc/mw300.ld")
+    "LINKER:${exe_target}.map")
 
 target_link_options(freertos_config
-     INTERFACE ${tc-lflags-y} ${tc-lflags-tc-cortex-m4-y}
-)
+     INTERFACE ${tc-lflags-y} ${tc-lflags-tc-cortex-m4-y})
+
+# -------------------------------------------------------------------------------------------------
+# Backtrace
+# -------------------------------------------------------------------------------------------------
+
+add_library(backtrace STATIC)
+target_sources(backtrace
+    PRIVATE
+    ./libraries/backtrace/backtrace/backtrace.c)
+target_include_directories(backtrace
+    PUBLIC
+    ./libraries/backtrace/include)
+target_link_libraries(backtrace
+    PRIVATE globals)
 
 # -------------------------------------------------------------------------------------------------
 # FreeRTOS portable layers
@@ -172,7 +180,8 @@ add_subdirectory("${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP")
 target_link_libraries(freertos_kernel
     PRIVATE
     wmsdk
-)
+    PUBLIC
+    freertos_config)
 
 add_library(freertos_plus_tcp_network_if STATIC)
 target_sources(freertos_plus_tcp_network_if
@@ -191,50 +200,42 @@ target_link_libraries(freertos_plus_tcp_network_if
     PRIVATE
     freertos_kernel
     freertos_plus_tcp
-    wmsdk
-)
+    wmsdk)
 
 add_library(freertos_plus_transport STATIC)
 target_sources(freertos_plus_transport
     PRIVATE
     "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport/transport_plaintext.c"
-    "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport/tcp_sockets_wrapper/ports/freertos_plus_tcp/tcp_sockets_wrapper.c"
-)
+    "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport/tcp_sockets_wrapper/ports/freertos_plus_tcp/tcp_sockets_wrapper.c")
 target_include_directories(freertos_plus_transport
     PUBLIC
     "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport"
-    "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport/tcp_sockets_wrapper/include"
-)
+    "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport/tcp_sockets_wrapper/include")
 target_link_libraries(freertos_plus_transport
     PUBLIC
     coreHTTP
     freertos_plus_tcp
-    logging
-)
+    logging)
 
 add_library(c_sdk STATIC)
 target_sources(c_sdk
     PRIVATE
-    "libraries/c_sdk/standard/common/iot_static_memory_common.c"
-)
+    "libraries/c_sdk/standard/common/iot_static_memory_common.c")
 target_include_directories(c_sdk
     PUBLIC
     "libraries/c_sdk/standard/common/include"
     PRIVATE
-    "libraries/c_sdk/standard/common/include/private"
-)
+    "libraries/c_sdk/standard/common/include/private")
 target_link_libraries(c_sdk
     PUBLIC
     iot_platform
-    freertos_kernel
-)
+    freertos_kernel)
 
 add_library(iot_platform STATIC)
 target_sources(iot_platform
     PRIVATE
     "libraries/abstractions/platform/freertos/iot_clock_freertos.c"
-    "libraries/abstractions/platform/freertos/iot_threads_freertos.c"
-)
+    "libraries/abstractions/platform/freertos/iot_threads_freertos.c")
 target_include_directories(iot_platform
     PUBLIC
     "libraries/abstractions/platform/include"
@@ -244,39 +245,34 @@ target_include_directories(iot_platform
 target_link_libraries(iot_platform
     PUBLIC
     c_sdk
-    freertos_kernel
-)
+    freertos_kernel)
 
 add_library(logging STATIC)
 target_sources(logging
     PRIVATE
     "libraries/logging/iot_logging.c"
-    "libraries/logging/iot_logging_task_dynamic_buffers.c"
-)
+    "libraries/logging/iot_logging_task_dynamic_buffers.c")
 target_include_directories(logging
     PUBLIC
-    "libraries/logging/include"
-)
+    "libraries/logging/include")
 target_compile_options(logging
     PRIVATE
-    -DLOGGING_ENABLE_METADATA_WITH_C99_AND_GNU_EXTENSION=1
-)
+    -DLOGGING_ENABLE_METADATA_WITH_C99_AND_GNU_EXTENSION=1)
 target_link_libraries(logging
     PRIVATE
     iot_platform
-    freertos_plus_tcp
-)
+    freertos_plus_tcp)
 
 include("${FREERTOS_PLUS_DIR}/Source/Utilities/backoff_algorithm/backoffAlgorithmFilePaths.cmake")
 add_library(backoff_algorithm STATIC)
 target_sources(backoff_algorithm
     PRIVATE
-    "${BACKOFF_ALGORITHM_SOURCES}"
-)
+    "${BACKOFF_ALGORITHM_SOURCES}")
 target_include_directories(backoff_algorithm
     PUBLIC
-    "${BACKOFF_ALGORITHM_INCLUDE_PUBLIC_DIRS}"
-)
+    "${BACKOFF_ALGORITHM_INCLUDE_PUBLIC_DIRS}")
+target_link_libraries(backoff_algorithm
+    PRIVATE globals)
 
 # do not build mbedtls programs and tests
 set(ENABLE_PROGRAMS OFF CACHE BOOL INTERNAL)
@@ -286,20 +282,16 @@ add_subdirectory("${FREERTOS_PLUS_DIR}/ThirdParty/mbedtls")
 
 target_link_libraries(mbedtls
     PRIVATE
-    freertos_kernel
-)
+    freertos_kernel)
 target_link_libraries(mbedx509
     PRIVATE
-    freertos_kernel
-)
+    freertos_kernel)
 target_link_libraries(mbedcrypto
     PRIVATE
-    freertos_kernel
-)
+    freertos_kernel)
 target_compile_definitions(mbedcrypto
     PUBLIC
-    MBEDTLS_CONFIG_FILE="mbedtls_app_config.h"
-)
+    MBEDTLS_CONFIG_FILE="mbedtls_app_config.h")
 
 include("${FREERTOS_PLUS_DIR}/Source/corePKCS11/pkcsFilePaths.cmake")
 add_library(core_pkcs11 STATIC)
@@ -307,73 +299,66 @@ target_sources(core_pkcs11
     PRIVATE
     "${PKCS_SOURCES}"
     "libraries/crypto/src/iot_crypto.c"
-    "${afr_ports_dir}/pkcs11/core_pkcs11_pal.c"
-)
+    "${afr_ports_dir}/pkcs11/core_pkcs11_pal.c")
 target_include_directories(core_pkcs11
     PUBLIC
     "${PKCS_INCLUDE_PUBLIC_DIRS}"
     "${PKCS_PAL_INCLUDE_PUBLIC_DIRS}"
-    "libraries/crypto/include"
-)
+    "libraries/crypto/include")
 target_link_libraries(core_pkcs11
     PRIVATE
     wmsdk
     PUBLIC
     freertos_kernel
     mbedtls
-    logging
-)
+    logging)
 
 include("${FREERTOS_PLUS_DIR}/Source/Application-Protocols/coreHTTP/httpFilePaths.cmake")
 add_library(coreHTTP STATIC)
 target_sources(coreHTTP
-    PRIVATE
-    "${HTTP_SOURCES}"
-)
+    PRIVATE "${HTTP_SOURCES}")
 target_include_directories(coreHTTP
-    PUBLIC
-    "${HTTP_INCLUDE_PUBLIC_DIRS}"
-)
+    PUBLIC "${HTTP_INCLUDE_PUBLIC_DIRS}")
 target_link_libraries(coreHTTP
     PUBLIC
     freertos_plus_tcp
     freertos_kernel
-    logging
-)
+    logging)
 
 include("${FREERTOS_PLUS_DIR}/Source/Application-Protocols/coreMQTT/mqttFilePaths.cmake")
 add_library(coreMQTT STATIC)
 target_sources(coreMQTT
     PRIVATE
     "${MQTT_SOURCES}"
-    "${MQTT_SERIALIZER_SOURCES}"
-)
+    "${MQTT_SERIALIZER_SOURCES}")
 target_include_directories(coreMQTT
     PUBLIC
-    "${MQTT_INCLUDE_PUBLIC_DIRS}"
-)
+    "${MQTT_INCLUDE_PUBLIC_DIRS}")
 target_link_libraries(coreMQTT
     PUBLIC
     freertos_plus_tcp
     freertos_kernel
-    logging
-)
+    logging)
 
 include("${FREERTOS_PLUS_DIR}/Source/Application-Protocols/coreMQTT-Agent/mqttAgentFilePaths.cmake")
 add_library(coreMQTT_agent STATIC)
 target_sources(coreMQTT_agent
-    PRIVATE
-    "${MQTT_AGENT_SOURCES}"
-)
+    PRIVATE "${MQTT_AGENT_SOURCES}")
 target_include_directories(coreMQTT_agent
-    PUBLIC
-    "${MQTT_AGENT_INCLUDE_PUBLIC_DIRS}"
-)
+    PUBLIC "${MQTT_AGENT_INCLUDE_PUBLIC_DIRS}")
 target_link_libraries(coreMQTT_agent
     PUBLIC
     coreMQTT
-    logging
-)
+    logging)
+
+include("${FREERTOS_PLUS_DIR}/Source/coreJSON/jsonFilePaths.cmake")
+add_library(coreJSON STATIC)
+target_sources(coreJSON
+    PRIVATE "${JSON_SOURCES}")
+target_include_directories(coreJSON
+    PUBLIC "${JSON_INCLUDE_PUBLIC_DIRS}")
+target_link_libraries(coreJSON
+    PRIVATE globals)
 
 afr_glob_src(driver_src RECURSE DIRECTORY "${mw320_dir}/sdk/src")
 list(REMOVE_ITEM driver_src "${mw320_dir}/sdk/src/libc/src/atox.c")
@@ -387,7 +372,10 @@ target_sources(wmsdk
     PRIVATE
     ${driver_src}
     "board/board.c"
-    "${mw320_dir}/sdk/external/FreeRTOS/Source/FreeRTOS-openocd.c"
+    "${mw320_dir}/sdk/external/FreeRTOS/Source/FreeRTOS-openocd.c")
+target_compile_options(wmsdk
+    PUBLIC
+    -include "${mw320_dir}/sdk/src/incl/autoconf.h"
 )
 #target_include_directories(wmsdk
 #    SYSTEM PUBLIC
@@ -405,13 +393,11 @@ target_include_directories(wmsdk
     "${mw320_dir}/sdk/src/incl/sdk/drivers/mw300/regs"
     "${mw320_dir}/sdk/src/incl/platform/os/freertos"
     "${mw320_dir}/sdk/src/boards"
-    "${mw320_dir}/sdk/src/drivers/common/hardfault"
-)
+    "${mw320_dir}/sdk/src/drivers/common/hardfault")
 target_link_libraries(wmsdk
     PUBLIC
     freertos_kernel
-    mbedcrypto
-)
+    mbedcrypto)
 
 target_link_libraries(${exe_target}
     PUBLIC
@@ -420,6 +406,7 @@ target_link_libraries(${exe_target}
     "${mw320_dir}/bin/libs/librfget.a"
     coreHTTP
     coreMQTT_agent
+    coreJSON
     freertos_plus_transport
     freertos_plus_tcp
     freertos_plus_tcp_network_if
@@ -430,15 +417,12 @@ target_link_libraries(${exe_target}
     "${mw320_dir}/bin/libs/libpart.a"
     logging
     backoff_algorithm
-)
+    backtrace
+
+    PRIVATE
+    -T"${mw320_dir}/build/toolchains/arm_gcc/mw300.ld")
 
 set(CMAKE_EXECUTABLE_SUFFIX ".axf")
-
-target_link_libraries(${exe_target}
-    PRIVATE
-    ${default_modules}
-    -T${global-linkerscript-y}
-)
 
 # Convert afx file to bin file
 if("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")

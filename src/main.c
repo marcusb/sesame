@@ -48,8 +48,7 @@
 /* Logging Task Defines. */
 #define mainLOGGING_MESSAGE_QUEUE_LENGTH (64)
 
-psm_hnd_t psm_hnd;
-flash_desc_t fl;
+static psm_hnd_t psm_hnd;
 static QueueHandle_t ctrl_queue;
 static QueueHandle_t ota_queue;
 static QueueHandle_t pic_queue;
@@ -63,6 +62,7 @@ static const uint8_t gateway_addr[4] = {0};
 static const uint8_t dns_server_addr[4] = {0};
 
 static const char HOSTNAME[] = "sesame";
+static NetworkInterface_t sta_iface;
 
 void wm_printf(const char *format, ...) {
     va_list args;
@@ -145,6 +145,19 @@ static void init_gpio() {
     gpio_drv_close(gpio_dev);
 }
 
+static void psm_init() {
+    static flash_desc_t fl;
+    int ret = part_get_desc_from_id(FC_COMP_PSM, &fl);
+    if (ret != WM_SUCCESS) {
+        configPRINT("Unable to get flash desc from id\r\n");
+    }
+
+    ret = psm_module_init(&fl, &psm_hnd, NULL);
+    if (ret != 0) {
+        configPRINT("Failed to initialize psm module\r\n");
+    }
+}
+
 /**
  * @brief Initialize board functions that do not require FreeRTOS
  */
@@ -153,15 +166,7 @@ static void platform_init(void) {
     boot_report_flags();
 
     wifi_set_packet_retry_count(3);
-
-    int ret = part_get_desc_from_id(FC_COMP_PSM, &fl);
-    if (ret != WM_SUCCESS) {
-        configPRINT("Unable to get flash desc from id\r\n");
-    }
-    ret = psm_module_init(&fl, &psm_hnd, NULL);
-    if (ret != 0) {
-        configPRINT("Failed to initialize psm module\r\n");
-    }
+    psm_init();
     CRYPTO_Init();
     init_gpio();
     flash_drv_init();
@@ -188,7 +193,6 @@ int main(void) {
     xLoggingTaskInitialize(512, tskIDLE_PRIORITY,
                            mainLOGGING_MESSAGE_QUEUE_LENGTH, &udp_log_addr);
 
-    static NetworkInterface_t sta_iface;
     static NetworkEndPoint_t sta_endpoint;
     pxMW300_FillInterfaceDescriptor(BSS_TYPE_STA, &sta_iface);
     FreeRTOS_FillEndPoint(&sta_iface, &sta_endpoint, default_ip_addr, netmask,
@@ -214,15 +218,17 @@ int main(void) {
     pic_queue = xQueueCreate(5, sizeof(pic_cmd_t));
     configASSERT(pic_queue);
     pic_uart_task_params_t pic_task_params = {ctrl_queue, pic_queue};
-    xTaskCreate(pic_uart_task, "PIC Comm", 512, &pic_task_params,
-                tskIDLE_PRIORITY + 3, NULL);
+    // xTaskCreate(pic_uart_task, "PIC Comm", 512, &pic_task_params,
+    //             tskIDLE_PRIORITY + 3, NULL);
 
     xTaskCreate(led_task, "LED Ctrl", 512, NULL, tskIDLE_PRIORITY, NULL);
 
-    nm_queue = xQueueCreate(5, sizeof(nm_cmd_t));
+    nm_queue = xQueueCreate(5, sizeof(nm_msg_t));
     configASSERT(nm_queue);
-    xTaskCreate(network_manager_task, "NetMgr", 1024, nm_queue,
+    nm_task_params_t nm_task_params = {nm_queue, psm_hnd};
+    xTaskCreate(network_manager_task, "NetMgr", 512, &nm_task_params,
                 tskIDLE_PRIORITY, NULL);
+    LogInfo(("%p %p", nm_queue, psm_hnd));
 
     ctrl_msg_t ctrl_msg;
     for (;;) {
@@ -233,6 +239,7 @@ int main(void) {
                     xQueueSendToBack(ota_queue, &cmd, 0);
                     break;
                 }
+
                 case CTRL_MSG_DOOR_CONTROL: {
                     pic_cmd_t cmd =
                         ctrl_msg.msg.door_control.command == DOOR_CMD_OPEN
@@ -241,18 +248,28 @@ int main(void) {
                     xQueueSendToBack(pic_queue, &cmd, 0);
                     break;
                 }
+
                 case CTRL_MSG_DOOR_STATE_UPDATE:
                     publish_state(&ctrl_msg.msg.door_state);
                     break;
+
                 case CTRL_MSG_WIFI_BUTTON: {
-                    nm_cmd_t cmd = NM_CMD_AP_MODE;
+                    nm_msg_t cmd = {NM_CMD_AP_MODE};
                     LogDebug(("WiFi button pressed"));
                     xQueueSendToBack(nm_queue, &cmd, 0);
                     break;
                 }
+
                 case CTRL_MSG_OTA_BUTTON:
                     LogDebug(("OTA button pressed"));
                     break;
+
+                case CTRL_MSG_WIFI_CONFIG: {
+                    nm_msg_t cmd = {NM_CMD_WIFI_CONFIG,
+                                    {.wifi_cfg = ctrl_msg.msg.wifi_cfg}};
+                    xQueueSendToBack(nm_queue, &cmd, 0);
+                    break;
+                }
 
                 default:
                     LogError(("unknown message type %d", ctrl_msg.type));
@@ -272,14 +289,14 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
         print_ip_config(endpoint);
 
         notify_dhcp_configured();
-        if (!tasks_created) {
+        if (!tasks_created && endpoint->pxNetworkInterface == &sta_iface) {
             // Create the tasks that use the TCP/IP stack if they have not
             // already been created.
             tasks_created = true;
-            xTaskCreate(httpd_task, "HTTPd", 512, ctrl_queue, tskIDLE_PRIORITY,
+            xTaskCreate(httpd_task, "HTTPd", 1024, ctrl_queue, tskIDLE_PRIORITY,
                         NULL);
-            xTaskCreate(mqtt_task, "MQTT", 1024, ctrl_queue,
-                        tskIDLE_PRIORITY + 5, NULL);
+            // xTaskCreate(mqtt_task, "MQTT", 1024, ctrl_queue,
+            //             tskIDLE_PRIORITY + 5, NULL);
         }
     }
 }
