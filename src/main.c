@@ -23,7 +23,6 @@
 #include "mbedtls/entropy.h"
 #include "mdev_gpio.h"
 #include "mdev_pinmux.h"
-#include "mdev_rtc.h"
 #include "partition.h"
 #include "psm-v2.h"
 #include "pwrmgr.h"
@@ -41,6 +40,7 @@
 #include "network.h"
 #include "ota.h"
 #include "pic_uart.h"
+#include "rtc_support.h"
 
 #define BTN_WIFI GPIO_22
 #define BTN_OTA GPIO_23
@@ -173,6 +173,7 @@ static void platform_init(void) {
 
     wmtime_init();
     pm_init();
+    open_rtc();
 
     cli_init();
     pm_cli_init();
@@ -218,8 +219,8 @@ int main(void) {
     pic_queue = xQueueCreate(5, sizeof(pic_cmd_t));
     configASSERT(pic_queue);
     pic_uart_task_params_t pic_task_params = {ctrl_queue, pic_queue};
-    // xTaskCreate(pic_uart_task, "PIC Comm", 512, &pic_task_params,
-    //             tskIDLE_PRIORITY + 3, NULL);
+    xTaskCreate(pic_uart_task, "PIC Comm", 512, &pic_task_params,
+                tskIDLE_PRIORITY + 3, NULL);
 
     xTaskCreate(led_task, "LED Ctrl", 512, NULL, tskIDLE_PRIORITY, NULL);
 
@@ -295,8 +296,8 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
             tasks_created = true;
             xTaskCreate(httpd_task, "HTTPd", 1024, ctrl_queue, tskIDLE_PRIORITY,
                         NULL);
-            // xTaskCreate(mqtt_task, "MQTT", 1024, ctrl_queue,
-            //             tskIDLE_PRIORITY + 5, NULL);
+            xTaskCreate(mqtt_task, "MQTT", 1024, ctrl_queue,
+                        tskIDLE_PRIORITY + 5, NULL);
         }
     }
 }

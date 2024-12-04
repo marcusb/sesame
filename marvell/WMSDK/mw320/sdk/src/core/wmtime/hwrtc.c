@@ -37,7 +37,7 @@
 static int hwrtc_init_flag;
 
 __SECTION__(.nvram_uninit)
-static uint64_t rtc_ticks;
+uint64_t rtc_ticks;
 __SECTION__(.nvram_uninit)
 static uint32_t rtc_sig;
 

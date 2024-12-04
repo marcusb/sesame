@@ -1,5 +1,8 @@
+#include <limits.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
 // FreeRTOS
 #include "FreeRTOS.h"
@@ -9,20 +12,33 @@
 // wmsdk
 #include "psm-v2.h"
 #include "wlan.h"
+#include "wm_wlan.h"
 
 // Application
 #include "app_logging.h"
+#include "backoff_algorithm.h"
 #include "dhcp.h"
-#include "iot_wifi.h"
 #include "network.h"
+#include "rtc_support.h"
 
-typedef enum { NW_DISCONNECTED, NW_MODE_STA, NW_MODE_AP } NetworkState_t;
+#define WIFI_CONNECTION_BACKOFF_BASE_MS (1000)
+#define WIFI_CONNECTION_RETRIES (4)
 
-static NetworkState_t network_state;
+typedef enum {
+    STA_IDLE,
+    STA_CONNECTING,
+    STA_CONNECTED,
+    STA_CONNECT_FAILED
+} connection_state_t;
+
+static connection_state_t network_state = STA_IDLE;
 static QueueHandle_t nm_queue;
 static psm_hnd_t psm_hnd;
 static const char psm_key_ssid[] = "wlan.ssid";
 static const char psm_key_wlan_passwd[] = "wlan.passwd";
+static BackoffAlgorithmContext_t connect_retry_params;
+static struct wlan_network ap_network;
+static long next_connect_time;
 
 void print_ip_config(NetworkEndPoint_t *endpoint) {
     if (endpoint != NULL) {
@@ -63,9 +79,6 @@ static void mem_clear(void *pBuf, size_t size) {
     }
 }
 
-#define WIFI_CONNECTION_RETRY_INTERVAL_MS (1000)
-#define WIFI_CONNECTION_RETRIES (5)
-
 static int get_network_config(WIFINetworkParams_t *params) {
     int ret = psm_get_variable(psm_hnd, psm_key_ssid, params->ucSSID,
                                sizeof(params->ucSSID));
@@ -104,51 +117,107 @@ static int set_network_config(WIFINetworkParams_t params) {
     return 0;
 }
 
+static void connect_attempt_failed() {
+    uint16_t backoff;
+    BackoffAlgorithmStatus_t retry_status = BackoffAlgorithm_GetNextBackoff(
+        &connect_retry_params, rand(), &backoff);
+    if (retry_status == BackoffAlgorithmRetriesExhausted) {
+        network_state = STA_CONNECT_FAILED;
+    } else {
+        LogInfo(("connection attempt %d of %d failed, next in %d ms",
+                 connect_retry_params.attemptsDone,
+                 connect_retry_params.maxRetryAttempts + 1, backoff));
+        next_connect_time = get_epoch_millis() + backoff;
+    }
+}
+
 static int connect_sta(void) {
+    next_connect_time = LONG_MAX;
     WIFINetworkParams_t wifi_params = {0};
     int res = get_network_config(&wifi_params);
     if (res < 0) {
-        return res;
+        goto fail;
     }
 
-    uint32_t numRetries = WIFI_CONNECTION_RETRIES;
-    uint32_t delayMilliseconds = WIFI_CONNECTION_RETRY_INTERVAL_MS;
-    do {
-        if (WIFI_ConnectAP(&(wifi_params)) == eWiFiSuccess) {
-            break;
-        }
-        if (numRetries > 0) {
-            vTaskDelay(pdMS_TO_TICKS(delayMilliseconds));
-            delayMilliseconds = delayMilliseconds * 2;
-        } else {
-            res = -1;
-        }
-    } while (numRetries-- > 0);
+    struct wlan_network nw;
+    memset(&nw, 0, sizeof(nw));
+    strcpy(nw.name, "client");
+    if (wifi_params.ucSSIDLength > IEEEtypes_SSID_SIZE) {
+        LogDebug(("SSID too long"));
+        goto fail;
+    }
+    memcpy(nw.ssid, wifi_params.ucSSID, wifi_params.ucSSIDLength);
 
+    if (wifi_params.xPassword.xWPA.ucLength > WLAN_PSK_MAX_LENGTH - 1) {
+        // one extra char for null
+        LogDebug(("WPA password too long"));
+        goto fail;
+    }
+    memcpy(nw.security.psk, wifi_params.xPassword.xWPA.cPassphrase,
+           wifi_params.xPassword.xWPA.ucLength);
+    nw.security.psk_len = wifi_params.xPassword.xWPA.ucLength;
+
+    switch (wifi_params.xSecurity) {
+        case eWiFiSecurityOpen:
+            nw.security.type = WLAN_SECURITY_NONE;
+            break;
+        case eWiFiSecurityWEP:
+            nw.security.type = WLAN_SECURITY_WEP_OPEN;
+            break;
+        case eWiFiSecurityWPA:
+            nw.security.type = WLAN_SECURITY_WPA;
+            break;
+        case eWiFiSecurityWPA2:
+            nw.security.type = WLAN_SECURITY_WPA2;
+            break;
+        default:
+            LogDebug(("unsupported wifi sec type"));
+            goto fail;
+    }
+    nw.type = WLAN_BSS_TYPE_STA;
+    nw.role = WLAN_BSS_ROLE_STA;
+    nw.channel = wifi_params.ucChannel;
+    nw.ip.ipv4.addr_type = ADDR_TYPE_DHCP;
+
+    wlan_remove_network(nw.name);
+    res = wlan_add_network(&nw);
+    if (res != WM_SUCCESS) {
+        LogError(("wlan_add_network failed %d", res));
+        goto fail;
+    }
+
+    LogInfo(("connecting to wlan %s", nw.ssid));
+    res = wlan_connect(nw.name);
+    if (res != WM_SUCCESS) {
+        LogError(("wlan_connect failed %d", res));
+        goto fail;
+    }
     /*
      * Use a private function to reset the memory block instead of memset,
      * so that compiler wont optimize away the function call.
      */
     mem_clear(&wifi_params, sizeof(WIFINetworkParams_t));
     return 0;
+
+fail:
+    network_state = STA_CONNECT_FAILED;
+    return -1;
 }
 
-static int wifi_connect(void) {
-    int ret = -1;
-    if (network_state == NW_DISCONNECTED) {
-        ret = connect_sta();
-        if (ret == 0) {
-            network_state = NW_MODE_STA;
-        }
-    }
-    return ret;
+static void start_ap_connection(void) {
+    BackoffAlgorithm_InitializeParams(
+        &connect_retry_params, WIFI_CONNECTION_BACKOFF_BASE_MS,
+        WIFI_CONNECTION_BACKOFF_BASE_MS * 2, WIFI_CONNECTION_RETRIES);
+    network_state = STA_CONNECTING;
+    // wlan_disconnect will trigger callback with WLAN_REASON_USER_DISCONNECT,
+    // where we will start the connection attempt
+    wlan_disconnect();
 }
 
-static struct wlan_network ap_network;
 static void init_ap_network() {
     wlan_initialize_uap_network(&ap_network);
-    strncpy(ap_network.name, "ap", sizeof(ap_network.name));
-    strncpy(ap_network.ssid, "sesame", sizeof(ap_network.ssid));
+    strcpy(ap_network.name, "ap");
+    strcpy(ap_network.ssid, "sesame");
     FreeRTOS_inet_pton(FREERTOS_AF_INET, "192.168.4.1",
                        &ap_network.ip.ipv4.address);
     FreeRTOS_inet_pton(FREERTOS_AF_INET, "255.255.255.0",
@@ -161,30 +230,81 @@ static void init_ap_network() {
     }
 }
 
+static int wlan_event_callback(enum wlan_event_reason event, void *data) {
+    switch (event) {
+        case WLAN_REASON_INITIALIZED:
+            LogDebug(("wifi initialized"));
+            init_ap_network();
+            start_ap_connection();
+            break;
+        case WLAN_REASON_SUCCESS:
+            LogDebug(("wifi connected"));
+            break;
+        case WLAN_REASON_CONNECT_FAILED:
+            LogDebug(("wifi connect failed (invalid arg)"));
+            connect_attempt_failed();
+            break;
+        case WLAN_REASON_NETWORK_NOT_FOUND:
+            LogDebug(("wifi connect failed (network not found)"));
+            connect_attempt_failed();
+            break;
+        case WLAN_REASON_NETWORK_AUTH_FAILED:
+            LogDebug(("wifi connect failed (auth failed)"));
+            connect_attempt_failed();
+            break;
+        case WLAN_REASON_ADDRESS_FAILED:
+            LogDebug(("wifi disconnected (failed to obtain address)"));
+            connect_attempt_failed();
+            break;
+        case WLAN_REASON_LINK_LOST:
+            LogDebug(("wifi disconnected (link lost)"));
+            break;
+        case WLAN_REASON_USER_DISCONNECT:
+            LogDebug(("wifi disconnected by user request"));
+            if (network_state == STA_CONNECTING) {
+                connect_sta();
+            }
+            break;
+        case WLAN_REASON_UAP_SUCCESS:
+            LogDebug(("wifi AP started"));
+            break;
+        case WLAN_REASON_UAP_STOPPED:
+            LogDebug(("wifi AP stopped"));
+            break;
+        default:
+            LogDebug(("wifi event %d", event));
+    }
+
+    return 0;
+}
+
 void start_ap() {
+    LogInfo(("Starting access point"));
     int res = wlan_start_network("ap");
     if (res != WM_SUCCESS) {
         LogInfo(("failed to start AP: %d", res));
         return;
     }
-    network_state = NW_MODE_AP;
 
     dhcp_task_params_t params = {ap_network.ip.ipv4.address,
                                  ap_network.ip.ipv4.netmask};
     xTaskCreate(dhcpd_task, "dhcpd", 512, &params, tskIDLE_PRIORITY, NULL);
 }
 
-static void try_connect_wifi() {
-    int res = wifi_connect();
-    if (res < 0) {
-        LogInfo(("no wlan connection, starting AP"));
-        start_ap();
-    }
-}
+void network_manager_task(void *params) {
+    nm_task_params_t *nm_params = (nm_task_params_t *)params;
+    nm_queue = nm_params->nm_queue;
+    psm_hnd = nm_params->psm_hnd;
 
-static void run() {
-    if (WIFI_On() != eWiFiSuccess) {
-        LogError(("wifi init failed"));
+    int res = wm_wlan_init();
+    if (res != WM_SUCCESS) {
+        LogError(("wifi init failed %d", res));
+        goto err;
+    }
+
+    res = wlan_start(wlan_event_callback);
+    if (res != WM_SUCCESS) {
+        LogError(("wlan_start failed %d", res));
         goto err;
     }
 
@@ -199,13 +319,9 @@ static void run() {
     //     LogInfo(("%.*s", scan[i].ucSSIDLength, scan[i].ucSSID));
     // }
 
-    init_ap_network();
-    try_connect_wifi();
-
     for (;;) {
-        vTaskDelay(1000);
         nm_msg_t cmd;
-        if (xQueueReceive(nm_queue, &cmd, portMAX_DELAY) == pdPASS) {
+        if (xQueueReceive(nm_queue, &cmd, pdMS_TO_TICKS(200)) == pdPASS) {
             switch (cmd.type) {
                 case NM_CMD_AP_MODE:
                     start_ap();
@@ -213,23 +329,22 @@ static void run() {
 
                 case NM_CMD_WIFI_CONFIG:
                     set_network_config(cmd.msg.wifi_cfg.network_params);
-                    try_connect_wifi();
+                    start_ap_connection();
                     break;
 
                 default:
                     LogError(("unknown nm_cmd_t %d", cmd));
             }
         }
+        if (network_state == STA_CONNECTING &&
+            get_epoch_millis() > next_connect_time) {
+            connect_sta();
+        } else if (network_state == STA_CONNECT_FAILED) {
+            network_state = STA_IDLE;
+            start_ap();
+        }
     }
 
 err:
     vTaskDelete(NULL);
-}
-
-void network_manager_task(void *params) {
-    nm_task_params_t *nm_params = (nm_task_params_t *)params;
-    nm_queue = nm_params->nm_queue;
-    psm_hnd = nm_params->psm_hnd;
-
-    run();
 }

@@ -169,7 +169,6 @@ static BaseType_t xMW300_NetworkInterfaceInitialise(NetworkInterface_t* iface) {
     enum wlan_connection_state state;
     switch (if_index) {
         case BSS_TYPE_STA:
-
             ret = wlan_get_connection_state(&state);
             break;
         case BSS_TYPE_UAP:
