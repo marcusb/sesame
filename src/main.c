@@ -18,8 +18,6 @@
 #include "flash.h"
 #include "iot_crypto.h"
 #include "iot_logging_task.h"
-#include "iot_wifi.h"
-#include "lowlevel_drivers.h"
 #include "mbedtls/entropy.h"
 #include "mdev_gpio.h"
 #include "mdev_pinmux.h"
@@ -214,7 +212,7 @@ int main(void) {
 
     ota_queue = xQueueCreate(5, sizeof(ota_cmd_t));
     configASSERT(ota_queue);
-    xTaskCreate(ota_task, "OTA", 1024, ota_queue, tskIDLE_PRIORITY, NULL);
+    xTaskCreate(ota_task, "OTA", 512, ota_queue, tskIDLE_PRIORITY, NULL);
 
     pic_queue = xQueueCreate(5, sizeof(pic_cmd_t));
     configASSERT(pic_queue);
@@ -294,9 +292,9 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
             // Create the tasks that use the TCP/IP stack if they have not
             // already been created.
             tasks_created = true;
-            xTaskCreate(httpd_task, "HTTPd", 1024, ctrl_queue, tskIDLE_PRIORITY,
+            xTaskCreate(httpd_task, "HTTPd", 512, ctrl_queue, tskIDLE_PRIORITY,
                         NULL);
-            xTaskCreate(mqtt_task, "MQTT", 1024, ctrl_queue,
+            xTaskCreate(mqtt_task, "MQTT", 512, ctrl_queue,
                         tskIDLE_PRIORITY + 5, NULL);
         }
     }
