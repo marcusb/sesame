@@ -77,6 +77,8 @@ task.h is included from an application file. */
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include <wm_os.h>
+
 /* #define DEBUG_HEAP */
 /* #define HEAP_PUT_RANDOM_DATA */
 

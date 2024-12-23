@@ -319,6 +319,7 @@ void network_manager_task(void *params) {
     //     LogInfo(("%.*s", scan[i].ucSSIDLength, scan[i].ucSSID));
     // }
 
+    int n = 0;
     for (;;) {
         nm_msg_t cmd;
         if (xQueueReceive(nm_queue, &cmd, pdMS_TO_TICKS(200)) == pdPASS) {
@@ -342,6 +343,9 @@ void network_manager_task(void *params) {
         } else if (network_state == STA_CONNECT_FAILED) {
             network_state = STA_IDLE;
             start_ap();
+        }
+        if (n++ % 100 == 0) {
+            os_dump_mem_stats();
         }
     }
 

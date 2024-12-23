@@ -79,12 +79,9 @@ void vAssertCalled( const char * pcFile,
 int board_cpu_freq();
 
 #define configAPPLICATION_ALLOCATED_HEAP 1
+#define FREERTOS_ENABLE_MALLOC_STATS
 
-#if 0
-#define configASSERT( x )    if( ( x ) == 0 )  { taskDISABLE_INTERRUPTS(); for(;;) {;} }
-#else
 #define configASSERT( x )    if( ( x ) == 0 ) vAssertCalled( __FILE__, __LINE__ )
-#endif
 
 /* Enable this if run time statistics are to be enabled. The support
    functions are already added in WMSDK */
