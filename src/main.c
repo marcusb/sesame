@@ -32,6 +32,7 @@
 // Application
 #include "app_logging.h"
 #include "controller.h"
+#include "dhcp.h"
 #include "httpd.h"
 #include "leds.h"
 #include "mqtt.h"
@@ -61,6 +62,7 @@ static const uint8_t dns_server_addr[4] = {0};
 
 static const char HOSTNAME[] = "sesame";
 static NetworkInterface_t sta_iface;
+static NetworkInterface_t uap_iface;
 
 void wm_printf(const char *format, ...) {
     va_list args;
@@ -187,8 +189,11 @@ int main(void) {
 
     /* Create tasks that are not dependent on the Wi-Fi being initialized. */
     struct freertos_sockaddr udp_log_addr = {
-        sizeof(struct freertos_sockaddr), FREERTOS_AF_INET,
-        FreeRTOS_htons(5050), FreeRTOS_inet_addr("172.16.1.10")};
+        sizeof(struct freertos_sockaddr),
+        FREERTOS_AF_INET,
+        FreeRTOS_htons(5050),
+        0,
+        {.ulIP_IPv4 = FreeRTOS_inet_addr("172.16.1.10")}};
     xLoggingTaskInitialize(512, tskIDLE_PRIORITY,
                            mainLOGGING_MESSAGE_QUEUE_LENGTH, &udp_log_addr);
 
@@ -198,7 +203,6 @@ int main(void) {
                           gateway_addr, dns_server_addr, mac_addr);
     sta_endpoint.bits.bWantDHCP = pdTRUE;
 
-    static NetworkInterface_t uap_iface;
     static NetworkEndPoint_t uap_endpoint;
     pxMW300_FillInterfaceDescriptor(BSS_TYPE_UAP, &uap_iface);
     FreeRTOS_FillEndPoint(&uap_iface, &uap_endpoint, default_ip_addr, netmask,
@@ -227,11 +231,10 @@ int main(void) {
     nm_task_params_t nm_task_params = {nm_queue, psm_hnd};
     xTaskCreate(network_manager_task, "NetMgr", 512, &nm_task_params,
                 tskIDLE_PRIORITY, NULL);
-    LogInfo(("%p %p", nm_queue, psm_hnd));
 
     ctrl_msg_t ctrl_msg;
     for (;;) {
-        if (xQueueReceive(ctrl_queue, &ctrl_msg, portMAX_DELAY) == pdPASS) {
+        if (xQueueReceive(ctrl_queue, &ctrl_msg, 1000) == pdPASS) {
             switch (ctrl_msg.type) {
                 case CTRL_MSG_OTA_UPGRADE: {
                     ota_cmd_t cmd = OTA_CMD_UPGRADE;
@@ -280,22 +283,54 @@ int main(void) {
     return 0;
 }
 
+static void print_ip_config(NetworkEndPoint_t *endpoint) {
+    if (endpoint != NULL) {
+        char ip_addr_s[16];
+        char netmask_s[16];
+        char gateway_s[16];
+        char dns_server_s[16];
+        FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulIPAddress, ip_addr_s,
+                            sizeof(ip_addr_s));
+        FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulNetMask, netmask_s,
+                            sizeof(netmask_s));
+        FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulGatewayAddress,
+                            gateway_s, sizeof(gateway_s));
+        FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulDNSServerAddresses[0],
+                            dns_server_s, sizeof(dns_server_s));
+        LogInfo(("%s: IPv4 %s/%s, gw %s, dns %s",
+                 endpoint->pxNetworkInterface->pcName, ip_addr_s, netmask_s,
+                 gateway_s, dns_server_s));
+    }
+}
+
 void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                                           NetworkEndPoint_t *endpoint) {
     static bool tasks_created = false;
+    static bool sta_iface_up = true;
+    static bool uap_iface_up = true;
 
     if (event == eNetworkUp) {
+        LogInfo(("%s: interface up", endpoint->pxNetworkInterface->pcName));
         print_ip_config(endpoint);
 
-        notify_dhcp_configured();
-        if (!tasks_created && endpoint->pxNetworkInterface == &sta_iface) {
-            // Create the tasks that use the TCP/IP stack if they have not
-            // already been created.
-            tasks_created = true;
-            xTaskCreate(httpd_task, "HTTPd", 512, ctrl_queue, tskIDLE_PRIORITY,
-                        NULL);
-            xTaskCreate(mqtt_task, "MQTT", 512, ctrl_queue,
-                        tskIDLE_PRIORITY + 5, NULL);
+        if (endpoint->pxNetworkInterface == &sta_iface) {
+            sta_iface_up = true;
+            notify_dhcp_configured();
+            if (!tasks_created) {
+                // Create the tasks that use the TCP/IP stack if they have
+                // not already been created.
+                tasks_created = true;
+                xTaskCreate(httpd_task, "HTTPd", 512, ctrl_queue,
+                            tskIDLE_PRIORITY, NULL);
+                xTaskCreate(mqtt_task, "MQTT", 512, ctrl_queue,
+                            tskIDLE_PRIORITY, NULL);
+            }
+        } else if (endpoint->pxNetworkInterface == &uap_iface) {
+            uap_iface_up = true;
+            static dhcp_task_params_t dhcp_params;
+            dhcp_params.endpoint = endpoint;
+            xTaskCreate(dhcpd_task, "DHCPd", 512, &dhcp_params,
+                        tskIDLE_PRIORITY, NULL);
         }
     }
 }

@@ -159,21 +159,26 @@ uint8_t *long2quad(unsigned long value) {
     return quads;
 }
 
-int get_option(int option, uint32_t *options, int optionSize,
-               int *optionLength) {
-    for (int i = 0; i < optionSize && (options[i] != dhcpEndOption);
-         i += 2 + options[i + 1]) {
-        if (options[i] == option) {
+uint8_t *get_option(int option, dhcp_msg_t *msg, int msg_size,
+                    int *optionLength) {
+    for (uint8_t *p = msg->opt;
+         p < (uint8_t *)msg + msg_size && *p != dhcpEndOption; p++) {
+        uint8_t opt = *p++;
+        if (opt == option) {
             if (optionLength) {
-                *optionLength = (int)options[i + 1];
+                *optionLength = *p;
             }
-            return i + 2;
+            return p + 1;
+        } else if (opt == dhcpPadOption) {
+            continue;
+        } else {
+            p += *p;
         }
     }
     if (optionLength) {
         *optionLength = 0;
     }
-    return 0;
+    return NULL;
 }
 
 void set_lease(int i, uint32_t crc, long expires, int status,
@@ -225,11 +230,81 @@ int populate_packet(uint8_t *packet, int currLoc, uint8_t marker, uint8_t *what,
     return dataSize + 2;
 }
 
-int process_dhcp_msg(dhcp_msg_t *packet, int32_t packetSize, uint32_t serverIP,
-                     uint32_t netmask) {
-    if (packet->op != DHCP_BOOTREQUEST) {
-        return 0;
+// Send a DHCP reply packet. Because the client does not yet have an
+// IP address, it does not respond to ARP, so we cannot use the  regular UDP
+// sendto function, and have to send a raw IP frame instead.
+void send_dhcp_reply(NetworkEndPoint_t *endpoint, dhcp_msg_t *msg,
+                     int32_t msg_size) {
+    NetworkBufferDescriptor_t *buf =
+        pxGetNetworkBufferWithDescriptor(sizeof(UDPPacket_t) + msg_size, 0);
+    if (buf == NULL) {
+        return;
     }
+    buf->xIPAddress.ulIP_IPv4 = *(uint32_t *)msg->yiaddr;
+    buf->pxEndPoint = endpoint;
+    buf->pxInterface = endpoint->pxNetworkInterface;
+    buf->xDataLength = sizeof(UDPPacket_t) + msg_size;
+
+    // clang-format off
+    static const uint8_t common_frame_header[] = {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* Ethernet source MAC address. */
+        0x08, 0x00,                         /* Ethernet frame type. */
+        ipIPV4_VERSION_HEADER_LENGTH_MIN,   /* ucVersionHeaderLength. */
+        0x00,                               /* ucDifferentiatedServicesCode. */
+        0x00, 0x00,                         /* usLength. */
+        0x00, 0x00,                         /* usIdentification. */
+        0x00, 0x00,                         /* usFragmentOffset. */
+        ipconfigUDP_TIME_TO_LIVE,           /* ucTimeToLive */
+        ipPROTOCOL_UDP,                     /* ucProtocol. */
+        0x00, 0x00,                         /* usHeaderChecksum. */
+        0x00, 0x00, 0x00, 0x00              /* Source IP address. */
+    };
+    // clang-format on
+
+    // copy the constant part of the UDP header to the buffer, starting at the
+    // source MAC address (after the destination MAC address)
+    memcpy(buf->pucEthernetBuffer + sizeof(MACAddress_t), common_frame_header,
+           sizeof(common_frame_header));
+
+    UDPPacket_t *udp_packet = ((UDPPacket_t *)buf->pucEthernetBuffer);
+    UDPHeader_t *udp_header = &(udp_packet->xUDPHeader);
+    udp_header->usDestinationPort = FreeRTOS_htons(DHCP_CLIENT_PORT);
+    udp_header->usSourcePort = FreeRTOS_htons(DHCP_SERVER_PORT);
+    udp_header->usLength = FreeRTOS_htons(msg_size + sizeof(UDPHeader_t));
+    udp_header->usChecksum = 0;
+    memcpy(buf->pucEthernetBuffer + sizeof(UDPPacket_t), msg, msg_size);
+
+    IPHeader_t *ip_header = &udp_packet->xIPHeader;
+    ip_header->usLength =
+        FreeRTOS_htons(msg_size + sizeof(IPHeader_t) + sizeof(UDPHeader_t));
+    ip_header->ulDestinationIPAddress = buf->xIPAddress.ulIP_IPv4;
+    ip_header->ulSourceIPAddress = buf->pxEndPoint->ipv4_settings.ulIPAddress;
+    ip_header->usFragmentOffset = 0;
+    ip_header->usHeaderChecksum = 0U;
+    ip_header->usHeaderChecksum = usGenerateChecksum(
+        0, &ip_header->ucVersionHeaderLength, uxIPHeaderSizePacket(buf));
+    ip_header->usHeaderChecksum = ~FreeRTOS_htons(ip_header->usHeaderChecksum);
+    usGenerateProtocolChecksum((uint8_t *)udp_packet, buf->xDataLength, pdTRUE);
+
+    EthernetHeader_t *eth_header = (EthernetHeader_t *)buf->pucEthernetBuffer;
+    memcpy(eth_header->xSourceAddress.ucBytes,
+           buf->pxEndPoint->xMACAddress.ucBytes, ipMAC_ADDRESS_LENGTH_BYTES);
+    memcpy(eth_header->xDestinationAddress.ucBytes, msg->chaddr,
+           ipMAC_ADDRESS_LENGTH_BYTES);
+
+    debug_hexdump('T', buf->pucEthernetBuffer, buf->xDataLength);
+    IPStackEvent_t ev = {eNetworkTxEvent, buf};
+    if (xSendEventStructToIPTask(&ev, 0) != pdPASS) {
+        LogWarn(("failed to send DHCP reply"));
+    }
+}
+
+void process_dhcp_msg(NetworkEndPoint_t *endpoint, dhcp_msg_t *packet,
+                      int32_t packet_size) {
+    if (packet->op != DHCP_BOOTREQUEST) {
+        return;
+    }
+    debug_hexdump('R', (uint8_t *)packet, packet_size);
 
     int opt_offset = (uint8_t *)packet->opt - (uint8_t *)packet;
 
@@ -237,10 +312,13 @@ int process_dhcp_msg(dhcp_msg_t *packet, int32_t packetSize, uint32_t serverIP,
     packet->secs = 0;
     uint32_t crc = crc32(packet->chaddr, packet->hlen, 0);
 
-    int ofs = get_option(dhcpMessageType, (uint32_t *)packet->opt,
-                         packetSize - opt_offset, NULL);
-    uint8_t msg_type = packet->opt[ofs];
-    debug_hexdump('R', (uint8_t *)packet, packetSize);
+    uint8_t *msg_type_p =
+        get_option(dhcpMessageType, packet, packet_size, NULL);
+    if (msg_type_p == NULL) {
+        LogWarn(("DHCP message type missing"));
+        return;
+    }
+    uint8_t msg_type = *msg_type_p;
 
     int lease = get_lease(crc);
     uint8_t response = DHCP_NAK;
@@ -250,7 +328,7 @@ int process_dhcp_msg(dhcp_msg_t *packet, int32_t packetSize, uint32_t serverIP,
             // use existing lease or get a new one
             lease = get_lease(0);
         }
-        if (lease == -1) {
+        if (lease != -1) {
             response = DHCP_OFFER;
             // offer valid 10 seconds
             set_lease(lease, crc, now + 10000, DHCP_LEASE_OFFER, 0);
@@ -261,21 +339,18 @@ int process_dhcp_msg(dhcp_msg_t *packet, int32_t packetSize, uint32_t serverIP,
 
             // find hostname option in the request and store to provide DNS info
             int hostNameLength;
-            int hostNameOffset =
-                get_option(dhcpHostName, (uint32_t *)packet->opt,
-                           packetSize - opt_offset, &hostNameLength);
+            uint8_t *hostname =
+                get_option(dhcpHostName, packet, packet_size, &hostNameLength);
             unsigned long nameCrc =
-                hostNameOffset
-                    ? crc32(packet->opt + hostNameOffset, hostNameLength, 0)
-                    : 0;
+                hostname ? crc32(hostname, hostNameLength, 0) : 0;
             set_lease(lease, crc, now + DHCP_LEASETIME * 1000, DHCP_LEASE_ACK,
-                      nameCrc);  // DHCP_LEASETIME is in seconds
+                      nameCrc);
         }
     }
 
     if (lease != -1) {
         // Dynamic IP configuration
-        *(uint32_t *)packet->yiaddr = serverIP;
+        *(uint32_t *)packet->yiaddr = endpoint->ipv4_settings.ulIPAddress;
         packet->yiaddr[3] += lease + 1;
     }
 
@@ -285,19 +360,20 @@ int process_dhcp_msg(dhcp_msg_t *packet, int32_t packetSize, uint32_t serverIP,
     packet->opt[currLoc++] = response;
 
     int reqLength;
-    int reqListOffset = get_option(dhcpParamRequest, (uint32_t *)packet->opt,
-                                   packetSize - opt_offset, &reqLength);
+    uint8_t *reqs =
+        get_option(dhcpParamRequest, packet, packet_size, &reqLength);
     uint8_t reqList[12];
     if (reqLength > 12) {
         reqLength = 12;
     }
-    memcpy(reqList, packet->opt + reqListOffset, reqLength);
+    memcpy(reqList, reqs, reqLength);
 
     // iPod with iOS 4 doesn't want to process DHCP OFFER if
     // dhcpServerIdentifier does not follow dhcpMessageType Windows Vista
     // and Ubuntu 11.04 don't seem to care
-    currLoc += populate_packet(packet->opt, currLoc, dhcpServerIdentifier,
-                               (uint8_t *)&serverIP, 4);
+    currLoc +=
+        populate_packet(packet->opt, currLoc, dhcpServerIdentifier,
+                        (uint8_t *)&endpoint->ipv4_settings.ulIPAddress, 4);
 
     // DHCP lease timers:
     // http://www.tcpipguide.com/free/t_DHCPLeaseLifeCycleOverviewAllocationReallocationRe.htm
@@ -314,8 +390,9 @@ int process_dhcp_msg(dhcp_msg_t *packet, int32_t packetSize, uint32_t serverIP,
     for (int i = 0; i < reqLength; i++) {
         switch (reqList[i]) {
             case dhcpSubnetMask:
-                currLoc += populate_packet(packet->opt, currLoc, reqList[i],
-                                           (uint8_t *)&netmask, 4);
+                currLoc += populate_packet(
+                    packet->opt, currLoc, reqList[i],
+                    (uint8_t *)&endpoint->ipv4_settings.ulNetMask, 4);
                 break;
             case dhcpLogServer:
                 currLoc += populate_packet(packet->opt, currLoc, reqList[i],
@@ -325,22 +402,23 @@ int process_dhcp_msg(dhcp_msg_t *packet, int32_t packetSize, uint32_t serverIP,
     }
     packet->opt[currLoc++] = dhcpEndOption;
 
-    return opt_offset + currLoc;
+    send_dhcp_reply(endpoint, packet, opt_offset + currLoc);
 }
 
-void dhcpd_task(void *params) {
-    // make a deep copy
-    dhcp_task_params_t p;
-    memcpy(&p, params, sizeof(dhcp_task_params_t));
+void dhcpd_task(void *const params) {
+    dhcp_task_params_t *const task_params = (dhcp_task_params_t *)params;
+    NetworkEndPoint_t *endpoint = task_params->endpoint;
 
-    Socket_t socket = FreeRTOS_socket(
-        FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM, FREERTOS_IPPROTO_UDP);
+    Socket_t socket = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM,
+                                      FREERTOS_IPPROTO_UDP);
     if (socket == FREERTOS_INVALID_SOCKET) {
         LogError(("failed to open socket"));
         goto err;
     }
     const TickType_t recv_tmout = portMAX_DELAY;
     FreeRTOS_setsockopt(socket, 0, FREERTOS_SO_RCVTIMEO, &recv_tmout, 0);
+    const TickType_t send_tmout = 0;
+    FreeRTOS_setsockopt(socket, 0, FREERTOS_SO_SNDTIMEO, &send_tmout, 0);
 
     struct freertos_sockaddr bind_addr;
     memset(&bind_addr, 0, sizeof(bind_addr));
@@ -353,6 +431,14 @@ void dhcpd_task(void *params) {
     }
     LogInfo(("DHCP server running"));
 
+    // Socket_t reply_sock = FreeRTOS_socket(FREERTOS_AF_INET,
+    // FREERTOS_SOCK_DGRAM,
+    //                                       FREERTOS_IPPROTO_UDP);
+    // if (socket == FREERTOS_INVALID_SOCKET) {
+    //     LogError(("failed to open socket"));
+    //     goto err;
+    // }
+
     for (;;) {
         struct freertos_sockaddr client;
         uint32_t client_len = sizeof(client);
@@ -360,8 +446,7 @@ void dhcpd_task(void *params) {
                                             &client, &client_len);
 
         if (n_bytes >= 0) {
-            LogInfo(("got %d bytes", n_bytes));
-            process_dhcp_msg((dhcp_msg_t *)buf, n_bytes, p.ip_addr, p.netmask);
+            process_dhcp_msg(endpoint, (dhcp_msg_t *)buf, n_bytes);
         } else {
             // FreeRTOS_strerror_r(n_bytes, (char *)buf, sizeof(buf));
             // LogWarn(("socket read failed: %s", buf));

@@ -5,7 +5,7 @@
 
 #define MAX_SSID_LEN 32
 
-void network_manager_task(void* params);
+void network_manager_task(void *params);
 
 typedef struct {
     void *nm_queue;
@@ -24,6 +24,3 @@ typedef struct {
         wifi_cfg_msg_t wifi_cfg;
     } msg;
 } nm_msg_t;
-
-struct xNetworkEndPoint;
-void print_ip_config(struct xNetworkEndPoint* endpoint);

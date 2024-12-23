@@ -2,9 +2,10 @@
 
 #include <stdint.h>
 
-void dhcpd_task(void *params);
+void dhcpd_task(void *const params);
+
+typedef struct xNetworkEndPoint NetworkEndPoint_t;
 
 typedef struct {
-    uint32_t ip_addr;
-    uint32_t netmask;
+    NetworkEndPoint_t *endpoint;
 } dhcp_task_params_t;

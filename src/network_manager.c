@@ -12,12 +12,12 @@
 // wmsdk
 #include "psm-v2.h"
 #include "wlan.h"
+#include "wm_os.h"
 #include "wm_wlan.h"
 
 // Application
 #include "app_logging.h"
 #include "backoff_algorithm.h"
-#include "dhcp.h"
 #include "network.h"
 #include "rtc_support.h"
 
@@ -39,28 +39,6 @@ static const char psm_key_wlan_passwd[] = "wlan.passwd";
 static BackoffAlgorithmContext_t connect_retry_params;
 static struct wlan_network ap_network;
 static long next_connect_time;
-
-void print_ip_config(NetworkEndPoint_t *endpoint) {
-    if (endpoint != NULL) {
-        uint32_t ip_addr;
-        uint32_t netmask;
-        uint32_t gateway;
-        uint32_t dns_server;
-        FreeRTOS_GetEndPointConfiguration(&ip_addr, &netmask, &gateway,
-                                          &dns_server, endpoint);
-
-        char ip_addr_s[16];
-        char netmask_s[16];
-        char gateway_s[16];
-        char dns_server_s[16];
-        FreeRTOS_inet_ntop4(&ip_addr, ip_addr_s, sizeof(ip_addr_s));
-        FreeRTOS_inet_ntop4(&netmask, netmask_s, sizeof(netmask_s));
-        FreeRTOS_inet_ntop4(&gateway, gateway_s, sizeof(gateway_s));
-        FreeRTOS_inet_ntop4(&dns_server, dns_server_s, sizeof(dns_server_s));
-        LogInfo(("IPv4 %s/%s, gw %s, dns %s", ip_addr_s, netmask_s, gateway_s,
-                 dns_server_s));
-    }
-}
 
 /**
  * @brief Function to set a memory block to zero.
@@ -285,10 +263,6 @@ void start_ap() {
         LogInfo(("failed to start AP: %d", res));
         return;
     }
-
-    dhcp_task_params_t params = {ap_network.ip.ipv4.address,
-                                 ap_network.ip.ipv4.netmask};
-    xTaskCreate(dhcpd_task, "dhcpd", 512, &params, tskIDLE_PRIORITY, NULL);
 }
 
 void network_manager_task(void *params) {
