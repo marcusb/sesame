@@ -146,11 +146,8 @@ void process_cfg(const http_request_t* req) {
     memcpy(msg.msg.wifi_cfg.network_params.xPassword.xWPA.cPassphrase, value,
            len);
     msg.msg.wifi_cfg.network_params.xPassword.xWPA.ucLength = len;
-    LogDebug(("cfg %s %d %s %d", msg.msg.wifi_cfg.network_params.ucSSID,
-              msg.msg.wifi_cfg.network_params.ucSSIDLength,
-              msg.msg.wifi_cfg.network_params.xPassword.xWPA.cPassphrase,
-              msg.msg.wifi_cfg.network_params.xPassword.xWPA.ucLength));
     xQueueSendToBack(ctrl_queue, &msg, 100);
+
     send_status(req, REPLY_OK);
     return;
 
@@ -266,8 +263,6 @@ static void request_task(void* params) {
             }
         }
         mark = rd_pos;
-        LogDebug(("state=%d, rd_idx=%d, wr_idx=%d, body_start=%d", req.state,
-                  rd_pos - buf, wr_pos - buf, req.body_start - buf));
         if (res > 0) {
             switch (req.state) {
                 case HTTP_INIT:

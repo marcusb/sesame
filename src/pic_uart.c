@@ -89,8 +89,8 @@ void handle_msg(const dcm_msg_t *msg) {
 
         case DCM_MSG_SENSOR_VERSION: {
             const dcm_sensor_version_msg_t *p = &msg->payload.sensor_version;
-            LogInfo(("DCM sensor fw version %d.%d.%d%c", p->major, p->minor,
-                     p->patch, p->suffix));
+            // LogDebug(("DCM sensor fw version %d.%d.%d%c", p->major, p->minor,
+            //           p->patch, p->suffix));
             break;
         }
 
@@ -139,7 +139,7 @@ static void read_uart() {
             p += bytes_read;
             more -= bytes_read;
             if (more <= 0) {
-                debug_hexdump('R', buf, n);
+                // debug_hexdump('R', buf, n);
                 uint8_t chksum = calc_chk_sum(buf, n - 1);
                 if (chksum != buf[n - 1]) {
                     LogWarn(("chksum mismatch (got 0x%02x, expected 0x%02x)",
@@ -190,7 +190,7 @@ static int init_uart(void) {
 }
 
 static void uart_write(const uint8_t *buf, int n) {
-    debug_hexdump('T', buf, n);
+    // debug_hexdump('T', buf, n);
     while (n > 0) {
         int n_written = uart_drv_write(uart_dev, buf, n);
         n -= n_written;
