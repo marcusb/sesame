@@ -4,7 +4,7 @@
 
 #include "app_logging.h"
 
-static char * print_ascii(char *p, const uint8_t *data, const uint8_t *end) {
+static char *print_ascii(char *p, const uint8_t *data, const uint8_t *end) {
     for (int i = 0; data < end; i++, data++) {
         if (i == 8) {
             *p++ = ' ';
@@ -25,7 +25,8 @@ void debug_hexdump(char dir, const uint8_t *data, unsigned len) {
     p += sprintf(p, "%c: %02x ", dir, data[0]);
     int i;
     for (i = 1; i < len; i++) {
-        if ((i & 0x0f) == 0) {
+        p += sprintf(p, "%02x ", data[i]);
+        if ((i & 0x0f) == 0x0f) {
             *p++ = ' ';
             p = print_ascii(p, line, data + i);
             *p = '\0';
@@ -34,13 +35,14 @@ void debug_hexdump(char dir, const uint8_t *data, unsigned len) {
             p += sprintf(p, "   ");
             line = data + i;
         }
-        p += sprintf(p, "%02x ", data[i]);
     }
-    int blanks = 16 - (i & 0x0f);
-    for (int j = 0; j < 3 * blanks + 1; j++) {
-        *p++ = ' ';
+    int rem = i & 0x0f;
+    if (rem > 0) {
+        for (int j = 0; j < 3 * (16 - rem) + 1; j++) {
+            *p++ = ' ';
+        }
+        p = print_ascii(p, line, data + i);
+        *p = '\0';
+        LogDebug((s));
     }
-    p = print_ascii(p, line, data + i);
-    *p = '\0';
-    LogDebug((s));
 }
