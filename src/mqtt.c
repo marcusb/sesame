@@ -429,21 +429,17 @@ static void subscribe_cb(MQTTAgentCommandContext_t* ctx,
         }
     }
 
-    if (ctx->notify_task != NULL) {
-        xTaskNotify(ctx->notify_task, (uint32_t)(return_info->returnCode),
-                    eSetValueWithOverwrite);
-    }
+    xTaskNotify(ctx->notify_task, (uint32_t)(return_info->returnCode),
+                eSetValueWithOverwrite);
 }
 
-static void subscribe(MQTTQoS_t qos, char* topic_filter) {
+static bool subscribe(MQTTQoS_t qos, char* topic_filter) {
     static uint32_t next_msg_id = 0;
     uint32_t msg_id;
 
     xTaskNotifyStateClear(NULL);
     taskENTER_CRITICAL();
-    {
-        msg_id = ++next_msg_id;
-    }
+    { msg_id = ++next_msg_id; }
     taskEXIT_CRITICAL();
 
     /* Complete the subscribe information.  The topic string must persist for
@@ -455,7 +451,8 @@ static void subscribe(MQTTQoS_t qos, char* topic_filter) {
     /* Complete an application defined context associated with this subscribe
      * message. This gets updated in the callback function so the variable must
      * persist until the callback executes. */
-    MQTTAgentCommandContext_t ctx = {0, 0, msg_id, &args};
+    MQTTAgentCommandContext_t ctx = {0, xTaskGetCurrentTaskHandle(), msg_id,
+                                     &args};
     MQTTAgentCommandInfo_t params = {subscribe_cb, (void*)&ctx,
                                      MAX_COMMAND_SEND_BLOCK_TIME_MS};
 
@@ -472,6 +469,26 @@ static void subscribe(MQTTQoS_t qos, char* topic_filter) {
     do {
         res = MQTTAgent_Subscribe(&mqtt_agent_context, &args, &params);
     } while (res != MQTTSuccess);
+
+    /* Wait for acks to the subscribe message - this is optional but done here
+     * so the code below can check the notification sent by the callback
+     * matches the ulNextSubscribeMessageID value set in the context above. */
+    BaseType_t acked =
+        xTaskNotifyWait(0, 0, NULL, pdMS_TO_TICKS(NOTIFICATION_WAIT_MS));
+
+    /* Check both ways the status was passed back just for demonstration
+     * purposes. */
+    if ((acked != pdTRUE) || (ctx.status != MQTTSuccess)) {
+        LogInfo(
+            ("Error or timed out waiting for ack to subscribe message topic "
+             "%s: %d %d",
+             topic_filter, acked, ctx.status));
+    } else {
+        LogInfo(("Received subscribe ack for topic %s containing ID %d",
+                 topic_filter, (int)ctx.notify_val));
+    }
+
+    return acked;
 }
 
 /**
@@ -705,15 +722,24 @@ static void cmd_complete_cb(MQTTAgentCommandContext_t* ctx,
 }
 
 void publish(const char* topic, const char* payload) {
-    MQTTAgentCommandContext_t command_context = {
-        0,
-    };
+    MQTTAgentCommandContext_t command_context;
+    memset(&command_context, 0, sizeof(command_context));
+    command_context.notify_task = xTaskGetCurrentTaskHandle();
+    command_context.notify_val = 1;
+
     MQTTAgentCommandInfo_t command_params = {cmd_complete_cb, &command_context,
                                              500};
     MQTTPublishInfo_t publish_info = {
         MQTTQoS0, false, false, topic, strlen(topic), payload, strlen(payload)};
 
     MQTTAgent_Publish(&mqtt_agent_context, &publish_info, &command_params);
+
+    uint32_t notify_val = 0;
+    xTaskNotifyWait(0, 0, &notify_val, pdMS_TO_TICKS(10000));
+    if (notify_val != 1) {
+        LogInfo(
+            ("MQTT message failed to send, status %d", command_context.status));
+    }
 }
 
 void mqtt_subscribe_task(void* params) {
