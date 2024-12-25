@@ -181,9 +181,31 @@ static void platform_init(void) {
     pm_mcu_cli_init();
 }
 
-/**
- * @brief Application runtime entry point.
- */
+static void create_tasks() {
+    ctrl_queue = xQueueCreate(8, sizeof(ctrl_msg_t));
+    configASSERT(ctrl_queue);
+
+    ota_queue = xQueueCreate(5, sizeof(ota_cmd_t));
+    configASSERT(ota_queue);
+    xTaskCreate(ota_task, "OTA", 512, ota_queue, tskIDLE_PRIORITY, NULL);
+
+    pic_queue = xQueueCreate(5, sizeof(pic_cmd_t));
+    configASSERT(pic_queue);
+    pic_uart_task_params_t pic_task_params = {ctrl_queue, pic_queue};
+    xTaskCreate(pic_uart_task, "PIC Comm", 512, &pic_task_params,
+                tskIDLE_PRIORITY + 3, NULL);
+
+    xTaskCreate(led_task, "LED Ctrl", 512, NULL, tskIDLE_PRIORITY, NULL);
+
+    nm_queue = xQueueCreate(5, sizeof(nm_msg_t));
+    configASSERT(nm_queue);
+    nm_task_params_t nm_task_params = {nm_queue, psm_hnd};
+    xTaskCreate(network_manager_task, "NetMgr", 512, &nm_task_params,
+                tskIDLE_PRIORITY, NULL);
+
+    xTaskCreate(httpd_task, "HTTPd", 512, ctrl_queue, tskIDLE_PRIORITY, NULL);
+}
+
 int main(void) {
     platform_init();
 
@@ -211,27 +233,7 @@ int main(void) {
     int res = FreeRTOS_IPInit_Multi();
     configASSERT(res);
 
-    ctrl_queue = xQueueCreate(8, sizeof(ctrl_msg_t));
-    configASSERT(ctrl_queue);
-
-    ota_queue = xQueueCreate(5, sizeof(ota_cmd_t));
-    configASSERT(ota_queue);
-    xTaskCreate(ota_task, "OTA", 512, ota_queue, tskIDLE_PRIORITY, NULL);
-
-    pic_queue = xQueueCreate(5, sizeof(pic_cmd_t));
-    configASSERT(pic_queue);
-    pic_uart_task_params_t pic_task_params = {ctrl_queue, pic_queue};
-    xTaskCreate(pic_uart_task, "PIC Comm", 512, &pic_task_params,
-                tskIDLE_PRIORITY + 3, NULL);
-
-    xTaskCreate(led_task, "LED Ctrl", 512, NULL, tskIDLE_PRIORITY, NULL);
-
-    nm_queue = xQueueCreate(5, sizeof(nm_msg_t));
-    configASSERT(nm_queue);
-    nm_task_params_t nm_task_params = {nm_queue, psm_hnd};
-    xTaskCreate(network_manager_task, "NetMgr", 512, &nm_task_params,
-                tskIDLE_PRIORITY, NULL);
-
+    create_tasks();
     ctrl_msg_t ctrl_msg;
     for (;;) {
         if (xQueueReceive(ctrl_queue, &ctrl_msg, 1000) == pdPASS) {
@@ -317,8 +319,6 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                 // Create the tasks that use the TCP/IP stack if they have
                 // not already been created.
                 tasks_created = true;
-                xTaskCreate(httpd_task, "HTTPd", 512, ctrl_queue,
-                            tskIDLE_PRIORITY, NULL);
                 xTaskCreate(mqtt_task, "MQTT", 512, ctrl_queue,
                             tskIDLE_PRIORITY, NULL);
             }
