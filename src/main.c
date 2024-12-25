@@ -306,15 +306,12 @@ static void print_ip_config(NetworkEndPoint_t *endpoint) {
 void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                                           NetworkEndPoint_t *endpoint) {
     static bool tasks_created = false;
-    static bool sta_iface_up = true;
-    static bool uap_iface_up = true;
 
     if (event == eNetworkUp) {
         LogInfo(("%s: interface up", endpoint->pxNetworkInterface->pcName));
         print_ip_config(endpoint);
 
         if (endpoint->pxNetworkInterface == &sta_iface) {
-            sta_iface_up = true;
             notify_dhcp_configured();
             if (!tasks_created) {
                 // Create the tasks that use the TCP/IP stack if they have
@@ -326,7 +323,6 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                             tskIDLE_PRIORITY, NULL);
             }
         } else if (endpoint->pxNetworkInterface == &uap_iface) {
-            uap_iface_up = true;
             static dhcp_task_params_t dhcp_params;
             dhcp_params.endpoint = endpoint;
             xTaskCreate(dhcpd_task, "DHCPd", 512, &dhcp_params,
