@@ -22,7 +22,7 @@
 #include "rtc_support.h"
 
 #define WIFI_CONNECTION_BACKOFF_BASE_MS (1000)
-#define WIFI_CONNECTION_RETRIES (4)
+#define WIFI_CONNECTION_RETRIES (2)
 
 typedef enum {
     STA_IDLE,
