@@ -52,11 +52,12 @@
 
 #define MQTT_BROKER_ENDPOINT "172.16.1.25"
 #define MQTT_BROKER_PORT 1883
-#define CLIENT_IDENTIFIER "sesame"
+#define CLIENT_IDENTIFIER "sesame2"
 #define CLIENT_USERNAME "sesame"
 #define CLIENT_PASSWORD "***REMOVED***"
 
 static QueueHandle_t ctrl_queue;
+static QueueHandle_t pub_queue;
 
 static char state_topic[64];
 static char lwt_topic[64];
@@ -439,7 +440,9 @@ static bool subscribe(MQTTQoS_t qos, char* topic_filter) {
 
     xTaskNotifyStateClear(NULL);
     taskENTER_CRITICAL();
-    { msg_id = ++next_msg_id; }
+    {
+        msg_id = ++next_msg_id;
+    }
     taskEXIT_CRITICAL();
 
     /* Complete the subscribe information.  The topic string must persist for
@@ -742,33 +745,7 @@ void publish(const char* topic, const char* payload) {
     }
 }
 
-void mqtt_subscribe_task(void* params) {
-    publish(lwt_topic, LWT_ONLINE);
-
-    static char cmd_topic[64];
-    snprintf(cmd_topic, sizeof(cmd_topic), "%s/cmd", CLIENT_IDENTIFIER);
-    subscribe(MQTTQoS0, cmd_topic);
-    vTaskDelete(NULL);
-}
-
-void mqtt_task(void* params) {
-    ctrl_queue = (QueueHandle_t)params;
-
-    elapsed = prvGetTimeMs();
-    snprintf(state_topic, sizeof(state_topic), "%s/state", CLIENT_IDENTIFIER);
-    snprintf(lwt_topic, sizeof(state_topic), "%s/availability",
-             CLIENT_IDENTIFIER);
-
-    connect_broker();
-    xTaskCreate(mqtt_subscribe_task, "MQTT-Sub", 512, NULL,
-                tskIDLE_PRIORITY + 1, NULL);
-
-    run_agent(NULL);
-
-    configASSERT(false);  // not reached
-}
-
-void publish_state(const door_state_msg_t* msg) {
+void do_publish_state(const door_state_msg_t* msg) {
     static char payload[128];
 
     char* state;
@@ -801,4 +778,54 @@ void publish_state(const door_state_msg_t* msg) {
              "{\"contact\":\"%s\",\"dir\":\"%s\",\"pos\":%d}", state, dir,
              msg->pos);
     publish(state_topic, payload);
+}
+
+static void mqtt_subscribe_task(void* params) {
+    publish(lwt_topic, LWT_ONLINE);
+
+    static char cmd_topic[64];
+    snprintf(cmd_topic, sizeof(cmd_topic), "%s/cmd", CLIENT_IDENTIFIER);
+    subscribe(MQTTQoS0, cmd_topic);
+    vTaskDelete(NULL);
+}
+
+// This task is used to publish messages. It blocks while waiting for ACKs,
+// which seems hard to avoid with the coreMQTT-Agent, so we use a separate
+// task to avoid blocking the caller.
+static void mqtt_publish_task(void* params) {
+    for (;;) {
+        door_state_msg_t cmd;
+        if (xQueueReceive(pub_queue, &cmd, portMAX_DELAY) == pdPASS) {
+            do_publish_state(&cmd);
+        }
+    }
+}
+
+void mqtt_task(void* params) {
+    ctrl_queue = (QueueHandle_t)params;
+
+    elapsed = prvGetTimeMs();
+    snprintf(state_topic, sizeof(state_topic), "%s/state", CLIENT_IDENTIFIER);
+    snprintf(lwt_topic, sizeof(state_topic), "%s/availability",
+             CLIENT_IDENTIFIER);
+
+    connect_broker();
+    xTaskCreate(mqtt_subscribe_task, "MQTT-Sub", 512, NULL, tskIDLE_PRIORITY,
+                NULL);
+
+    pub_queue = xQueueCreate(4, sizeof(door_state_msg_t));
+    xTaskCreate(mqtt_publish_task, "MQTT-Pub", 512, NULL, tskIDLE_PRIORITY,
+                NULL);
+
+    run_agent(NULL);
+
+    configASSERT(false);  // not reached
+}
+
+void publish_state(const door_state_msg_t* msg) {
+    if (pub_queue != NULL) {
+        xQueueSendToBack(pub_queue, msg, 0);
+    } else {
+        LogDebug(("MQTT not started, dropping state update"));
+    }
 }
