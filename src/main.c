@@ -60,7 +60,6 @@ static const uint8_t netmask[4] = {255, 255, 255, 0};
 static const uint8_t gateway_addr[4] = {0};
 static const uint8_t dns_server_addr[4] = {0};
 
-static const char HOSTNAME[] = "sesame";
 static NetworkInterface_t sta_iface;
 static NetworkInterface_t uap_iface;
 
@@ -362,8 +361,6 @@ void vAssertCalled(const char *pcFile, uint32_t ulLine) {
     }
     taskENABLE_INTERRUPTS();
 }
-
-const char *pcApplicationHostnameHook() { return HOSTNAME; }
 
 /**
  * @brief Warn user if pvPortMalloc fails.

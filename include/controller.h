@@ -31,6 +31,7 @@ typedef struct {
 
 typedef struct {
     WIFINetworkParams_t network_params;
+    char hostname[32];
 } wifi_cfg_msg_t;
 
 typedef struct {

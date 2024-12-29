@@ -36,9 +36,13 @@ static QueueHandle_t nm_queue;
 static psm_hnd_t psm_hnd;
 static const char psm_key_ssid[] = "wlan.ssid";
 static const char psm_key_wlan_passwd[] = "wlan.passwd";
+static const char psm_key_hostname[] = "wlan.hostname";
 static BackoffAlgorithmContext_t connect_retry_params;
 static struct wlan_network ap_network;
 static long next_connect_time;
+static char hostname[32] = "sesame";
+
+const char *pcApplicationHostnameHook() { return hostname; }
 
 /**
  * @brief Function to set a memory block to zero.
@@ -75,22 +79,41 @@ static int get_network_config(WIFINetworkParams_t *params) {
     }
     params->xPassword.xWPA.ucLength = ret;
     params->xSecurity = eWiFiSecurityWPA2;
+
+    ret = psm_get_variable(psm_hnd, psm_key_hostname, hostname,
+                           sizeof(hostname) - 1);
+    if (ret >= 0) {
+        hostname[ret] = '\0';
+    }
     return 0;
 }
 
-static int set_network_config(WIFINetworkParams_t params) {
-    int ret = psm_set_variable(psm_hnd, psm_key_ssid, params.ucSSID,
-                               params.ucSSIDLength);
+static int set_network_config(const wifi_cfg_msg_t *cfg) {
+    int ret =
+        psm_set_variable(psm_hnd, psm_key_ssid, cfg->network_params.ucSSID,
+                         cfg->network_params.ucSSIDLength);
     if (ret < 0) {
         LogError(("psm write ssid failed %d", ret));
         return ret;
     }
-    ret = psm_set_variable(psm_hnd, psm_key_wlan_passwd,
-                           params.xPassword.xWPA.cPassphrase,
-                           params.xPassword.xWPA.ucLength);
-    if (ret < 0) {
-        LogError(("psm write passwd failed %d", ret));
-        return ret;
+
+    if (cfg->network_params.xPassword.xWPA.ucLength > 0) {
+        ret = psm_set_variable(psm_hnd, psm_key_wlan_passwd,
+                               cfg->network_params.xPassword.xWPA.cPassphrase,
+                               cfg->network_params.xPassword.xWPA.ucLength);
+        if (ret < 0) {
+            LogError(("psm write passwd failed %d", ret));
+            return ret;
+        }
+    }
+
+    if (strlen(cfg->hostname) > 0) {
+        ret = psm_set_variable(psm_hnd, psm_key_hostname, cfg->hostname,
+                               strlen(cfg->hostname));
+        if (ret < 0) {
+            LogError(("psm write hostname failed %d", ret));
+            return ret;
+        }
     }
     return 0;
 }
@@ -182,6 +205,12 @@ fail:
     return -1;
 }
 
+static void reconnect_sta() {
+    if (network_state == STA_CONNECTING) {
+        connect_sta();
+    }
+}
+
 static void start_ap_connection(void) {
     BackoffAlgorithm_InitializeParams(
         &connect_retry_params, WIFI_CONNECTION_BACKOFF_BASE_MS,
@@ -189,7 +218,10 @@ static void start_ap_connection(void) {
     network_state = STA_CONNECTING;
     // wlan_disconnect will trigger callback with WLAN_REASON_USER_DISCONNECT,
     // where we will start the connection attempt
-    wlan_disconnect();
+    if (wlan_disconnect() != WM_SUCCESS) {
+        // we were already disconnected
+        reconnect_sta();
+    }
 }
 
 static void init_ap_network() {
@@ -239,9 +271,7 @@ static int wlan_event_callback(enum wlan_event_reason event, void *data) {
             break;
         case WLAN_REASON_USER_DISCONNECT:
             LogDebug(("wifi disconnected by user request"));
-            if (network_state == STA_CONNECTING) {
-                connect_sta();
-            }
+            reconnect_sta();
             break;
         case WLAN_REASON_UAP_SUCCESS:
             LogDebug(("wifi AP started"));
@@ -303,7 +333,7 @@ void network_manager_task(void *params) {
                     break;
 
                 case NM_CMD_WIFI_CONFIG:
-                    set_network_config(cmd.msg.wifi_cfg.network_params);
+                    set_network_config(&cmd.msg.wifi_cfg);
                     start_ap_connection();
                     break;
 
