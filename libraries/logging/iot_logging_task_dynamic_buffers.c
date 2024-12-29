@@ -24,6 +24,7 @@
  */
 
 #include <string.h>
+#include <stdbool.h>
 
 /* FreeRTOS includes. */
 #include "FreeRTOS.h"
@@ -110,6 +111,8 @@ static int snprintf_safe( char * s,
 static void prvLoggingTask( void * pvParameters );
 
 /*-----------------------------------------------------------*/
+
+bool is_sta_network_up();
 
 /*
  * The queue used to pass pointers to log messages from the task that created
@@ -233,7 +236,7 @@ static void prvLoggingTask( void * pvParameters )
             configPRINT_STRING( pcReceivedString );
 
             if (udpLogging) {
-                if (udpSocket == FREERTOS_INVALID_SOCKET && FreeRTOS_IsNetworkUp() != pdFALSE) {
+                if (udpSocket == FREERTOS_INVALID_SOCKET && is_sta_network_up()) {
                     /* Create and bind the socket to which print messages are sent.  The
                      * xTimerPendFunctionCall() function is used even though this is
                      * not an interrupt because this function is called from the IP task

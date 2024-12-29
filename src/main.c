@@ -305,6 +305,10 @@ static void print_ip_config(NetworkEndPoint_t *endpoint) {
     }
 }
 
+bool is_sta_network_up() {
+    return sta_iface.pxEndPoint->bits.bEndPointUp;
+}
+
 void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                                           NetworkEndPoint_t *endpoint) {
     static bool tasks_created = false;
