@@ -88,7 +88,7 @@ void handle_msg(const dcm_msg_t *msg) {
             break;
 
         case DCM_MSG_SENSOR_VERSION: {
-            const dcm_sensor_version_msg_t *p = &msg->payload.sensor_version;
+            // const dcm_sensor_version_msg_t *p = &msg->payload.sensor_version;
             // LogDebug(("DCM sensor fw version %d.%d.%d%c", p->major, p->minor,
             //           p->patch, p->suffix));
             break;
