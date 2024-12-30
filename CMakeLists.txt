@@ -9,6 +9,8 @@ project(
   VERSION 0.1
   LANGUAGES C ASM)
 
+option(USE_BACKTRACE "Include facility for dumping stack traces")
+
 set(mw320_dir "${CMAKE_CURRENT_LIST_DIR}/marvell/WMSDK/mw320")
 set(afr_ports_dir "${CMAKE_CURRENT_LIST_DIR}/marvell/boards/mw300_rd/ports")
 
@@ -28,7 +30,6 @@ add_executable(${exe_target})
 target_sources(${exe_target}
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/fault.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/idle_task.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
@@ -42,6 +43,9 @@ target_sources(${exe_target}
     "${CMAKE_CURRENT_SOURCE_DIR}/src/rtc_support.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/subscription_manager.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
+    #"./libraries/klibc/memcpy.c"
+    #"./libraries/klibc/memmove.c"
+    #"./libraries/klibc/memset.c"
     "${afr_ports_dir}/wifi/iot_wifi.c"
     "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_agent_message.c"
     "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_command_pool.c")
@@ -75,7 +79,6 @@ set(SDK_VERSION ${SDK_VERSION_INTERNAL})
 set(global-cflags-y
     "-mcpu=cortex-m4"
     "-mthumb"
-    "-g"
     "-Os"
     "-fdata-sections"
     "-ffunction-sections"
@@ -91,16 +94,12 @@ set(global-cflags-y
     "-Wno-sign-compare"
     "-Wno-type-limits"
     "-std=c99"
-    "-DSDK_VERSION=${SDK_VERSION}"
-    "-funwind-tables"
-    "-mpoke-function-name"
-    "-fno-omit-frame-pointer")
+    "-DSDK_VERSION=${SDK_VERSION}")
 
 # ARM Cortex M4 flags
 set(tc-lflags-tc-cortex-m4-y
     "-mcpu=cortex-m4"
     "-mthumb"
-    "-g"
     "-Os"
     "-fdata-sections"
     "-ffunction-sections"
@@ -120,6 +119,7 @@ target_compile_options(globals
 # gcc specific extra linker flags
 set(tc-lflags-y
     "-nostartfiles"
+    "-specs=nano.specs"
     "-specs=nosys.specs"
     "-Wl,--wrap,malloc"
     "-Wl,--wrap,free"
@@ -148,15 +148,27 @@ target_link_options(freertos_config
 # Backtrace
 # -------------------------------------------------------------------------------------------------
 
-add_library(backtrace STATIC)
-target_sources(backtrace
-    PRIVATE
-    ./libraries/backtrace/backtrace/backtrace.c)
-target_include_directories(backtrace
-    PUBLIC
-    ./libraries/backtrace/include)
-target_link_libraries(backtrace
-    PRIVATE globals)
+if (USE_BACKTRACE)
+    add_library(backtrace STATIC)
+    target_sources(backtrace
+        PRIVATE
+        ./libraries/backtrace/backtrace/backtrace.c)
+    target_include_directories(backtrace
+        PUBLIC
+        ./libraries/backtrace/include)
+    target_link_libraries(backtrace
+        PRIVATE globals)
+
+    target_sources(${exe_target}
+        PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/fault.c")
+    target_link_libraries(${exe_target} PRIVATE backtrace)
+
+    list(APPEND global-cflags-y
+        "-funwind-tables"
+        "-mpoke-function-name"
+        "-fno-omit-frame-pointer")
+endif()
 
 # -------------------------------------------------------------------------------------------------
 # FreeRTOS portable layers
@@ -361,28 +373,95 @@ target_include_directories(coreJSON
 target_link_libraries(coreJSON
     PRIVATE globals)
 
-afr_glob_src(driver_src RECURSE DIRECTORY "${mw320_dir}/sdk/src")
-list(REMOVE_ITEM driver_src "${mw320_dir}/sdk/src/libc/src/atox.c")
-list(REMOVE_ITEM driver_src "${mw320_dir}/sdk/src/libc/src/strtox.c")
-list(REMOVE_ITEM driver_src "${mw320_dir}/sdk/src/boards/mw300_rd.c")
-list(REMOVE_ITEM driver_src "${mw320_dir}/sdk/src/boards/modules/gti-mw300.c")
-list(REMOVE_ITEM driver_src "${mw320_dir}/sdk/src/platform/net/freertos-plus-tcp/net.c")
-
 add_library(wmsdk STATIC)
 target_sources(wmsdk
     PRIVATE
-    ${driver_src}
     "board/board.c"
-    "${mw320_dir}/sdk/external/FreeRTOS/Source/FreeRTOS-openocd.c")
+    "${mw320_dir}/sdk/external/FreeRTOS/Source/FreeRTOS-openocd.c"
+    "${mw320_dir}/sdk/src/core/cli/cli.c"
+    "${mw320_dir}/sdk/src/core/cli/cli_mem_simple.c"
+    "${mw320_dir}/sdk/src/core/cli/cli_utils.c"
+    "${mw320_dir}/sdk/src/core/mdev/mdev.c"
+    "${mw320_dir}/sdk/src/core/pwrmgr/pwrmgr.c"
+    "${mw320_dir}/sdk/src/core/pwrmgr/pwrmgr_cli.c"
+    "${mw320_dir}/sdk/src/core/util/boot_flags.c"
+    "${mw320_dir}/sdk/src/core/util/crc/crc32.c"
+    "${mw320_dir}/sdk/src/core/util/crc/soft_crc16.c"
+    "${mw320_dir}/sdk/src/core/util/crc/soft_crc32.c"
+    "${mw320_dir}/sdk/src/core/util/critical_error.c"
+    "${mw320_dir}/sdk/src/core/util/dumphex.c"
+    "${mw320_dir}/sdk/src/core/util/flash.c"
+    "${mw320_dir}/sdk/src/core/util/hexbin.c"
+    "${mw320_dir}/sdk/src/core/util/keystore.c"
+    "${mw320_dir}/sdk/src/core/util/panic.c"
+    "${mw320_dir}/sdk/src/core/util/wm_utils.c"
+    "${mw320_dir}/sdk/src/core/util/wm_wlan.c"
+    "${mw320_dir}/sdk/src/core/wmstdio/console.c"
+    "${mw320_dir}/sdk/src/core/wmstdio/wmassert.c"
+    "${mw320_dir}/sdk/src/core/wmstdio/wmstdio.c"
+    "${mw320_dir}/sdk/src/core/wmtime/hwrtc.c"
+    "${mw320_dir}/sdk/src/core/wmtime/swrtc.c"
+    "${mw320_dir}/sdk/src/core/wmtime/wmtime.c"
+    "${mw320_dir}/sdk/src/core/wmtime/wmtime_cli.c"
+    "${mw320_dir}/sdk/src/drivers/common/cyccnt.c"
+    "${mw320_dir}/sdk/src/drivers/common/hardfault/hardfault.c"
+    "${mw320_dir}/sdk/src/drivers/common/mdev_acomp.c"
+    "${mw320_dir}/sdk/src/drivers/common/mdev_aes.c"
+    "${mw320_dir}/sdk/src/drivers/common/mdev_crc.c"
+    "${mw320_dir}/sdk/src/drivers/common/mdev_dac.c"
+    "${mw320_dir}/sdk/src/drivers/common/mdev_gpio.c"
+    "${mw320_dir}/sdk/src/drivers/common/mdev_gpt.c"
+    "${mw320_dir}/sdk/src/drivers/common/mdev_usb_host.c"
+    "${mw320_dir}/sdk/src/drivers/common/mdev_usb_host_port.c"
+    "${mw320_dir}/sdk/src/drivers/common/mdev_wdt.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_acomp.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_adc.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_aes.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_bg.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_clock.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_crc.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_dac.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_dma.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_driver.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_flash.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_flashc.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_gpio.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_gpt.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_i2c.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_mpu.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_pinmux.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_pmu.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_qspi.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_rtc.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_sdio.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_spi_flash.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_ssp.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_uart.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_usb.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_wdt.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/mdev_adc.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/mdev_dma.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/mdev_i2c.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/mdev_iflash.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/mdev_pinmux.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/mdev_pm.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/mdev_rfctrl.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/mdev_rtc.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/mdev_sdio.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/mdev_ssp.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/mdev_startup.c"
+    "${mw320_dir}/sdk/src/drivers/mw300/mdev_uart.c"
+    "${mw320_dir}/sdk/src/middleware/xz/decompress.c"
+    "${mw320_dir}/sdk/src/middleware/xz/xz_crc32.c"
+    "${mw320_dir}/sdk/src/middleware/xz/xz_dec_lzma2.c"
+    "${mw320_dir}/sdk/src/middleware/xz/xz_dec_stream.c"
+    "${mw320_dir}/sdk/src/platform/os/freertos/os.c"
+    "${mw320_dir}/sdk/src/platform/os/freertos/os_cli.c"
+)
 target_compile_options(wmsdk
     PUBLIC
     -include "${mw320_dir}/sdk/src/incl/autoconf.h"
 )
-#target_include_directories(wmsdk
-#    SYSTEM PUBLIC
-#    "${mw320_dir}/sdk/src/incl/libc"
-#    "${mw320_dir}/sdk/src/incl/libc/arm_gcc"
-#)
 target_include_directories(wmsdk
     PUBLIC
     "${mw320_dir}/sdk/src/incl"
@@ -418,7 +497,6 @@ target_link_libraries(${exe_target}
     "${mw320_dir}/bin/libs/libpart.a"
     logging
     backoff_algorithm
-    backtrace
 
     PRIVATE
     -T"${mw320_dir}/build/toolchains/arm_gcc/mw300.ld")
