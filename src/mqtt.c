@@ -56,7 +56,6 @@
 #define CLIENT_USERNAME "sesame"
 #define CLIENT_PASSWORD "***REMOVED***"
 
-static QueueHandle_t ctrl_queue;
 static QueueHandle_t pub_queue;
 
 static char state_topic[64];
@@ -680,9 +679,7 @@ static void connect_broker(void) {
     configASSERT(xMQTTStatus == MQTTSuccess);
 }
 
-static void run_agent(void* pvParameters) {
-    (void)pvParameters;
-
+static void run_agent() {
     MQTTContext_t* pMqttContext = &(mqtt_agent_context.mqttContext);
 
     MQTTStatus_t status;
@@ -802,8 +799,6 @@ static void mqtt_publish_task(void* params) {
 }
 
 void mqtt_task(void* params) {
-    ctrl_queue = (QueueHandle_t)params;
-
     elapsed = prvGetTimeMs();
     snprintf(state_topic, sizeof(state_topic), "%s/state", CLIENT_IDENTIFIER);
     snprintf(lwt_topic, sizeof(state_topic), "%s/availability",
@@ -817,7 +812,7 @@ void mqtt_task(void* params) {
     xTaskCreate(mqtt_publish_task, "MQTT-Pub", 512, NULL, tskIDLE_PRIORITY,
                 NULL);
 
-    run_agent(NULL);
+    run_agent();
 
     configASSERT(false);  // not reached
 }

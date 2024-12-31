@@ -1,4 +1,3 @@
-
 #include "pic_uart.h"
 
 #include <math.h>
@@ -30,7 +29,6 @@ typedef enum { READ_START = 0, READ_LENGTH = 1, READ_BODY = 2 } read_state_t;
 
 static mdev_t *gpio_dev;
 static mdev_t *uart_dev;
-static QueueHandle_t ctrl_queue;
 
 static uint8_t next_token() {
     static int seq = -1;
@@ -244,10 +242,7 @@ static void send_door_status_msg(int16_t last_pos, int16_t up_limit,
 
 void pic_uart_task(void *const params) {
     LogInfo(("PIC comm task running"));
-    pic_uart_task_params_t *const task_params =
-        (pic_uart_task_params_t *)params;
-    QueueHandle_t queue = (QueueHandle_t)task_params->pic_queue;
-    ctrl_queue = (QueueHandle_t)task_params->ctrl_queue;
+    QueueHandle_t queue = (QueueHandle_t)params;
 
     if (init_gpio() != 0 || init_uart() != 0) {
         vTaskDelete(NULL);

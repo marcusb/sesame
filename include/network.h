@@ -7,11 +7,6 @@
 
 void network_manager_task(void *params);
 
-typedef struct {
-    void *nm_queue;
-    psm_hnd_t *psm_hnd;
-} nm_task_params_t;
-
 typedef enum {
     NM_CMD_UNKNOWN = 0,
     NM_CMD_AP_MODE = 1,

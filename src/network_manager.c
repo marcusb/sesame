@@ -31,9 +31,10 @@ typedef enum {
     STA_CONNECT_FAILED
 } connection_state_t;
 
+extern psm_hnd_t psm_hnd;
+
 static connection_state_t network_state = STA_IDLE;
 static QueueHandle_t nm_queue;
-static psm_hnd_t psm_hnd;
 static const char psm_key_ssid[] = "wlan.ssid";
 static const char psm_key_wlan_passwd[] = "wlan.passwd";
 static const char psm_key_hostname[] = "wlan.hostname";
@@ -296,9 +297,7 @@ void start_ap() {
 }
 
 void network_manager_task(void *params) {
-    nm_task_params_t *nm_params = (nm_task_params_t *)params;
-    nm_queue = nm_params->nm_queue;
-    psm_hnd = nm_params->psm_hnd;
+    nm_queue = (QueueHandle_t)params;
 
     int res = wm_wlan_init();
     if (res != WM_SUCCESS) {

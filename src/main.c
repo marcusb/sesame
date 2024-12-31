@@ -47,8 +47,9 @@
 /* Logging Task Defines. */
 #define mainLOGGING_MESSAGE_QUEUE_LENGTH (64)
 
-static psm_hnd_t psm_hnd;
-static QueueHandle_t ctrl_queue;
+// the global controller event queue, all tasks write to it
+QueueHandle_t ctrl_queue;
+psm_hnd_t psm_hnd;
 static QueueHandle_t ota_queue;
 static QueueHandle_t pic_queue;
 static QueueHandle_t nm_queue;
@@ -190,19 +191,17 @@ static void create_tasks() {
 
     pic_queue = xQueueCreate(5, sizeof(pic_cmd_t));
     configASSERT(pic_queue);
-    pic_uart_task_params_t pic_task_params = {ctrl_queue, pic_queue};
-    xTaskCreate(pic_uart_task, "PIC Comm", 512, &pic_task_params,
-                tskIDLE_PRIORITY + 3, NULL);
+    xTaskCreate(pic_uart_task, "PIC Comm", 512, pic_queue, tskIDLE_PRIORITY + 3,
+                NULL);
 
     xTaskCreate(led_task, "LED Ctrl", 512, NULL, tskIDLE_PRIORITY, NULL);
 
     nm_queue = xQueueCreate(5, sizeof(nm_msg_t));
     configASSERT(nm_queue);
-    nm_task_params_t nm_task_params = {nm_queue, psm_hnd};
-    xTaskCreate(network_manager_task, "NetMgr", 512, &nm_task_params,
-                tskIDLE_PRIORITY, NULL);
+    xTaskCreate(network_manager_task, "NetMgr", 512, nm_queue, tskIDLE_PRIORITY,
+                NULL);
 
-    xTaskCreate(httpd_task, "HTTPd", 512, ctrl_queue, tskIDLE_PRIORITY, NULL);
+    xTaskCreate(httpd_task, "HTTPd", 512, NULL, tskIDLE_PRIORITY, NULL);
 }
 
 int main(void) {
@@ -304,9 +303,7 @@ static void print_ip_config(NetworkEndPoint_t *endpoint) {
     }
 }
 
-bool is_sta_network_up() {
-    return sta_iface.pxEndPoint->bits.bEndPointUp;
-}
+bool is_sta_network_up() { return sta_iface.pxEndPoint->bits.bEndPointUp; }
 
 void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                                           NetworkEndPoint_t *endpoint) {
@@ -322,8 +319,8 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                 // Create the tasks that use the TCP/IP stack if they have
                 // not already been created.
                 tasks_created = true;
-                xTaskCreate(mqtt_task, "MQTT", 512, ctrl_queue,
-                            tskIDLE_PRIORITY, NULL);
+                xTaskCreate(mqtt_task, "MQTT", 512, NULL, tskIDLE_PRIORITY,
+                            NULL);
             }
         } else if (endpoint->pxNetworkInterface == &uap_iface) {
             static dhcp_task_params_t dhcp_params;

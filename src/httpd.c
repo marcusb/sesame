@@ -55,8 +55,6 @@ typedef struct http_method_desc {
 
 void reboot(void);
 
-static QueueHandle_t ctrl_queue;
-
 static const http_method_desc_t http_methods[] = {
     {3, "GET", METHOD_GET},         {4, "HEAD", METHOD_HEAD},
     {4, "POST", METHOD_POST},       {3, "PUT", METHOD_PUT},
@@ -345,7 +343,6 @@ close_conn:
 }
 
 void httpd_task(void* params) {
-    ctrl_queue = (QueueHandle_t)params;
     const BaseType_t backlog = 20;
     Socket_t socket = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_STREAM,
                                       FREERTOS_IPPROTO_TCP);

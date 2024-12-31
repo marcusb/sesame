@@ -44,3 +44,6 @@ typedef struct {
         wifi_cfg_msg_t wifi_cfg;
     } msg;
 } ctrl_msg_t;
+
+typedef struct QueueDefinition* QueueHandle_t;
+extern QueueHandle_t ctrl_queue;
