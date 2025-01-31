@@ -1,0 +1,11 @@
+NetworkConfig.hostname max_size:33
+NetworkConfig.ssid max_size:33
+NetworkConfig.password max_size:33
+
+MqttConfig.broker_host max_size:33
+MqttConfig.prefix max_size:33
+MqttConfig.client_id max_size:33
+MqttConfig.username max_size:33
+MqttConfig.password max_size:33
+
+SyslogConfig.syslog_host max_size:33

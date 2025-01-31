@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+enum WifiSecurity {
+    WIFI_SECURITY_UNKNOWN = 0;
+    WIFI_SECURITY_WEP = 1;
+    WIFI_SECURITY_WPA = 2;
+}
+
+message NetworkConfig {
+    string hostname = 1;
+    string ssid = 2;
+    WifiSecurity security = 3;
+    string password = 4;
+}
+
+message MqttConfig {
+    bool enabled = 1;
+    string broker_host = 2;
+    uint32 broker_port = 3;
+    bool secure = 4;
+    string prefix = 5;
+    string client_id = 6;
+    string username = 7;
+    string password = 8;
+}
+
+message SyslogConfig {
+    bool enabled = 1;
+    string syslog_host = 2;
+    uint32 syslog_port = 3;
+}
+
+message LoggingConfig {
+    SyslogConfig syslog_config = 1;
+}
+
+message AppConfig {
+    int32 config_version = 1;
+    NetworkConfig network_config = 2;
+    MqttConfig mqtt_config = 3;
+    LoggingConfig log_config = 4;
+}

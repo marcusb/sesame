@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FreeRTOS.h"
+#include "app_config.pb.h"
 #include "idcm_msg.h"
 #include "iot_wifi.h"
 
@@ -12,6 +13,7 @@ typedef enum {
     CTRL_MSG_WIFI_BUTTON,
     CTRL_MSG_OTA_BUTTON,
     CTRL_MSG_WIFI_CONFIG,
+    CTRL_MSG_MQTT_CONFIG,
 } ctrl_msg_type_t;
 
 typedef enum { DOOR_CMD_UNKNOWN, DOOR_CMD_OPEN, DOOR_CMD_CLOSE } door_cmd_t;
@@ -42,6 +44,7 @@ typedef struct {
         door_control_msg_t door_control;
         door_state_msg_t door_state;
         wifi_cfg_msg_t wifi_cfg;
+        MqttConfig mqtt_cfg;
     } msg;
 } ctrl_msg_t;
 

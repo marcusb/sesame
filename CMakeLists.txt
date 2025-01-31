@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.23)
 
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/afr_utils.cmake")
-set(CMAKE_C_COMPILER_FORCED TRUE CACHE INTERNAL "")
-set(CMAKE_CXX_COMPILER_FORCED TRUE CACHE INTERNAL "")
+
+# Needed for CMake's test compilation check
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 project(
   sesame
@@ -29,6 +30,7 @@ add_executable(${exe_target})
 
 target_sources(${exe_target}
     PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/idle_task.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
@@ -43,9 +45,6 @@ target_sources(${exe_target}
     "${CMAKE_CURRENT_SOURCE_DIR}/src/rtc_support.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/subscription_manager.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
-    #"./libraries/klibc/memcpy.c"
-    #"./libraries/klibc/memmove.c"
-    #"./libraries/klibc/memset.c"
     "${afr_ports_dir}/wifi/iot_wifi.c"
     "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_agent_message.c"
     "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_command_pool.c")
@@ -169,6 +168,25 @@ if (USE_BACKTRACE)
         "-mpoke-function-name"
         "-fno-omit-frame-pointer")
 endif()
+
+# -------------------------------------------------------------------------------------------------
+# nanopb
+# -------------------------------------------------------------------------------------------------
+
+include(FetchContent)
+FetchContent_Declare(nanopb
+    GIT_REPOSITORY https://github.com/nanopb/nanopb.git
+    GIT_TAG        0.4.9.1
+)
+FetchContent_MakeAvailable(nanopb)
+list(APPEND CMAKE_MODULE_PATH "${nanopb_SOURCE_DIR}/extra")
+find_package(Nanopb REQUIRED)
+
+target_link_libraries(nanopb
+    PUBLIC globals)
+
+nanopb_generate_cpp(TARGET proto RELPATH proto
+	proto/app_config.proto)
 
 # -------------------------------------------------------------------------------------------------
 # FreeRTOS portable layers
@@ -497,6 +515,7 @@ target_link_libraries(${exe_target}
     "${mw320_dir}/bin/libs/libpart.a"
     logging
     backoff_algorithm
+    proto
 
     PRIVATE
     -T"${mw320_dir}/build/toolchains/arm_gcc/mw300.ld")

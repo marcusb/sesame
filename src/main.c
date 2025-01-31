@@ -31,6 +31,7 @@
 
 // Application
 #include "app_logging.h"
+#include "config_manager.h"
 #include "controller.h"
 #include "dhcp.h"
 #include "httpd.h"
@@ -204,6 +205,12 @@ static void create_tasks() {
     xTaskCreate(httpd_task, "HTTPd", 512, NULL, tskIDLE_PRIORITY, NULL);
 }
 
+void reboot() {
+    wifi_deinit();
+    LogInfo(("rebooting"));
+    pm_reboot_soc();
+}
+
 int main(void) {
     platform_init();
 
@@ -216,6 +223,8 @@ int main(void) {
         {.ulIP_IPv4 = FreeRTOS_inet_addr("172.16.1.10")}};
     xLoggingTaskInitialize(512, tskIDLE_PRIORITY,
                            mainLOGGING_MESSAGE_QUEUE_LENGTH, &udp_log_addr);
+
+    load_config();
 
     static NetworkEndPoint_t sta_endpoint;
     pxMW300_FillInterfaceDescriptor(BSS_TYPE_STA, &sta_iface);
@@ -273,6 +282,14 @@ int main(void) {
                     break;
                 }
 
+                case CTRL_MSG_MQTT_CONFIG: {
+                    app_config.mqtt_config = ctrl_msg.msg.mqtt_cfg;
+                    app_config.has_mqtt_config = true;
+                    save_config();
+                    reboot();
+                    break;
+                }
+
                 default:
                     LogError(("unknown message type %d", ctrl_msg.type));
             }
@@ -319,8 +336,8 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                 // Create the tasks that use the TCP/IP stack if they have
                 // not already been created.
                 tasks_created = true;
-                xTaskCreate(mqtt_task, "MQTT", 512, NULL, tskIDLE_PRIORITY,
-                            NULL);
+                xTaskCreate(mqtt_task, "MQTT", 512, &app_config.mqtt_config,
+                            tskIDLE_PRIORITY, NULL);
             }
         } else if (endpoint->pxNetworkInterface == &uap_iface) {
             static dhcp_task_params_t dhcp_params;
@@ -429,10 +446,4 @@ void *pvCalloc(size_t xNumElements, size_t xSize) {
     }
 
     return pvNew;
-}
-
-void reboot() {
-    wifi_deinit();
-    LogInfo(("rebooting"));
-    pm_reboot_soc();
 }

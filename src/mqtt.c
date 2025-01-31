@@ -45,21 +45,17 @@
 #include "transport_plaintext.h"
 
 // Application
+#include "app_config.pb.h"
 #include "app_logging.h"
 #include "backoff_algorithm.h"
 #include "controller.h"
 #include "subscription_manager.h"
 
-#define MQTT_BROKER_ENDPOINT "172.16.1.25"
-#define MQTT_BROKER_PORT 1883
-#define CLIENT_IDENTIFIER "sesame2"
-#define CLIENT_USERNAME "sesame"
-#define CLIENT_PASSWORD "***REMOVED***"
-
 static QueueHandle_t pub_queue;
 
 static char state_topic[64];
 static char lwt_topic[64];
+static char cmd_topic[64];
 
 static const char* LWT_ONLINE = "Online";
 static const char* LWT_OFFLINE = "Offline";
@@ -153,7 +149,7 @@ static TransportInterface_t transport = {
  */
 static uint32_t elapsed;
 
-MQTTAgentContext_t mqtt_agent_context;
+static MQTTAgentContext_t mqtt_agent_context;
 
 static uint8_t xNetworkBuffer[MQTT_AGENT_NETWORK_BUFFER_SIZE];
 
@@ -501,13 +497,13 @@ static bool subscribe(MQTTQoS_t qos, char* topic_filter) {
  * @return `MQTTSuccess` if connection succeeds, else appropriate error code
  * from MQTT_Connect.
  */
-static MQTTStatus_t mqtt_connect(bool clean_session) {
+static MQTTStatus_t mqtt_connect(const MqttConfig* cfg, bool clean_session) {
     MQTTStatus_t res;
     MQTTConnectInfo_t connect_info = {
-        clean_session,     KEEP_ALIVE_INTERVAL_SECONDS,
-        CLIENT_IDENTIFIER, strlen(CLIENT_IDENTIFIER),
-        CLIENT_USERNAME,   strlen(CLIENT_USERNAME),
-        CLIENT_PASSWORD,   strlen(CLIENT_PASSWORD)};
+        clean_session,  KEEP_ALIVE_INTERVAL_SECONDS,
+        cfg->client_id, strlen(cfg->client_id),
+        cfg->username,  strlen(cfg->username),
+        cfg->password,  strlen(cfg->password)};
     MQTTPublishInfo_t last_will = {MQTTQoS0,
                                    false,
                                    false,
@@ -570,7 +566,8 @@ static void prvMQTTClientSocketWakeupCallback(Socket_t pxSocket) {
  *
  * @return `pdPASS` if connection succeeds, else `pdFAIL`.
  */
-static BaseType_t socket_connect(NetworkContext_t* pxNetworkContext) {
+static BaseType_t socket_connect(const char* host, uint16_t port,
+                                 NetworkContext_t* pxNetworkContext) {
     BaseType_t xConnected = pdFAIL;
     BackoffAlgorithmStatus_t xBackoffAlgStatus = BackoffAlgorithmSuccess;
     // BackoffAlgorithmContext_t xReconnectParams = {0};
@@ -586,11 +583,10 @@ static BaseType_t socket_connect(NetworkContext_t* pxNetworkContext) {
     //                                   RETRY_MAX_ATTEMPTS);
 
     do {
-        LogInfo(("Creating a TCP connection to %s:%d.", MQTT_BROKER_ENDPOINT,
-                 MQTT_BROKER_PORT));
+        LogInfo(("connecting to %s:%d", host, port));
         xNetworkStatus = Plaintext_FreeRTOS_Connect(
-            pxNetworkContext, MQTT_BROKER_ENDPOINT, MQTT_BROKER_PORT,
-            TRANSPORT_SEND_RECV_TIMEOUT_MS, TRANSPORT_SEND_RECV_TIMEOUT_MS);
+            pxNetworkContext, host, port, TRANSPORT_SEND_RECV_TIMEOUT_MS,
+            TRANSPORT_SEND_RECV_TIMEOUT_MS);
         xConnected =
             (xNetworkStatus == PLAINTEXT_TRANSPORT_SUCCESS) ? pdPASS : pdFAIL;
 
@@ -662,12 +658,13 @@ static BaseType_t socket_disconnect(NetworkContext_t* pxNetworkContext) {
  * @brief Connects a TCP socket to the MQTT broker, then creates and MQTT
  * connection to the same.
  */
-static void connect_broker(void) {
+static void connect_broker(const MqttConfig* cfg) {
     BaseType_t xNetworkStatus = pdFAIL;
     MQTTStatus_t xMQTTStatus;
 
     /* Connect a TCP socket to the broker. */
-    xNetworkStatus = socket_connect(&network_context);
+    xNetworkStatus =
+        socket_connect(cfg->broker_host, cfg->broker_port, &network_context);
     configASSERT(xNetworkStatus == pdPASS);
 
     /* Initialize the MQTT context with the buffer and transport interface. */
@@ -675,11 +672,12 @@ static void connect_broker(void) {
     configASSERT(xMQTTStatus == MQTTSuccess);
 
     /* Form an MQTT connection without a persistent session. */
-    xMQTTStatus = mqtt_connect(true);
+    xMQTTStatus = mqtt_connect(cfg, true);
     configASSERT(xMQTTStatus == MQTTSuccess);
 }
 
-static void run_agent() {
+static void agent_task(void* params) {
+    const MqttConfig* cfg = (const MqttConfig*)params;
     MQTTContext_t* pMqttContext = &(mqtt_agent_context.mqttContext);
 
     MQTTStatus_t status;
@@ -703,11 +701,12 @@ static void run_agent() {
             /* Reconnect TCP. */
             res = socket_disconnect(&network_context);
             configASSERT(res == pdPASS);
-            res = socket_connect(&network_context);
+            res = socket_connect(cfg->broker_host, cfg->broker_port,
+                                 &network_context);
             configASSERT(res == pdPASS);
             pMqttContext->connectStatus = MQTTNotConnected;
             /* MQTT Connect with a persistent session. */
-            MQTTStatus_t xConnectStatus = mqtt_connect(false);
+            MQTTStatus_t xConnectStatus = mqtt_connect(cfg, false);
             configASSERT(xConnectStatus == MQTTSuccess);
         }
     } while (status != MQTTSuccess);
@@ -777,44 +776,36 @@ void do_publish_state(const door_state_msg_t* msg) {
     publish(state_topic, payload);
 }
 
-static void mqtt_subscribe_task(void* params) {
+void mqtt_task(void* params) {
+    const MqttConfig* cfg = (const MqttConfig*)params;
+    if (!cfg->enabled) {
+        goto ret;
+    }
+
+    elapsed = prvGetTimeMs();
+    snprintf(state_topic, sizeof(state_topic), "%s/state", cfg->client_id);
+    snprintf(lwt_topic, sizeof(lwt_topic), "%s/availability", cfg->client_id);
+    snprintf(cmd_topic, sizeof(cmd_topic), "%s/cmd", cfg->client_id);
+
+    connect_broker(cfg);
+    xTaskCreate(agent_task, "MQTT-Agent", 512, NULL, tskIDLE_PRIORITY + 3,
+                NULL);
+
     publish(lwt_topic, LWT_ONLINE);
-
-    static char cmd_topic[64];
-    snprintf(cmd_topic, sizeof(cmd_topic), "%s/cmd", CLIENT_IDENTIFIER);
     subscribe(MQTTQoS0, cmd_topic);
-    vTaskDelete(NULL);
-}
+    pub_queue = xQueueCreate(4, sizeof(door_state_msg_t));
 
-// This task is used to publish messages. It blocks while waiting for ACKs,
-// which seems hard to avoid with the coreMQTT-Agent, so we use a separate
-// task to avoid blocking the caller.
-static void mqtt_publish_task(void* params) {
+    // publishing blocks until the MQTT callback is received, so
+    // we use this task for publishing to avoid blocking the calling thread
     for (;;) {
         door_state_msg_t cmd;
         if (xQueueReceive(pub_queue, &cmd, portMAX_DELAY) == pdPASS) {
             do_publish_state(&cmd);
         }
     }
-}
 
-void mqtt_task(void* params) {
-    elapsed = prvGetTimeMs();
-    snprintf(state_topic, sizeof(state_topic), "%s/state", CLIENT_IDENTIFIER);
-    snprintf(lwt_topic, sizeof(state_topic), "%s/availability",
-             CLIENT_IDENTIFIER);
-
-    connect_broker();
-    xTaskCreate(mqtt_subscribe_task, "MQTT-Sub", 512, NULL, tskIDLE_PRIORITY,
-                NULL);
-
-    pub_queue = xQueueCreate(4, sizeof(door_state_msg_t));
-    xTaskCreate(mqtt_publish_task, "MQTT-Pub", 512, NULL, tskIDLE_PRIORITY,
-                NULL);
-
-    run_agent();
-
-    configASSERT(false);  // not reached
+ret:
+    vTaskDelete(NULL);
 }
 
 void publish_state(const door_state_msg_t* msg) {

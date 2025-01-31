@@ -17,6 +17,7 @@
 // application
 #include "app_logging.h"
 #include "controller.h"
+#include "pb_decode.h"
 #include "util.h"
 
 #define BUF_SIZE 1024
@@ -117,15 +118,15 @@ static void send_status(const http_request_t* req, int status) {
     FreeRTOS_send(req->socket, req->buf, len, 0);
 }
 
-void process_cfg(const http_request_t* req) {
+void process_cfg_network(const http_request_t* req) {
     JSONStatus_t res = JSON_Validate(req->body_start, req->content_length);
     if (res != JSONSuccess) {
         goto bad_req;
     }
     ctrl_msg_t msg = {CTRL_MSG_WIFI_CONFIG};
-    const char ssid_key[] = "wifi.ssid";
-    const char passwd_key[] = "wifi.passwd";
-    const char hostname_key[] = "wifi.hostname";
+    static const char ssid_key[] = "wifi.ssid";
+    static const char passwd_key[] = "wifi.passwd";
+    static const char hostname_key[] = "wifi.hostname";
     char* value;
     size_t len;
 
@@ -162,6 +163,15 @@ bad_req:
     send_status(req, BAD_REQUEST);
 }
 
+void process_cfg_mqtt(const http_request_t* req) {
+    ctrl_msg_t msg = {CTRL_MSG_MQTT_CONFIG, {.mqtt_cfg = MqttConfig_init_zero}};
+    pb_istream_t stream = pb_istream_from_buffer(
+        (const pb_byte_t*)req->body_start, req->content_length);
+    bool status = pb_decode(&stream, MqttConfig_fields, &msg.msg.mqtt_cfg);
+    send_status(req, status ? REPLY_OK : BAD_REQUEST);
+    xQueueSendToBack(ctrl_queue, &msg, 100);
+}
+
 static void do_request(const http_request_t* req) {
     switch (req->method) {
         case METHOD_POST:
@@ -179,7 +189,9 @@ static void do_request(const http_request_t* req) {
                 xQueueSendToBack(ctrl_queue, &msg, 100);
                 send_status(req, REPLY_OK);
             } else if (strcmp(req->url, "/cfg/network") == 0) {
-                process_cfg(req);
+                process_cfg_network(req);
+            } else if (strcmp(req->url, "/cfg/mqtt") == 0) {
+                process_cfg_mqtt(req);
             } else if (strcmp(req->url, "/restart") == 0) {
                 send_status(req, REPLY_OK);
                 LogDebug(("reboot requested, rebooting..."));
@@ -215,8 +227,7 @@ static int process_request_line(http_request_t* req) {
             if (strcmp(p, "HTTP/1.1") != 0) {
                 return -1;
             }
-            LogDebug(("request %.*s %s", method->method_length, method->name,
-                      req->url));
+            LogDebug(("request %s %s", method->name, req->url));
             return 0;
         }
     }
@@ -262,7 +273,7 @@ static void request_task(void* params) {
     char* wr_pos = buf;
     char* rd_pos = buf;
     char* mark = buf;
-    BaseType_t res;
+    BaseType_t res = 0;
     for (;;) {
         if (mark == rd_pos) {
             // rd_pos has not moved, no more input was consumed, so need to read
@@ -278,7 +289,6 @@ static void request_task(void* params) {
         if (res > 0) {
             switch (req.state) {
                 case HTTP_INIT:
-                    debug_hexdump('R', buf, wr_pos - buf);
                     for (char* q = buf; q < wr_pos - 1; q++) {
                         if (*q == '\r' && *(q + 1) == '\n') {
                             *q = '\0';
@@ -370,7 +380,7 @@ void httpd_task(void* params) {
         Socket_t conn = FreeRTOS_accept(socket, &client, &sz);
         configASSERT(conn != FREERTOS_INVALID_SOCKET);
 
-        xTaskCreate(request_task, "HttpWorker", 512, (void*)conn,
+        xTaskCreate(request_task, "HttpWorker", 2048, (void*)conn,
                     tskIDLE_PRIORITY, NULL);
     }
 
