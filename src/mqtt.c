@@ -783,9 +783,10 @@ void mqtt_task(void* params) {
     }
 
     elapsed = prvGetTimeMs();
-    snprintf(state_topic, sizeof(state_topic), "%s/state", cfg->client_id);
-    snprintf(lwt_topic, sizeof(lwt_topic), "%s/availability", cfg->client_id);
-    snprintf(cmd_topic, sizeof(cmd_topic), "%s/cmd", cfg->client_id);
+    const char* prefix = *cfg->prefix ? cfg->prefix : "sesame";
+    snprintf(state_topic, sizeof(state_topic), "%s/state", prefix);
+    snprintf(lwt_topic, sizeof(lwt_topic), "%s/availability", prefix);
+    snprintf(cmd_topic, sizeof(cmd_topic), "%s/cmd", prefix);
 
     connect_broker(cfg);
     xTaskCreate(agent_task, "MQTT-Agent", 512, NULL, tskIDLE_PRIORITY + 3,
