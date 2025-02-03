@@ -21,14 +21,16 @@
 #include "idcm_msg.h"
 #include "util.h"
 
-#define READ_TIMEOUT_TICKS pdMS_TO_TICKS(10000)
 #define RX_BUF_SIZE 256
+#define READ_TIMEOUT_TICKS pdMS_TO_TICKS(10000)
 #define DOOR_POLL_TICKS pdMS_TO_TICKS(5000)
+#define DOOR_MOVE_ALERT_TICKS pdMS_TO_TICKS(6000)
 
 typedef enum { READ_START = 0, READ_LENGTH = 1, READ_BODY = 2 } read_state_t;
 
 static mdev_t *gpio_dev;
 static mdev_t *uart_dev;
+static bool self_test_done;
 
 static uint8_t next_token() {
     static int seq = -1;
@@ -81,14 +83,20 @@ void handle_msg(const dcm_msg_t *msg) {
             break;
         }
 
-        case DCM_AUDIO_RESPONSE:
-            vTaskDelay(2);
+        case DCM_MSG_AUDIO_ACK:
+            self_test_done = true;
             break;
 
         case DCM_MSG_SENSOR_VERSION: {
             // const dcm_sensor_version_msg_t *p = &msg->payload.sensor_version;
             // LogDebug(("DCM sensor fw version %d.%d.%d%c", p->major, p->minor,
             //           p->patch, p->suffix));
+            break;
+        }
+
+        case DCM_MSG_OPS_EVENT: {
+            const dcm_ops_event_msg_t *p = &msg->payload.ops_event;
+            LogDebug(("ops event %d", p->event));
             break;
         }
 
@@ -137,7 +145,7 @@ static void read_uart() {
             p += bytes_read;
             more -= bytes_read;
             if (more <= 0) {
-                // debug_hexdump('R', buf, n);
+                debug_hexdump('R', buf, n);
                 uint8_t chksum = calc_chk_sum(buf, n - 1);
                 if (chksum != buf[n - 1]) {
                     LogWarn(("chksum mismatch (got 0x%02x, expected 0x%02x)",
@@ -188,7 +196,7 @@ static int init_uart(void) {
 }
 
 static void uart_write(const uint8_t *buf, int n) {
-    // debug_hexdump('T', buf, n);
+    debug_hexdump('T', buf, n);
     while (n > 0) {
         int n_written = uart_drv_write(uart_dev, buf, n);
         n -= n_written;
@@ -205,20 +213,40 @@ static void send_msg(dcm_msg_t *msg) {
     uart_write(p, frame_len);
 }
 
+static void alert_cmd(uint8_t val) {
+    dcm_msg_t msg = {DCM_HEADER_BYTE,
+                     sizeof(dcm_alert_cmd_msg_t),
+                     next_token(),
+                     DCM_MSG_ALERT_CMD,
+                     {.alert_cmd = {val, 5}}};
+    send_msg(&msg);
+}
+
 static void audio_cmd(uint8_t val) {
     dcm_msg_t msg = {DCM_HEADER_BYTE,
                      sizeof(dcm_audio_cmd_msg_t),
                      next_token(),
                      DCM_MSG_AUDIO_CMD,
-                     {.audio_cmd = {val, 0}}};
+                     {.audio_cmd = {val, self_test_done ? 5 : 0, 0}}};
     send_msg(&msg);
 }
 
-static void post_test() { audio_cmd(5); }
+static void post_test() {
+    audio_cmd(5);
+    LogInfo(("PIC POST test"));
+    while (!self_test_done) {
+        read_uart();
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    LogInfo(("PIC POST test successful"));
+}
 
 static void sound_buzzer() { audio_cmd(1); }
 
-static void buzzer_alert() { audio_cmd(2); }
+static void alert() {
+    audio_cmd(2);
+    alert_cmd(1);
+}
 
 static void send_door_cmd(uint8_t val) {
     dcm_msg_t msg = {DCM_HEADER_BYTE,
@@ -251,10 +279,11 @@ void pic_uart_task(void *const params) {
 
     post_test();
     sound_buzzer();
-    audio_cmd(1);
 
     pic_cmd_t cmd;
     TickType_t door_poll_tstamp = 0;
+    TickType_t door_move_tstamp = 0;
+    pic_cmd_t queued_cmd = 0;
     for (;;) {
         TickType_t now = xTaskGetTickCount();
         if (now - door_poll_tstamp > DOOR_POLL_TICKS) {
@@ -262,14 +291,18 @@ void pic_uart_task(void *const params) {
             // cmd_0x04();
             door_poll_tstamp = now;
         }
+        if (queued_cmd && now > door_move_tstamp) {
+            send_door_cmd(queued_cmd == PIC_CMD_OPEN ? 1 : 0);
+            queued_cmd = 0;
+        }
         read_uart();
         if (xQueueReceive(queue, &cmd, pdMS_TO_TICKS(5)) == pdPASS) {
             switch (cmd) {
                 case PIC_CMD_OPEN:
-                    send_door_cmd(1);
-                    break;
                 case PIC_CMD_CLOSE:
-                    send_door_cmd(0);
+                    queued_cmd = cmd;
+                    door_move_tstamp = now + DOOR_MOVE_ALERT_TICKS;
+                    alert();
                     break;
                 default:
                     LogError(("unknown cmd %d", cmd));

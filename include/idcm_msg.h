@@ -15,14 +15,14 @@ typedef enum {
     DCM_MSG_DOOR_STATUS_RESPONSE = 0x16,
     DCM_MSG_OPS_EVENT = 0x17,
     DCM_MSG_DOOR_RESPONSE = 0x90,
-    DCM_MSG_ALERT_RESPONSE = 0x91,
-    DCM_AUDIO_RESPONSE = 0x92,
+    DCM_MSG_ALERT_ACK = 0x91,
+    DCM_MSG_AUDIO_ACK = 0x92,
     DCM_MSG_SENSOR_VERSION = 0x95,
 } __attribute__((packed)) dcm_msg_type_t;
 
 typedef enum {
     DCM_DOOR_STATE_CLOSED,
-    DCM_DOOR_STATE_OPEN,
+    DCM_DOOR_STATE_OPEN, // "NOT CLOSED"
     DCM_DOOR_STATE_UNKNOWN,
     /** Factory test mode */
     DCM_DOOR_STATE_FTM
@@ -40,8 +40,8 @@ typedef enum {
     OPS_NEW_LIMITS_DETECTED,
     OPS_POSITION_ADJUST,
     OPS_LIGHT_ON,
-    OPS_MOVE_OPEN,  //??
-    OPS_MOVE_CLOSE,
+    OPS_LIGHT_ALERT_DONE,
+    OPS_AUDIO_ALERT_DONE,
     OPS_MOTOR_START = 8,
     OPS_MOTOR_STOP = 9
 } __attribute__((packed)) ops_event_t;
@@ -55,7 +55,16 @@ _Static_assert(sizeof(dcm_door_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint8_t val;
-    int16_t unk;
+    uint8_t unk1;
+    uint8_t unk2;
+} __attribute__((packed)) dcm_alert_cmd_msg_t;
+_Static_assert(sizeof(dcm_alert_cmd_msg_t) == 3, "msg size");
+_Static_assert(sizeof(dcm_alert_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+
+typedef struct {
+    uint8_t val;
+    uint8_t unk1;
+    uint8_t unk2;
 } __attribute__((packed)) dcm_audio_cmd_msg_t;
 _Static_assert(sizeof(dcm_audio_cmd_msg_t) == 3, "msg size");
 _Static_assert(sizeof(dcm_audio_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
@@ -67,7 +76,6 @@ typedef struct {
     int16_t pos;
     int16_t up_limit;
     int16_t down_limit;
-
 } __attribute__((packed)) dcm_door_status_msg_t;
 _Static_assert(sizeof(dcm_door_status_msg_t) == 12, "msg size");
 _Static_assert(sizeof(dcm_door_status_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
@@ -90,8 +98,8 @@ typedef struct {
     uint32_t time;
     ops_event_t event;
     char unk;
-    uint16_t v1;
-    uint16_t v2;
+    int16_t up_limit;
+    int16_t down_limit;
 } __attribute__((packed)) dcm_ops_event_msg_t;
 _Static_assert(sizeof(dcm_ops_event_msg_t) == 10, "msg size");
 _Static_assert(sizeof(dcm_ops_event_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
@@ -107,6 +115,7 @@ typedef struct {
     dcm_msg_type_t type;
     union {
         dcm_door_cmd_msg_t door_cmd;
+        dcm_alert_cmd_msg_t alert_cmd;
         dcm_audio_cmd_msg_t audio_cmd;
         dcm_door_status_msg_t door_status;
         dcm_sensor_version_msg_t sensor_version;
