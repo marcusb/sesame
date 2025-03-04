@@ -195,7 +195,7 @@ static void create_tasks() {
 
     pic_queue = xQueueCreate(5, sizeof(pic_cmd_t));
     configASSERT(pic_queue);
-    xTaskCreate(pic_uart_task, "PIC Comm", 512, pic_queue, tskIDLE_PRIORITY + 3,
+    xTaskCreate(pic_uart_task, "PIC Comm", 512, pic_queue, tskIDLE_PRIORITY + 1,
                 NULL);
 
     xTaskCreate(led_task, "LED Ctrl", 512, NULL, tskIDLE_PRIORITY, NULL);
