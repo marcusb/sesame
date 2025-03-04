@@ -109,7 +109,9 @@ set(tc-lflags-tc-cortex-m4-y
     "-fno-common"
     "-mfloat-abi=softfp"
     "-mfpu=fpv4-sp-d16"
-    "-D__FPU_PRESENT")
+    "-D__FPU_PRESENT"
+    "-D_DEFAULT_SOURCE"
+    "-D_GNU_SOURCE")
 
 target_compile_options(globals
     INTERFACE ${global-cflags-y} ${tc-lflags-tc-cortex-m4-y})

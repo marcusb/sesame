@@ -76,6 +76,8 @@ static NetworkContext_t network_context = {&transport_params};
 static TransportInterface_t transport = {
     Plaintext_FreeRTOS_recv, Plaintext_FreeRTOS_send, NULL, &network_context};
 
+static uint32_t next_msg_id;
+
 /**
  * @brief Dimensions the buffer used to serialize and deserialize MQTT packets.
  * @note Specified in bytes.  Must be large enough to hold the maximum
@@ -225,8 +227,8 @@ static MQTTStatus_t mqtt_init(void) {
     static StaticQueue_t staticQueueStructure;
     MQTTAgentMessageInterface_t messageInterface = {
         .pMsgCtx = NULL,
-        .send = Agent_MessageSend,
-        .recv = Agent_MessageReceive,
+        .send = (MQTTAgentMessageSend_t)Agent_MessageSend,
+        .recv = (MQTTAgentMessageRecv_t)Agent_MessageReceive,
         .getCommand = Agent_GetCommand,
         .releaseCommand = Agent_ReleaseCommand};
 
@@ -430,7 +432,6 @@ static void subscribe_cb(MQTTAgentCommandContext_t* ctx,
 }
 
 static bool subscribe(MQTTQoS_t qos, char* topic_filter) {
-    static uint32_t next_msg_id = 0;
     uint32_t msg_id;
 
     xTaskNotifyStateClear(NULL);
@@ -470,7 +471,7 @@ static bool subscribe(MQTTQoS_t qos, char* topic_filter) {
 
     /* Wait for acks to the subscribe message - this is optional but done here
      * so the code below can check the notification sent by the callback
-     * matches the ulNextSubscribeMessageID value set in the context above. */
+     * matches the msg_id value set in the context above. */
     BaseType_t acked =
         xTaskNotifyWait(0, 0, NULL, pdMS_TO_TICKS(NOTIFICATION_WAIT_MS));
 
@@ -721,21 +722,26 @@ static void cmd_complete_cb(MQTTAgentCommandContext_t* ctx,
 }
 
 void publish(const char* topic, const char* payload) {
-    MQTTAgentCommandContext_t command_context;
-    memset(&command_context, 0, sizeof(command_context));
-    command_context.notify_task = xTaskGetCurrentTaskHandle();
-    command_context.notify_val = 1;
+    uint32_t msg_id;
+    xTaskNotifyStateClear(NULL);
+    taskENTER_CRITICAL();
+    {
+        msg_id = ++next_msg_id;
+    }
+    taskEXIT_CRITICAL();
 
+    MQTTAgentCommandContext_t command_context = {0, xTaskGetCurrentTaskHandle(),
+                                                 msg_id, 0};
     MQTTAgentCommandInfo_t command_params = {cmd_complete_cb, &command_context,
-                                             500};
+                                             MAX_COMMAND_SEND_BLOCK_TIME_MS};
     MQTTPublishInfo_t publish_info = {
         MQTTQoS0, false, false, topic, strlen(topic), payload, strlen(payload)};
 
     MQTTAgent_Publish(&mqtt_agent_context, &publish_info, &command_params);
 
     uint32_t notify_val = 0;
-    xTaskNotifyWait(0, 0, &notify_val, pdMS_TO_TICKS(10000));
-    if (notify_val != 1) {
+    xTaskNotifyWait(0, 0, &notify_val, pdMS_TO_TICKS(NOTIFICATION_WAIT_MS));
+    if (notify_val != msg_id) {
         LogInfo(
             ("MQTT message failed to send, status %d", command_context.status));
     }

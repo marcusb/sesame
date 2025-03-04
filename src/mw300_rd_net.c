@@ -235,7 +235,7 @@ NetworkInterface_t* pxMW300_FillInterfaceDescriptor(
             return NULL;
     }
 
-    pxInterface->pvArgument = if_type;
+    pxInterface->pvArgument = (void*)if_type;
     pxInterface->pfInitialise = xMW300_NetworkInterfaceInitialise;
     pxInterface->pfOutput = xMW300_NetworkInterfaceOutput;
     pxInterface->pfGetPhyLinkStatus = xMW300_GetPhyLinkStatus;

@@ -293,12 +293,12 @@ BaseType_t CRYPTO_SignatureVerificationStart( void ** ppvContext,
         if( cryptoHASH_ALGORITHM_SHA1 == pxCtx->xHashAlgorithm )
         {
             mbedtls_sha1_init( &pxCtx->xSHA1Context );
-            ( void ) mbedtls_sha1_starts_ret( &pxCtx->xSHA1Context );
+            ( void ) mbedtls_sha1_starts( &pxCtx->xSHA1Context );
         }
         else
         {
             mbedtls_sha256_init( &pxCtx->xSHA256Context );
-            ( void ) mbedtls_sha256_starts_ret( &pxCtx->xSHA256Context, 0 );
+            ( void ) mbedtls_sha256_starts( &pxCtx->xSHA256Context, 0 );
         }
     }
 
@@ -320,11 +320,11 @@ void CRYPTO_SignatureVerificationUpdate( void * pvContext,
      */
     if( cryptoHASH_ALGORITHM_SHA1 == pxCtx->xHashAlgorithm )
     {
-        ( void ) mbedtls_sha1_update_ret( &pxCtx->xSHA1Context, pucData, xDataLength );
+        ( void ) mbedtls_sha1_update( &pxCtx->xSHA1Context, pucData, xDataLength );
     }
     else
     {
-        ( void ) mbedtls_sha256_update_ret( &pxCtx->xSHA256Context, pucData, xDataLength );
+        ( void ) mbedtls_sha256_update( &pxCtx->xSHA256Context, pucData, xDataLength );
     }
 }
 
@@ -356,13 +356,13 @@ BaseType_t CRYPTO_SignatureVerificationFinal( void * pvContext,
              */
             if( cryptoHASH_ALGORITHM_SHA1 == pxCtx->xHashAlgorithm )
             {
-                ( void ) mbedtls_sha1_finish_ret( &pxCtx->xSHA1Context, ucSHA1or256 );
+                ( void ) mbedtls_sha1_finish( &pxCtx->xSHA1Context, ucSHA1or256 );
                 pucHash = ucSHA1or256;
                 xHashLength = cryptoSHA1_DIGEST_BYTES;
             }
             else
             {
-                ( void ) mbedtls_sha256_finish_ret( &pxCtx->xSHA256Context, ucSHA1or256 );
+                ( void ) mbedtls_sha256_finish( &pxCtx->xSHA256Context, ucSHA1or256 );
                 pucHash = ucSHA1or256;
                 xHashLength = cryptoSHA256_DIGEST_BYTES;
             }
