@@ -21,6 +21,7 @@
 #include "mbedtls/entropy.h"
 #include "mdev_gpio.h"
 #include "mdev_pinmux.h"
+#include "mdev_wdt.h"
 #include "partition.h"
 #include "psm-v2.h"
 #include "pwrmgr.h"
@@ -51,6 +52,8 @@
 // the global controller event queue, all tasks write to it
 QueueHandle_t ctrl_queue;
 psm_hnd_t psm_hnd;
+static mdev_t *wdt_dev;
+
 static QueueHandle_t ota_queue;
 static QueueHandle_t pic_queue;
 static QueueHandle_t nm_queue;
@@ -211,8 +214,26 @@ void reboot() {
     pm_reboot_soc();
 }
 
+void init_watchdog() {
+    int ret = wdt_drv_init();
+    if (ret != WM_SUCCESS) {
+        return;
+    }
+    wdt_dev = wdt_drv_open("MDEV_WDT");
+    if (wdt_dev == NULL) {
+        return;
+    }
+    // timeout about 20 seconds
+    ret = wdt_drv_set_timeout(wdt_dev, 0xd);
+    if (ret != WM_SUCCESS) {
+        return;
+    }
+    wdt_drv_start(wdt_dev);
+}
+
 int main(void) {
     platform_init();
+    init_watchdog();
 
     /* Create tasks that are not dependent on the Wi-Fi being initialized. */
     struct freertos_sockaddr udp_log_addr = {
@@ -243,6 +264,7 @@ int main(void) {
     create_tasks();
     ctrl_msg_t ctrl_msg;
     for (;;) {
+        wdt_drv_strobe(wdt_dev);
         if (xQueueReceive(ctrl_queue, &ctrl_msg, 1000) == pdPASS) {
             switch (ctrl_msg.type) {
                 case CTRL_MSG_OTA_UPGRADE: {
