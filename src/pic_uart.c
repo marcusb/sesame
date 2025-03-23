@@ -65,6 +65,7 @@ static uint8_t calc_chk_sum(uint8_t *p, int n) {
 
 static void door_state_update(door_open_state_t new_state, door_direction_t dir,
                               uint16_t position) {
+    bool update = state != new_state || direction != dir;
     state = new_state;
     direction = dir;
     LogInfo(("door status: state=%d, dir=%d, pos=%u, down_lim=%u, up_lim=%u",
@@ -80,7 +81,8 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
         pos = 100;
     }
     TickType_t now = xTaskGetTickCount();
-    if (dir != DCM_DOOR_DIR_STOPPED || now > last_state_pub_time + STATE_UPDATE_INTERVAL) {
+    if (update || dir != DCM_DOOR_DIR_STOPPED ||
+        now > last_state_pub_time + STATE_UPDATE_INTERVAL) {
         last_state_pub_time = now;
         ctrl_msg_t state_upd = {CTRL_MSG_DOOR_STATE_UPDATE,
                                 {.door_state = {state, dir, pos}}};
