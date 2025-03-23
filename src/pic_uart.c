@@ -31,6 +31,8 @@ typedef enum { READ_START = 0, READ_LENGTH = 1, READ_BODY = 2 } read_state_t;
 static mdev_t *gpio_dev;
 static mdev_t *uart_dev;
 static bool self_test_done;
+static uint16_t down_limit;
+static uint16_t up_limit;
 
 static uint8_t next_token() {
     static int seq = -1;
@@ -57,29 +59,32 @@ static uint8_t calc_chk_sum(uint8_t *p, int n) {
     return res;
 }
 
-void handle_msg(const dcm_msg_t *msg) {
-    switch (msg->type) {
-        case DCM_MSG_DOOR_STATUS_RESPONSE: {
-            const dcm_door_status_msg_t *p = &msg->payload.door_status;
-            LogInfo((
-                "door status: state=%d, dir=%d, pos=%d, up_lim=%d, down_lim=%d",
-                p->state, p->direction, p->pos, p->up_limit, p->down_limit));
-            int pos = 0;
-            if (p->down_limit != p->up_limit) {
-                pos = 100 * (p->up_limit - p->pos) /
-                      (float)(p->up_limit - p->down_limit);
-            }
-            if (pos < 0) {
-                pos = 0;
-            }
-            if (pos > 100) {
-                pos = 100;
-            }
-            ctrl_msg_t state_upd = {
-                CTRL_MSG_DOOR_STATE_UPDATE,
-                {.door_state = {p->state, p->direction, pos}}};
+static void door_state_update(door_open_state_t state, door_direction_t dir,
+                              uint16_t position) {
+    LogInfo(("door status: state=%d, dir=%d, pos=%u, down_lim=%u, up_lim=%u",
+             state, dir, position, down_limit, up_limit));
+    uint16_t pos = 0;
+    if (down_limit != up_limit) {
+        pos = 100 * (up_limit - position) / (float)(up_limit - down_limit);
+    }
+    if (pos < 0) {
+        pos = 0;
+    }
+    if (pos > 100) {
+        pos = 100;
+    }
+    ctrl_msg_t state_upd = {CTRL_MSG_DOOR_STATE_UPDATE,
+                            {.door_state = {state, dir, pos}}};
+    xQueueSendToBack(ctrl_queue, &state_upd, 0);
+}
 
-            xQueueSendToBack(ctrl_queue, &state_upd, 0);
+static void handle_msg(const dcm_msg_t *msg) {
+    switch (msg->type) {
+        case DCM_MSG_DOOR_STATUS_UPDATE: {
+            const dcm_door_status_update_msg_t *p = &msg->payload.door_status;
+            down_limit = p->down_limit;
+            up_limit = p->up_limit;
+            door_state_update(p->state, p->direction, p->pos);
             break;
         }
 
@@ -88,7 +93,8 @@ void handle_msg(const dcm_msg_t *msg) {
             break;
 
         case DCM_MSG_SENSOR_VERSION: {
-            // const dcm_sensor_version_msg_t *p = &msg->payload.sensor_version;
+            const dcm_sensor_version_msg_t *p = &msg->payload.sensor_version;
+            door_state_update(p->state, p->direction, p->pos);
             // LogDebug(("DCM sensor fw version %d.%d.%d%c", p->major, p->minor,
             //           p->patch, p->suffix));
             break;
@@ -257,14 +263,12 @@ static void send_door_cmd(uint8_t val) {
     send_msg(&msg);
 }
 
-static void send_door_status_msg(int16_t last_pos, int16_t up_limit,
-                                 int16_t down_limit) {
+static void send_door_status_req() {
     dcm_msg_t msg = {DCM_HEADER_BYTE,
-                     sizeof(dcm_door_status_msg_t),
+                     sizeof(dcm_door_status_req_msg_t),
                      next_token(),
                      DCM_MSG_DOOR_STATUS_REQUEST,
-                     {.door_status = {rtc_time_get(), 0, 0, last_pos, up_limit,
-                                      down_limit}}};
+                     {.door_status_req = {rtc_time_get()}}};
     send_msg(&msg);
 }
 
@@ -287,7 +291,7 @@ void pic_uart_task(void *const params) {
     for (;;) {
         TickType_t now = xTaskGetTickCount();
         if (now - door_poll_tstamp > DOOR_POLL_TICKS) {
-            send_door_status_msg(0, 0, 0);
+            send_door_status_req();
             // cmd_0x04();
             door_poll_tstamp = now;
         }

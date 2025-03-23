@@ -12,7 +12,7 @@ typedef enum {
     DCM_MSG_ALERT_CMD = 0x11,
     DCM_MSG_AUDIO_CMD = 0x12,
     DCM_MSG_DOOR_STATUS_REQUEST = 0x15,
-    DCM_MSG_DOOR_STATUS_RESPONSE = 0x16,
+    DCM_MSG_DOOR_STATUS_UPDATE = 0x16,
     DCM_MSG_OPS_EVENT = 0x17,
     DCM_MSG_DOOR_RESPONSE = 0x90,
     DCM_MSG_ALERT_ACK = 0x91,
@@ -22,7 +22,7 @@ typedef enum {
 
 typedef enum {
     DCM_DOOR_STATE_CLOSED,
-    DCM_DOOR_STATE_OPEN, // "NOT CLOSED"
+    DCM_DOOR_STATE_OPEN,  // "NOT CLOSED"
     DCM_DOOR_STATE_UNKNOWN,
     /** Factory test mode */
     DCM_DOOR_STATE_FTM
@@ -73,18 +73,34 @@ typedef struct {
     uint32_t time;
     door_open_state_t state;
     door_direction_t direction;
-    int16_t pos;
-    int16_t up_limit;
-    int16_t down_limit;
-} __attribute__((packed)) dcm_door_status_msg_t;
-_Static_assert(sizeof(dcm_door_status_msg_t) == 12, "msg size");
-_Static_assert(sizeof(dcm_door_status_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+    uint16_t pos;
+    uint16_t up_limit;
+    uint16_t down_limit;
+} __attribute__((packed)) dcm_door_status_req_msg_t;
+_Static_assert(sizeof(dcm_door_status_req_msg_t) == 12, "msg size");
+_Static_assert(sizeof(dcm_door_status_req_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
-    char unk[8];
     uint32_t time;
-    uint8_t unk2;
+    door_open_state_t state;
+    door_direction_t direction;
+    uint16_t pos;
+    uint16_t up_limit;
+    uint16_t down_limit;
+    uint16_t unk;
+} __attribute__((packed)) dcm_door_status_update_msg_t;
+_Static_assert(sizeof(dcm_door_status_update_msg_t) == 14, "msg size");
+_Static_assert(sizeof(dcm_door_status_update_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+
+typedef struct {
+    char unk;
+    door_open_state_t state;
+    door_direction_t direction;
+    char unk2[3];
+    uint16_t pos;
+    uint32_t time;
     uint8_t unk3;
+    uint8_t unk4;
     uint8_t sensor_restart_reason;
     uint8_t major;
     uint8_t minor;
@@ -117,7 +133,8 @@ typedef struct {
         dcm_door_cmd_msg_t door_cmd;
         dcm_alert_cmd_msg_t alert_cmd;
         dcm_audio_cmd_msg_t audio_cmd;
-        dcm_door_status_msg_t door_status;
+        dcm_door_status_req_msg_t door_status_req;
+        dcm_door_status_update_msg_t door_status;
         dcm_sensor_version_msg_t sensor_version;
         dcm_ops_event_msg_t ops_event;
         // Include a byte array, needs to be at least as big as the other
