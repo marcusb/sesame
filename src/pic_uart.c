@@ -31,6 +31,8 @@ typedef enum { READ_START = 0, READ_LENGTH = 1, READ_BODY = 2 } read_state_t;
 static mdev_t *gpio_dev;
 static mdev_t *uart_dev;
 static bool self_test_done;
+static door_open_state_t state = DCM_DOOR_STATE_UNKNOWN;
+static door_direction_t direction = DCM_DOOR_DIR_UNKNOWN;
 static uint16_t down_limit;
 static uint16_t up_limit;
 
@@ -59,8 +61,10 @@ static uint8_t calc_chk_sum(uint8_t *p, int n) {
     return res;
 }
 
-static void door_state_update(door_open_state_t state, door_direction_t dir,
+static void door_state_update(door_open_state_t new_state, door_direction_t dir,
                               uint16_t position) {
+    state = new_state;
+    direction = dir;
     LogInfo(("door status: state=%d, dir=%d, pos=%u, down_lim=%u, up_lim=%u",
              state, dir, position, down_limit, up_limit));
     uint16_t pos = 0;
@@ -73,9 +77,11 @@ static void door_state_update(door_open_state_t state, door_direction_t dir,
     if (pos > 100) {
         pos = 100;
     }
-    ctrl_msg_t state_upd = {CTRL_MSG_DOOR_STATE_UPDATE,
-                            {.door_state = {state, dir, pos}}};
-    xQueueSendToBack(ctrl_queue, &state_upd, 0);
+    if (dir == DCM_DOOR_DIR_STOPPED) {
+        ctrl_msg_t state_upd = {CTRL_MSG_DOOR_STATE_UPDATE,
+                                {.door_state = {state, dir, pos}}};
+        xQueueSendToBack(ctrl_queue, &state_upd, 0);
+    }
 }
 
 static void handle_msg(const dcm_msg_t *msg) {
@@ -303,11 +309,32 @@ void pic_uart_task(void *const params) {
         if (xQueueReceive(queue, &cmd, pdMS_TO_TICKS(5)) == pdPASS) {
             switch (cmd) {
                 case PIC_CMD_OPEN:
-                case PIC_CMD_CLOSE:
-                    queued_cmd = cmd;
-                    door_move_tstamp = now + DOOR_MOVE_ALERT_TICKS;
-                    alert();
+                    if (direction == DCM_DOOR_DIR_DOWN) {
+                        // first stop the door
+                        send_door_cmd(1);
+                        // then open after a short delay
+                        queued_cmd = PIC_CMD_OPEN;
+                        door_move_tstamp = now + pdMS_TO_TICKS(1000);
+                    } else if (state != DCM_DOOR_STATE_OPEN &&
+                               direction != DCM_DOOR_DIR_UP) {
+                        send_door_cmd(1);
+                        queued_cmd = 0;
+                    }
                     break;
+
+                case PIC_CMD_CLOSE:
+                    if (direction == DCM_DOOR_DIR_UP) {
+                        // first stop the door
+                        send_door_cmd(0);
+                    }
+                    if (state != DCM_DOOR_STATE_CLOSED &&
+                        direction != DCM_DOOR_DIR_DOWN) {
+                        queued_cmd = cmd;
+                        door_move_tstamp = now + DOOR_MOVE_ALERT_TICKS;
+                        alert();
+                    }
+                    break;
+
                 default:
                     LogError(("unknown cmd %d", cmd));
             }
