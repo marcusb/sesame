@@ -25,6 +25,7 @@
 #define READ_TIMEOUT_TICKS pdMS_TO_TICKS(10000)
 #define DOOR_POLL_TICKS pdMS_TO_TICKS(5000)
 #define DOOR_MOVE_ALERT_TICKS pdMS_TO_TICKS(6000)
+#define STATE_UPDATE_INTERVAL pdMS_TO_TICKS(60 * 1000)
 
 typedef enum { READ_START = 0, READ_LENGTH = 1, READ_BODY = 2 } read_state_t;
 
@@ -35,6 +36,7 @@ static door_open_state_t state = DCM_DOOR_STATE_UNKNOWN;
 static door_direction_t direction = DCM_DOOR_DIR_UNKNOWN;
 static uint16_t down_limit;
 static uint16_t up_limit;
+static TickType_t last_state_pub_time;
 
 static uint8_t next_token() {
     static int seq = -1;
@@ -77,7 +79,9 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
     if (pos > 100) {
         pos = 100;
     }
-    if (dir == DCM_DOOR_DIR_STOPPED) {
+    TickType_t now = xTaskGetTickCount();
+    if (dir != DCM_DOOR_DIR_STOPPED || now > last_state_pub_time + STATE_UPDATE_INTERVAL) {
+        last_state_pub_time = now;
         ctrl_msg_t state_upd = {CTRL_MSG_DOOR_STATE_UPDATE,
                                 {.door_state = {state, dir, pos}}};
         xQueueSendToBack(ctrl_queue, &state_upd, 0);
