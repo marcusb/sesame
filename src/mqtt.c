@@ -735,7 +735,7 @@ void publish(const char* topic, const char* payload) {
     MQTTAgentCommandInfo_t command_params = {cmd_complete_cb, &command_context,
                                              MAX_COMMAND_SEND_BLOCK_TIME_MS};
     MQTTPublishInfo_t publish_info = {
-        MQTTQoS0, false, false, topic, strlen(topic), payload, strlen(payload)};
+        MQTTQoS0, true, false, topic, strlen(topic), payload, strlen(payload)};
 
     MQTTAgent_Publish(&mqtt_agent_context, &publish_info, &command_params);
 
