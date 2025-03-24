@@ -23,7 +23,7 @@
 
 #define RX_BUF_SIZE 256
 #define READ_TIMEOUT_TICKS pdMS_TO_TICKS(10000)
-#define DOOR_POLL_TICKS pdMS_TO_TICKS(5000)
+#define DOOR_POLL_TICKS pdMS_TO_TICKS(30 * 1000)
 #define DOOR_MOVE_ALERT_TICKS pdMS_TO_TICKS(6000)
 #define STATE_UPDATE_INTERVAL pdMS_TO_TICKS(60 * 1000)
 
@@ -284,6 +284,12 @@ static void send_door_status_req() {
     send_msg(&msg);
 }
 
+static void cmd_0x04() {
+    dcm_msg_t msg = {DCM_HEADER_BYTE, sizeof(dcm_cmd_0x04_msg_t), next_token(),
+                     DCM_MSG_0x04};
+    send_msg(&msg);
+}
+
 void pic_uart_task(void *const params) {
     LogInfo(("PIC comm task running"));
     QueueHandle_t queue = (QueueHandle_t)params;
@@ -304,7 +310,7 @@ void pic_uart_task(void *const params) {
         TickType_t now = xTaskGetTickCount();
         if (now - door_poll_tstamp > DOOR_POLL_TICKS) {
             send_door_status_req();
-            // cmd_0x04();
+            cmd_0x04();
             door_poll_tstamp = now;
         }
         if (queued_cmd && now > door_move_tstamp) {

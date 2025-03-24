@@ -8,12 +8,14 @@
 #define MAX_DCM_MSG_SIZE 20
 
 typedef enum {
+    DCM_MSG_0x04 = 0x04,
     DCM_MSG_DOOR_CMD = 0x10,
     DCM_MSG_ALERT_CMD = 0x11,
     DCM_MSG_AUDIO_CMD = 0x12,
     DCM_MSG_DOOR_STATUS_REQUEST = 0x15,
     DCM_MSG_DOOR_STATUS_UPDATE = 0x16,
     DCM_MSG_OPS_EVENT = 0x17,
+    // DCM_MSG_FACTORY_TEST = 0x18,
     DCM_MSG_DOOR_RESPONSE = 0x90,
     DCM_MSG_ALERT_ACK = 0x91,
     DCM_MSG_AUDIO_ACK = 0x92,
@@ -47,6 +49,12 @@ typedef enum {
 } __attribute__((packed)) ops_event_t;
 
 typedef struct {
+    char zero[9];
+} __attribute__((packed)) dcm_cmd_0x04_msg_t;
+_Static_assert(sizeof(dcm_cmd_0x04_msg_t) == 9, "msg size");
+_Static_assert(sizeof(dcm_cmd_0x04_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+
+typedef struct {
     uint8_t val;
     char unk;
 } __attribute__((packed)) dcm_door_cmd_msg_t;
@@ -78,7 +86,8 @@ typedef struct {
     uint16_t down_limit;
 } __attribute__((packed)) dcm_door_status_req_msg_t;
 _Static_assert(sizeof(dcm_door_status_req_msg_t) == 12, "msg size");
-_Static_assert(sizeof(dcm_door_status_req_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+_Static_assert(sizeof(dcm_door_status_req_msg_t) < MAX_DCM_MSG_SIZE,
+               "msg size");
 
 typedef struct {
     uint32_t time;
@@ -90,7 +99,8 @@ typedef struct {
     uint16_t unk;
 } __attribute__((packed)) dcm_door_status_update_msg_t;
 _Static_assert(sizeof(dcm_door_status_update_msg_t) == 14, "msg size");
-_Static_assert(sizeof(dcm_door_status_update_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+_Static_assert(sizeof(dcm_door_status_update_msg_t) < MAX_DCM_MSG_SIZE,
+               "msg size");
 
 typedef struct {
     char unk;
@@ -130,6 +140,7 @@ typedef struct {
     /** payload type */
     dcm_msg_type_t type;
     union {
+        dcm_cmd_0x04_msg_t cmd_0x04;
         dcm_door_cmd_msg_t door_cmd;
         dcm_alert_cmd_msg_t alert_cmd;
         dcm_audio_cmd_msg_t audio_cmd;
