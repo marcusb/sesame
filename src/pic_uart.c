@@ -34,6 +34,7 @@ static mdev_t *uart_dev;
 static bool self_test_done;
 static door_open_state_t state = DCM_DOOR_STATE_UNKNOWN;
 static door_direction_t direction = DCM_DOOR_DIR_UNKNOWN;
+static uint16_t pos;
 static uint16_t down_limit;
 static uint16_t up_limit;
 static TickType_t last_state_pub_time;
@@ -64,15 +65,14 @@ static uint8_t calc_chk_sum(uint8_t *p, int n) {
 }
 
 static void door_state_update(door_open_state_t new_state, door_direction_t dir,
-                              uint16_t position) {
+                              uint16_t raw_pos) {
     bool update = state != new_state || direction != dir;
     state = new_state;
     direction = dir;
     LogInfo(("door status: state=%d, dir=%d, pos=%u, down_lim=%u, up_lim=%u",
-             state, dir, position, down_limit, up_limit));
-    uint16_t pos = 0;
+             state, dir, raw_pos, down_limit, up_limit));
     if (down_limit != up_limit) {
-        pos = 100 * (up_limit - position) / (float)(up_limit - down_limit);
+        pos = 100 * (up_limit - raw_pos) / (float)(up_limit - down_limit);
     }
     if (pos < 0) {
         pos = 0;
@@ -276,11 +276,12 @@ static void send_door_cmd(uint8_t val) {
 }
 
 static void send_door_status_req() {
-    dcm_msg_t msg = {DCM_HEADER_BYTE,
-                     sizeof(dcm_door_status_req_msg_t),
-                     next_token(),
-                     DCM_MSG_DOOR_STATUS_REQUEST,
-                     {.door_status_req = {rtc_time_get()}}};
+    dcm_msg_t msg = {
+        DCM_HEADER_BYTE,
+        sizeof(dcm_door_status_req_msg_t),
+        next_token(),
+        DCM_MSG_DOOR_STATUS_REQUEST,
+        {.door_status_req = {rtc_time_get(), 0, 0, pos, up_limit, down_limit}}};
     send_msg(&msg);
 }
 
