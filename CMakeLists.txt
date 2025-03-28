@@ -44,6 +44,7 @@ target_sources(${exe_target}
     "${CMAKE_CURRENT_SOURCE_DIR}/src/random.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/rtc_support.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/subscription_manager.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
     "${afr_ports_dir}/wifi/iot_wifi.c"
     "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_agent_message.c"

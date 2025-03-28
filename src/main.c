@@ -42,6 +42,7 @@
 #include "ota.h"
 #include "pic_uart.h"
 #include "rtc_support.h"
+#include "syslog.h"
 
 #define BTN_WIFI GPIO_22
 #define BTN_OTA GPIO_23
@@ -236,14 +237,8 @@ int main(void) {
     init_watchdog();
 
     /* Create tasks that are not dependent on the Wi-Fi being initialized. */
-    struct freertos_sockaddr udp_log_addr = {
-        sizeof(struct freertos_sockaddr),
-        FREERTOS_AF_INET,
-        FreeRTOS_htons(5050),
-        0,
-        {.ulIP_IPv4 = FreeRTOS_inet_addr("172.16.1.10")}};
     xLoggingTaskInitialize(512, tskIDLE_PRIORITY,
-                           mainLOGGING_MESSAGE_QUEUE_LENGTH, &udp_log_addr);
+                           mainLOGGING_MESSAGE_QUEUE_LENGTH);
 
     load_config();
 
@@ -312,6 +307,14 @@ int main(void) {
                     break;
                 }
 
+                case CTRL_MSG_LOGGING_CONFIG: {
+                    app_config.logging_config = ctrl_msg.msg.logging_cfg;
+                    app_config.has_logging_config = true;
+                    save_config();
+                    reboot();
+                    break;
+                }
+
                 default:
                     LogError(("unknown message type %d", ctrl_msg.type));
             }
@@ -358,6 +361,7 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                 // Create the tasks that use the TCP/IP stack if they have
                 // not already been created.
                 tasks_created = true;
+                configure_logging(&app_config.logging_config.syslog_config);
                 xTaskCreate(mqtt_task, "MQTT", 512, &app_config.mqtt_config,
                             tskIDLE_PRIORITY, NULL);
             }

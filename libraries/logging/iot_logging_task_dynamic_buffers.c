@@ -108,21 +108,15 @@ static int snprintf_safe( char * s,
  * this file.  This version uses dynamic memory, so the buffer that contained
  * the log message is freed after it has been output.
  */
-static void prvLoggingTask( void * pvParameters );
+void prvLoggingTask( void * pvParameters );
 
 /*-----------------------------------------------------------*/
-
-bool is_sta_network_up();
 
 /*
  * The queue used to pass pointers to log messages from the task that created
  * the message to the task that will performs the output.
  */
 static QueueHandle_t xQueue = NULL;
-
-static int udpLogging;
-static struct freertos_sockaddr udpLogAddr;
-static Socket_t udpSocket = FREERTOS_INVALID_SOCKET;
 
 /*-----------------------------------------------------------*/
 
@@ -176,19 +170,9 @@ static int snprintf_safe( char * s,
 
 /*-----------------------------------------------------------*/
 
-static void prvCreateLogSocket( void * p1, uint32_t p2 ) {
-    udpSocket = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM, FREERTOS_IPPROTO_UDP);
-    if (udpSocket != FREERTOS_INVALID_SOCKET) {
-        static const TickType_t xSendTimeOut = pdMS_TO_TICKS( 0 );
-        FreeRTOS_setsockopt( udpSocket, 0, FREERTOS_SO_SNDTIMEO, &xSendTimeOut, sizeof(xSendTimeOut) );
-        FreeRTOS_bind( udpSocket, NULL, 0 );
-    }
-}
-
 BaseType_t xLoggingTaskInitialize( uint16_t usStackSize,
                                    UBaseType_t uxPriority,
-                                   UBaseType_t uxQueueLength,
-                                   void * pUdpLogDest )
+                                   UBaseType_t uxQueueLength )
 {
     BaseType_t xReturn = pdFAIL;
 
@@ -200,7 +184,7 @@ BaseType_t xLoggingTaskInitialize( uint16_t usStackSize,
 
         if( xQueue != NULL )
         {
-            if( xTaskCreate( prvLoggingTask, "Logging", usStackSize, NULL, uxPriority, NULL ) == pdPASS )
+            if( xTaskCreate( prvLoggingTask, "Logging", usStackSize, xQueue, uxPriority, NULL ) == pdPASS )
             {
                 xReturn = pdPASS;
             }
@@ -212,49 +196,8 @@ BaseType_t xLoggingTaskInitialize( uint16_t usStackSize,
         }
     }
 
-    if (pUdpLogDest) {
-        udpLogging = 1;
-        udpLogAddr = *(struct freertos_sockaddr *)pUdpLogDest;
-    }
-
     return xReturn;
 }
-/*-----------------------------------------------------------*/
-
-static void prvLoggingTask( void * pvParameters )
-{
-    /* Disable unused parameter warning. */
-    ( void ) pvParameters;
-
-    char * pcReceivedString = NULL;
-
-    for( ; ; )
-    {
-        /* Block to wait for the next string to print. */
-        if( xQueueReceive( xQueue, &pcReceivedString, portMAX_DELAY ) == pdPASS )
-        {
-            configPRINT_STRING( pcReceivedString );
-
-            if (udpLogging) {
-                if (udpSocket == FREERTOS_INVALID_SOCKET && is_sta_network_up()) {
-                    /* Create and bind the socket to which print messages are sent.  The
-                     * xTimerPendFunctionCall() function is used even though this is
-                     * not an interrupt because this function is called from the IP task
-                     * and the	IP task cannot itself wait for a socket to bind.  The
-                     * parameters to prvCreateLogSocket() are not required so set to
-                     * NULL or 0. */
-                    xTimerPendFunctionCall(prvCreateLogSocket, NULL, 0, 10);
-                }
-                if (udpSocket != FREERTOS_INVALID_SOCKET) {
-                    FreeRTOS_sendto( udpSocket, pcReceivedString, strlen(pcReceivedString), 0, &udpLogAddr, sizeof( udpLogAddr ) );
-                }
-            }
-
-            vPortFree( ( void * ) pcReceivedString );
-        }
-    }
-}
-
 /*-----------------------------------------------------------*/
 
 static void prvLoggingPrintfCommon( uint8_t usLoggingLevel,

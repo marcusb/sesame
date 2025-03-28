@@ -43,8 +43,7 @@
  */
 BaseType_t xLoggingTaskInitialize( uint16_t usStackSize,
                                    UBaseType_t uxPriority,
-                                   UBaseType_t uxQueueLength,
-                                   void * pUdpLogDest);
+                                   UBaseType_t uxQueueLength );
 
 /**
  * @brief Interface to print via the logging interface.

@@ -163,11 +163,12 @@ bad_req:
     send_status(req, BAD_REQUEST);
 }
 
-void process_cfg_mqtt(const http_request_t* req) {
-    ctrl_msg_t msg = {CTRL_MSG_MQTT_CONFIG, {.mqtt_cfg = MqttConfig_init_zero}};
+static void process_cfg(const http_request_t* req, ctrl_msg_type_t type,
+                        const pb_msgdesc_t* desc) {
+    ctrl_msg_t msg = {type};
     pb_istream_t stream = pb_istream_from_buffer(
         (const pb_byte_t*)req->body_start, req->content_length);
-    bool status = pb_decode(&stream, MqttConfig_fields, &msg.msg.mqtt_cfg);
+    bool status = pb_decode(&stream, desc, &msg.msg);
     send_status(req, status ? REPLY_OK : BAD_REQUEST);
     xQueueSendToBack(ctrl_queue, &msg, 100);
 }
@@ -191,10 +192,12 @@ static void do_request(const http_request_t* req) {
             } else if (strcmp(req->url, "/cfg/network") == 0) {
                 process_cfg_network(req);
             } else if (strcmp(req->url, "/cfg/mqtt") == 0) {
-                process_cfg_mqtt(req);
+                process_cfg(req, CTRL_MSG_MQTT_CONFIG, MqttConfig_fields);
+            } else if (strcmp(req->url, "/cfg/logging") == 0) {
+                process_cfg(req, CTRL_MSG_LOGGING_CONFIG, LoggingConfig_fields);
             } else if (strcmp(req->url, "/restart") == 0) {
                 send_status(req, REPLY_OK);
-                LogDebug(("reboot requested, rebooting..."));
+            LogDebug(("reboot requested, rebooting..."));
                 vTaskDelay(pdMS_TO_TICKS(3000));
                 reboot();
             } else {
