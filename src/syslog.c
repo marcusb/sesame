@@ -4,8 +4,12 @@
 #include "FreeRTOS_Sockets.h"
 
 // Application
-#include "config_manager.h"
+#include "app_config.pb.h"
+#include "logging.h"
 #include "syslog.h"
+#include "wmtime.h"
+
+#define LOG_FACILITY_LOCAL0 16
 
 static struct freertos_sockaddr udp_log_addr;
 static Socket_t syslog_sock;
@@ -21,20 +25,16 @@ static void create_log_socket(void *p1, uint32_t p2) {
 
     Socket_t sock = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM,
                                     FREERTOS_IPPROTO_UDP);
-    wm_printf("socket created %p\n", sock);
     if (sock != FREERTOS_INVALID_SOCKET) {
         static const TickType_t send_to = pdMS_TO_TICKS(0);
         FreeRTOS_setsockopt(sock, 0, FREERTOS_SO_SNDTIMEO, &send_to,
                             sizeof(send_to));
         FreeRTOS_bind(sock, NULL, 0);
         syslog_sock = sock;
-        wm_printf("socket bound\n");
     }
 }
 
 void configure_logging(const SyslogConfig *cfg) {
-    wm_printf("enabled: %d, host: %s, port: %u", cfg->enabled, cfg->syslog_host,
-              cfg->syslog_port);
     if (!cfg->enabled) {
         return;
     }
@@ -44,23 +44,42 @@ void configure_logging(const SyslogConfig *cfg) {
     xTimerPendFunctionCall(create_log_socket, (void *)cfg, 0, 10);
 }
 
-static void log_syslog(const char *msg) {
-    if (syslog_sock != FREERTOS_INVALID_SOCKET) {
-        FreeRTOS_sendto(syslog_sock, msg, strlen(msg), 0, &udp_log_addr,
-                        sizeof(udp_log_addr));
+void log_syslog(const log_msg_t *log) {
+    char buf[configLOGGING_MAX_MESSAGE_LENGTH];
+    static const int severities[] = {7, 3, 4, 6, 7};
+    configASSERT(log->level < sizeof(severities));
+    int severity = severities[log->level];
+    int pri = (LOG_FACILITY_LOCAL0 << 3) + severity;
+
+    char *p = buf;
+    int remaining = sizeof(buf);
+    int n = snprintf(p, remaining, "<%03d>1 ", pri);
+    if (n < 0 || n >= remaining) {
+        return;
     }
-}
+    p += n;
+    remaining -= n;
 
-void prvLoggingTask(void *params) {
-    QueueHandle_t xQueue = (QueueHandle_t)params;
-    char *msg;
+    // include timestamp if it's realistic
+    struct tm tm;
+    if (wmtime_time_get(&tm) == 0 && tm.tm_year > 2024 &&
+        (n = strftime(p, remaining, "%FT%T%z", &tm)) > 0) {
+        p += n;
+        remaining -= n;
+    } else {
+        *p++ = '-';
+        n--;
+    }
 
-    for (;;) {
-        /* Block to wait for the next string to print. */
-        if (xQueueReceive(xQueue, &msg, portMAX_DELAY) == pdPASS) {
-            wm_printf(msg);
-            log_syslog(msg);
-            vPortFree(msg);
-        }
+    n = snprintf(p, remaining, " %s sesame %s %lu - %s",
+                 pcApplicationHostnameHook(), log->task_name, log->msg_id,
+                 log->msg);
+    if (n < 0) {
+        return;
+    }
+
+    if (syslog_sock != FREERTOS_INVALID_SOCKET) {
+        FreeRTOS_sendto(syslog_sock, buf, strlen(buf), 0, &udp_log_addr,
+                        sizeof(udp_log_addr));
     }
 }

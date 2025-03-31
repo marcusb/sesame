@@ -17,7 +17,7 @@
 #include "cli.h"
 #include "flash.h"
 #include "iot_crypto.h"
-#include "iot_logging_task.h"
+#include "logging.h"
 #include "mbedtls/entropy.h"
 #include "mdev_gpio.h"
 #include "mdev_pinmux.h"
@@ -48,7 +48,7 @@
 #define BTN_OTA GPIO_23
 
 /* Logging Task Defines. */
-#define mainLOGGING_MESSAGE_QUEUE_LENGTH (64)
+#define mainLOGGING_MESSAGE_QUEUE_LENGTH (4)
 
 // the global controller event queue, all tasks write to it
 QueueHandle_t ctrl_queue;
@@ -74,6 +74,16 @@ void wm_printf(const char *format, ...) {
     va_start(args, format);
     wmprintf(format, args);
     va_end(args);
+}
+
+static void log_console(const log_msg_t *log) {
+    static const char levels[] = "-EWID";
+    log_level_t level = log->level;
+    if (level > LOG_LEVEL_LAST || level < 0) {
+        level = LOG_NONE;
+    }
+    wmprintf("%lu %lu %c %s\r\n", log->msg_id, log->ticks, levels[level],
+             log->msg);
 }
 
 static void gpio_cb(int pin, void *data) {
@@ -196,10 +206,10 @@ static void create_tasks() {
 
     pic_queue = xQueueCreate(5, sizeof(pic_cmd_t));
     configASSERT(pic_queue);
-    xTaskCreate(pic_uart_task, "PIC Comm", 512, pic_queue, tskIDLE_PRIORITY + 1,
+    xTaskCreate(pic_uart_task, "PIC", 512, pic_queue, tskIDLE_PRIORITY + 1,
                 NULL);
 
-    xTaskCreate(led_task, "LED Ctrl", 512, NULL, tskIDLE_PRIORITY, NULL);
+    xTaskCreate(led_task, "LED", 512, NULL, tskIDLE_PRIORITY, NULL);
 
     nm_queue = xQueueCreate(5, sizeof(nm_msg_t));
     configASSERT(nm_queue);
@@ -237,8 +247,9 @@ int main(void) {
     init_watchdog();
 
     /* Create tasks that are not dependent on the Wi-Fi being initialized. */
-    xLoggingTaskInitialize(512, tskIDLE_PRIORITY,
-                           mainLOGGING_MESSAGE_QUEUE_LENGTH);
+    register_log_backend(log_console);
+    register_log_backend(log_syslog);
+    init_logging(512, tskIDLE_PRIORITY, mainLOGGING_MESSAGE_QUEUE_LENGTH);
 
     load_config();
 
@@ -432,13 +443,9 @@ void vApplicationMallocFailedHook() {
  * has occurred.
  *
  */
-void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
-    wmprintf("ERROR: stack overflow in task %s\r\n", pcTaskName);
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *task_name) {
+    wmprintf("ERROR: stack overflow in task %s\r\n", task_name);
     portDISABLE_INTERRUPTS();
-
-    /* Unused Parameters */
-    (void)xTask;
-    (void)pcTaskName;
 
     /* Loop forever */
     for (;;) {

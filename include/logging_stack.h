@@ -33,7 +33,7 @@
 
 /* FreeRTOS Include. */
 #include "FreeRTOS.h"
-#include "iot_logging_task.h"
+#include "logging.h"
 
 /* Standard Include. */
 #include <stdint.h>

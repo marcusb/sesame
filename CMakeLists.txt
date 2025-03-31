@@ -35,6 +35,7 @@ target_sources(${exe_target}
     "${CMAKE_CURRENT_SOURCE_DIR}/src/idle_task.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/logging.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mbedtls_error_dummy.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mqtt.c"
@@ -251,51 +252,21 @@ target_link_libraries(freertos_plus_transport
     freertos_plus_tcp
     logging)
 
-add_library(c_sdk STATIC)
-target_sources(c_sdk
-    PRIVATE
-    "libraries/c_sdk/standard/common/iot_static_memory_common.c")
-target_include_directories(c_sdk
-    PUBLIC
-    "libraries/c_sdk/standard/common/include"
-    PRIVATE
-    "libraries/c_sdk/standard/common/include/private")
-target_link_libraries(c_sdk
-    PUBLIC
-    iot_platform
-    freertos_kernel)
-
-add_library(iot_platform STATIC)
-target_sources(iot_platform
-    PRIVATE
-    "libraries/abstractions/platform/freertos/iot_clock_freertos.c"
-    "libraries/abstractions/platform/freertos/iot_threads_freertos.c")
-target_include_directories(iot_platform
-    PUBLIC
-    "libraries/abstractions/platform/include"
-    PRIVATE
-    "libraries/abstractions/platform/freertos/include"
-)
-target_link_libraries(iot_platform
-    PUBLIC
-    c_sdk
-    freertos_kernel)
-
 add_library(logging STATIC)
 target_sources(logging
     PRIVATE
-    "libraries/logging/iot_logging.c"
-    "libraries/logging/iot_logging_task_dynamic_buffers.c")
+    "src/logging.c"
+    "src/string_util.c")
 target_include_directories(logging
     PUBLIC
-    "libraries/logging/include")
+    "include")
 target_compile_options(logging
-    PRIVATE
-    -DLOGGING_ENABLE_METADATA_WITH_C99_AND_GNU_EXTENSION=1)
+    PUBLIC
+    -DLOGGING_ENABLE_METADATA_WITH_C99_AND_GNU_EXTENSION=0)
 target_link_libraries(logging
     PRIVATE
-    iot_platform
-    freertos_plus_tcp)
+    freertos_kernel
+    globals)
 
 include("${FREERTOS_PLUS_DIR}/Source/Utilities/backoff_algorithm/backoffAlgorithmFilePaths.cmake")
 add_library(backoff_algorithm STATIC)
