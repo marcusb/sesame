@@ -26,7 +26,7 @@ static const TickType_t BACKOFF_FUZZ = pdMS_TO_TICKS(500);
 static const char METHOD_GET[] = "GET";
 
 // reserve some extra room for headers in the response buffer
-#define READ_SIZE 4096
+#define READ_SIZE 1024
 #define BUF_SIZE (READ_SIZE + 512)
 
 struct NetworkContext {
@@ -61,7 +61,7 @@ bool load_ota_update(update_desc_t* upd_desc) {
     HTTPStatus_t status;
     int pos = 0;
     int bytes_read = 0;
-    uint8_t* buf = malloc(BUF_SIZE);
+    uint8_t* buf = pvPortMalloc(BUF_SIZE);
     bool res;
 
     do {
@@ -137,7 +137,7 @@ bool load_ota_update(update_desc_t* upd_desc) {
         backoff *= 2;
     } while (true);
 ret:
-    free(buf);
+    vPortFree(buf);
     return res;
 }
 

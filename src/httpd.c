@@ -1,7 +1,6 @@
 #include "httpd.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 // FreeRTOS
@@ -197,7 +196,7 @@ static void do_request(const http_request_t* req) {
                 process_cfg(req, CTRL_MSG_LOGGING_CONFIG, LoggingConfig_fields);
             } else if (strcmp(req->url, "/restart") == 0) {
                 send_status(req, REPLY_OK);
-            LogDebug(("reboot requested, rebooting..."));
+                LogDebug(("reboot requested, rebooting..."));
                 vTaskDelay(pdMS_TO_TICKS(3000));
                 reboot();
             } else {
@@ -265,7 +264,7 @@ static char* get_header(const http_request_t* req, const char* name) {
 
 static void request_task(void* params) {
     Socket_t socket = (Socket_t)params;
-    char* buf = malloc(BUF_SIZE);
+    char* buf = pvPortMalloc(BUF_SIZE);
     if (!buf) {
         LogError(("malloc failed"));
         goto close_conn;
@@ -350,7 +349,7 @@ close_conn:
     }
     FreeRTOS_closesocket(socket);
     if (buf) {
-        free(buf);
+        vPortFree(buf);
     }
     vTaskDelete(NULL);
 }

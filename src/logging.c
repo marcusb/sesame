@@ -1,5 +1,4 @@
 #include <stdarg.h>
-#include <stdlib.h>
 #include <string.h>
 
 // FreeRTOS
@@ -44,7 +43,7 @@ void logging_task(void *params) {
                     log_backends[i](&log);
                 }
             }
-            free(log.msg);
+            vPortFree(log.msg);
         }
     }
 }
@@ -89,7 +88,7 @@ static void log_prepare(log_level_t log_level, const char *filename,
     }
     // allocate some extra for the filename info
     n += 24;
-    char *p = log.msg = malloc(n);
+    char *p = log.msg = pvPortMalloc(n);
     if (p == NULL) {
         return;
     }
@@ -115,7 +114,7 @@ static void log_prepare(log_level_t log_level, const char *filename,
     }
     vsnprintf(p, n, fmt, args);
     if (xQueueSend(log_queue, &log, 0) != pdPASS) {
-        free(log.msg);
+        vPortFree(log.msg);
     }
 }
 
