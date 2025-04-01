@@ -39,7 +39,7 @@ typedef struct {
     size_t line_num;
     TickType_t ticks;
     char task_name[configMAX_TASK_NAME_LEN + 1];
-    char msg[configLOGGING_MAX_MESSAGE_LENGTH];
+    char *msg;
 } log_msg_t;
 
 typedef void (*log_backend_func)(const log_msg_t *log);

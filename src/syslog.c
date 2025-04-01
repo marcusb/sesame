@@ -45,7 +45,8 @@ void configure_logging(const SyslogConfig *cfg) {
 }
 
 void log_syslog(const log_msg_t *log) {
-    char buf[configLOGGING_MAX_MESSAGE_LENGTH];
+    // allocate some extra space for metadata
+    char buf[strlen(log->msg) + 64];
     static const int severities[] = {7, 3, 4, 6, 7};
     configASSERT(log->level < sizeof(severities));
     int severity = severities[log->level];

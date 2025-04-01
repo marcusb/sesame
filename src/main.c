@@ -48,7 +48,7 @@
 #define BTN_OTA GPIO_23
 
 /* Logging Task Defines. */
-#define mainLOGGING_MESSAGE_QUEUE_LENGTH (4)
+#define mainLOGGING_MESSAGE_QUEUE_LENGTH (16)
 
 // the global controller event queue, all tasks write to it
 QueueHandle_t ctrl_queue;

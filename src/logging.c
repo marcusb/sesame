@@ -1,4 +1,5 @@
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 
 // FreeRTOS
@@ -43,6 +44,7 @@ void logging_task(void *params) {
                     log_backends[i](&log);
                 }
             }
+            free(log.msg);
         }
     }
 }
@@ -81,15 +83,22 @@ static void log_prepare(log_level_t log_level, const char *filename,
     }
     strtcpy(log.task_name, task_name, sizeof(log.task_name));
 
-    int n = 0;
-    char *p = log.msg;
-    int remaining = sizeof(log.msg);
+    int n = vsnprintf(NULL, 0, fmt, args);
+    if (n < 0) {
+        return;
+    }
+    // allocate some extra for the filename info
+    n += 24;
+    char *p = log.msg = malloc(n);
+    if (p == NULL) {
+        return;
+    }
 
     if (filename != NULL) {
+        const char *file;
+
         /* If a file path is provided, extract only the file name from the
          * string by looking for '/' or '\' directory seperator. */
-        const char *file = NULL;
-
         if (strrchr(filename, '\\') != NULL) {
             file = strrchr(filename, '\\') + 1;
         } else if (strrchr(filename, '/') != NULL) {
@@ -98,21 +107,16 @@ static void log_prepare(log_level_t log_level, const char *filename,
             file = filename;
         }
 
-        n = snprintf(p, remaining, "[%s:%d] ", file, line_num);
-        if (n < 0) {
-            return;
+        int m = snprintf(p, n, "[%.12s:%d]", file, line_num);
+        if (m >= 0 && m < n) {
+            p += m;
+            n -= m;
         }
-        if (n >= remaining) {
-            // truncated, so drop the file and line
-            n = 0;
-        }
-        p += n;
-        remaining -= n;
     }
-
-    vsnprintf(p, remaining, fmt, args);
-
-    xQueueSend(log_queue, &log, 0);
+    vsnprintf(p, n, fmt, args);
+    if (xQueueSend(log_queue, &log, 0) != pdPASS) {
+        free(log.msg);
+    }
 }
 
 void vLoggingPrintfError(const char *pcFormat, ...) {
