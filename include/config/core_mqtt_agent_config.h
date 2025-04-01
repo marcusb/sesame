@@ -28,6 +28,7 @@
 
 /************ End of logging configuration ****************/
 
+#define MQTT_AGENT_MAX_OUTSTANDING_ACKS 3
 #define MQTT_AGENT_COMMAND_QUEUE_LENGTH (25)
 #define MQTT_COMMAND_CONTEXTS_POOL_SIZE 10
 

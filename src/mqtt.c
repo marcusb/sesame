@@ -83,7 +83,7 @@ static uint32_t next_msg_id;
  * @note Specified in bytes.  Must be large enough to hold the maximum
  * anticipated MQTT payload.
  */
-#define MQTT_AGENT_NETWORK_BUFFER_SIZE (2048)
+#define MQTT_AGENT_NETWORK_BUFFER_SIZE (512)
 
 /**
  * @brief Size of statically allocated buffers for holding topic names and
