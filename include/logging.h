@@ -34,7 +34,7 @@
 
 typedef struct {
     unsigned long msg_id;
-    log_level_t level;
+    uint8_t level;
     const char *filename;
     size_t line_num;
     TickType_t ticks;

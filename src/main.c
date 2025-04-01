@@ -78,7 +78,7 @@ void wm_printf(const char *format, ...) {
 
 static void log_console(const log_msg_t *log) {
     static const char levels[] = "-EWID";
-    log_level_t level = log->level;
+    uint8_t level = log->level;
     if (level > LOG_LEVEL_LAST || level < 0) {
         level = LOG_NONE;
     }

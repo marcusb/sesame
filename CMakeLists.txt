@@ -61,8 +61,7 @@ add_library(globals INTERFACE)
 add_library(freertos_config INTERFACE)
 target_include_directories(freertos_config
     INTERFACE
-    include/config
-    libraries/abstractions/platform/freertos/include)
+    include/config)
 target_compile_definitions(freertos_config
     INTERFACE
     projCOVERAGE_TEST=0)
@@ -255,11 +254,11 @@ target_link_libraries(freertos_plus_transport
 add_library(logging STATIC)
 target_sources(logging
     PRIVATE
-    "src/logging.c"
-    "src/string_util.c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/logging.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/string_util.c")
 target_include_directories(logging
     PUBLIC
-    "include")
+    "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_options(logging
     PUBLIC
     -DLOGGING_ENABLE_METADATA_WITH_C99_AND_GNU_EXTENSION=0)

@@ -64,7 +64,7 @@ BaseType_t init_logging(uint16_t stack_size, UBaseType_t priority,
     return pdFAIL;
 }
 
-static void log_prepare(log_level_t log_level, const char *filename,
+static void log_prepare(uint8_t log_level, const char *filename,
                         size_t line_num, const char *fmt, va_list args) {
     static unsigned long msg_id = 0;
 
