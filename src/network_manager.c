@@ -12,7 +12,6 @@
 // wmsdk
 #include "psm-v2.h"
 #include "wlan.h"
-#include "wm_os.h"
 #include "wm_wlan.h"
 
 // Application
@@ -348,7 +347,21 @@ void network_manager_task(void *params) {
             start_ap();
         }
         if (n++ % 100 == 0) {
-            os_dump_mem_stats();
+            static HeapStats_t stats;
+            vPortGetHeapStats(&stats);
+            wmprintf("\r\nfree heap space     : %u\r\n",
+                     stats.xAvailableHeapSpaceInBytes);
+            wmprintf("largest free block  : %u\r\n",
+                     stats.xSizeOfLargestFreeBlockInBytes);
+            wmprintf("smallest free block : %u\r\n",
+                     stats.xSizeOfSmallestFreeBlockInBytes);
+            wmprintf("free block count    : %u\r\n", stats.xNumberOfFreeBlocks);
+            wmprintf("min free heap ever  : %u\r\n",
+                     stats.xMinimumEverFreeBytesRemaining);
+            wmprintf("successful malloc   : %u\r\n",
+                     stats.xNumberOfSuccessfulAllocations);
+            wmprintf("successful free     : %u\r\n\r\n",
+                     stats.xNumberOfSuccessfulFrees);
         }
     }
 

@@ -480,3 +480,43 @@ void *pvCalloc(size_t xNumElements, size_t xSize) {
 
     return pvNew;
 }
+
+void *pvPortReAlloc(void *p, size_t size) {
+    void *pvReturn;
+
+    vTaskSuspendAll();
+    {
+        pvReturn = realloc(p, size);
+    }
+    xTaskResumeAll();
+
+    return pvReturn;
+}
+
+extern unsigned _heap_start, _heap_end;
+extern unsigned _heap_2_start, _heap_2_end;
+extern os_mutex_t biglock;
+
+void app_init(void *params) {
+    int ret = os_mutex_create(&biglock, "big_lock", OS_MUTEX_INHERIT);
+    if (ret != WM_SUCCESS) os_thread_self_complete(NULL);
+    main();
+    os_thread_delete(NULL);
+}
+
+int os_init() {
+    HeapRegion_t xHeapRegions[] = {
+        {(uint8_t *)&_heap_start,
+         (unsigned)&_heap_end - (unsigned)&_heap_start},
+        {(uint8_t *)&_heap_2_start,
+         (unsigned)&_heap_2_end - (unsigned)&_heap_2_start},
+        {NULL, 0}};
+
+    vPortDefineHeapRegions(xHeapRegions);
+
+    int ret = xTaskCreate(app_init, "app_init", configMINIMAL_STACK_SIZE + 896,
+                          NULL, tskIDLE_PRIORITY + 3, NULL);
+    vTaskStartScheduler();
+
+    return ret == pdPASS ? WM_SUCCESS : -WM_FAIL;
+}

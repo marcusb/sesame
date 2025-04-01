@@ -78,9 +78,6 @@ void vAssertCalled( const char * pcFile,
 /* Board CPU frequency */
 int board_cpu_freq();
 
-#define configAPPLICATION_ALLOCATED_HEAP 1
-#define FREERTOS_ENABLE_MALLOC_STATS
-
 #define configASSERT( x )    if( ( x ) == 0 ) vAssertCalled( __FILE__, __LINE__ )
 
 /* Enable this if run time statistics are to be enabled. The support
@@ -106,7 +103,7 @@ unsigned long portWMSDK_GET_RUN_TIME_COUNTER_VALUE(void);
 #define configMAX_CO_ROUTINE_PRIORITIES 	( 2 )
 
 /* Use application defined heap region */
-#define configAPPLICATION_ALLOCATED_HEAP	1
+#define configAPPLICATION_ALLOCATED_HEAP	0
 
 /*  Software timer definitions. */
 #define configUSE_TIMERS			1

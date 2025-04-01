@@ -197,7 +197,7 @@ nanopb_generate_cpp(TARGET proto RELPATH proto
 # -------------------------------------------------------------------------------------------------
 # ==================== Marvell ====================
 
-set(FREERTOS_HEAP "${mw320_dir}/sdk/external/FreeRTOS/portable/MemMang/heap_marvell.c" CACHE STRING "" FORCE)
+set(FREERTOS_HEAP "5" CACHE STRING "" FORCE)
 set(FREERTOS_PORT "GCC_ARM_CM4F" CACHE STRING "" FORCE)
 
 set(FREERTOS_PLUS_TCP_BUFFER_ALLOCATION "2" CACHE STRING "" FORCE)
