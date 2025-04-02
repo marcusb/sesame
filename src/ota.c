@@ -19,9 +19,6 @@
 #define RETRY_MAX_ATTEMPTS 3
 #define RETRY_MAX_BACKOFF_DELAY_MS 5000
 #define RETRY_BACKOFF_BASE_MS 500
-static const int MAX_RETRIES = 3;
-static const TickType_t MIN_BACKOFF = pdMS_TO_TICKS(1000);
-static const TickType_t BACKOFF_FUZZ = pdMS_TO_TICKS(500);
 
 static const char METHOD_GET[] = "GET";
 
@@ -41,9 +38,6 @@ static TransportInterface_t transport = {
 void reboot(void);
 
 bool load_ota_update(update_desc_t* upd_desc) {
-    int retries = 0;
-    TickType_t backoff = MIN_BACKOFF;
-
     const HTTPRequestInfo_t req = {
         METHOD_GET,
         strlen(req.pMethod),
@@ -54,10 +48,12 @@ bool load_ota_update(update_desc_t* upd_desc) {
         HTTP_REQUEST_KEEP_ALIVE_FLAG,
     };
 
-    // BackoffAlgorithmContext_t retry_params;
-    // BackoffAlgorithm_InitializeParams(&retry_params, RETRY_BACKOFF_BASE_MS,
-    //                                   RETRY_MAX_BACKOFF_DELAY_MS,
-    //                                   RETRY_MAX_ATTEMPTS);
+    BackoffAlgorithmStatus_t retry_status;
+    BackoffAlgorithmContext_t retry_params;
+    BackoffAlgorithm_InitializeParams(&retry_params, RETRY_BACKOFF_BASE_MS,
+                                      RETRY_MAX_BACKOFF_DELAY_MS,
+                                      RETRY_MAX_ATTEMPTS);
+    uint16_t backoff = 0;
     HTTPStatus_t status;
     int pos = 0;
     int bytes_read = 0;
@@ -104,11 +100,9 @@ bool load_ota_update(update_desc_t* upd_desc) {
             }
             pos += bytes_read;
 
-            // BackoffAlgorithm_InitializeParams(
-            //     &retry_params, RETRY_BACKOFF_BASE_MS,
-            //     RETRY_MAX_BACKOFF_DELAY_MS, RETRY_MAX_ATTEMPTS);
-            retries = 0;
-            backoff = MIN_BACKOFF;
+            BackoffAlgorithm_InitializeParams(
+                &retry_params, RETRY_BACKOFF_BASE_MS,
+                RETRY_MAX_BACKOFF_DELAY_MS, RETRY_MAX_ATTEMPTS);
         } while (bytes_read == READ_SIZE);
         res = true;
         goto ret;
@@ -117,24 +111,16 @@ bool load_ota_update(update_desc_t* upd_desc) {
         LogError(("HTTP req failed: %s", HTTPClient_strerror(status)));
         Plaintext_FreeRTOS_Disconnect(&network_context);
     conn_err:
-        // uint16_t backoff;
-        // BackoffAlgorithmStatus_t retry_status =
-        //     BackoffAlgorithm_GetNextBackoff(&retry_params, rand(), &backoff);
-        // if (retry_status == BackoffAlgorithmRetriesExhausted) {
-        if (retries == MAX_RETRIES) {
+        retry_status =
+            BackoffAlgorithm_GetNextBackoff(&retry_params, rand(), &backoff);
+        if (retry_status == BackoffAlgorithmRetriesExhausted) {
             res = false;
             goto ret;
         }
-        // LogInfo("attempt %d of %d failed, sleeping %d ms",
-        //                retry_params.attemptsDone,
-        //                retry_params.maxRetryAttempts, backoff);
-        // vTaskDelay(pdMS_TO_TICKS(backoff));
-        retries++;
-        backoff += rand() / (RAND_MAX / BACKOFF_FUZZ);
-        LogInfo(("attempt %d of %d failed, sleeping %d ms", retries,
-                 MAX_RETRIES, pdTICKS_TO_MS(backoff)));
-        vTaskDelay(backoff);
-        backoff *= 2;
+        LogInfo(("attempt %d of %d failed, sleeping %d ms",
+                 retry_params.attemptsDone, retry_params.maxRetryAttempts,
+                 backoff));
+        vTaskDelay(pdMS_TO_TICKS(backoff));
     } while (true);
 ret:
     vPortFree(buf);

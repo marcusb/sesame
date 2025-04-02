@@ -412,18 +412,16 @@ static void prvMQTTClientSocketWakeupCallback(Socket_t pxSocket) {
 static BaseType_t socket_connect(const char* host, uint16_t port,
                                  NetworkContext_t* pxNetworkContext) {
     BaseType_t xConnected = pdFAIL;
-    BackoffAlgorithmStatus_t xBackoffAlgStatus = BackoffAlgorithmSuccess;
-    // BackoffAlgorithmContext_t xReconnectParams = {0};
-    // uint16_t usNextRetryBackOff = 0U;
+    BackoffAlgorithmStatus_t backoff_status = BackoffAlgorithmSuccess;
+    BackoffAlgorithmContext_t reconnect_params = {0};
     const TickType_t xTransportTimeout = 0UL;
 
     PlaintextTransportStatus_t xNetworkStatus =
         PLAINTEXT_TRANSPORT_CONNECT_FAILURE;
 
-    // BackoffAlgorithm_InitializeParams(&xReconnectParams,
-    // RETRY_BACKOFF_BASE_MS,
-    //                                   RETRY_MAX_BACKOFF_DELAY_MS,
-    //                                   RETRY_MAX_ATTEMPTS);
+    BackoffAlgorithm_InitializeParams(&reconnect_params, RETRY_BACKOFF_BASE_MS,
+                                      RETRY_MAX_BACKOFF_DELAY_MS,
+                                      RETRY_MAX_ATTEMPTS);
 
     do {
         LogInfo(("connecting to %s:%d", host, port));
@@ -434,28 +432,25 @@ static BaseType_t socket_connect(const char* host, uint16_t port,
             (xNetworkStatus == PLAINTEXT_TRANSPORT_SUCCESS) ? pdPASS : pdFAIL;
 
         if (!xConnected) {
-            /* Get back-off value (in milliseconds) for the next connection
-             * retry. */
-            // xBackoffAlgStatus = BackoffAlgorithm_GetNextBackoff(
-            //     &xReconnectParams, rand(), &usNextRetryBackOff);
+            uint16_t backoff;
+            backoff_status = BackoffAlgorithm_GetNextBackoff(&reconnect_params,
+                                                             rand(), &backoff);
 
-            // if (xBackoffAlgStatus == BackoffAlgorithmSuccess) {
-            //     LogWarn(
-            //         ("Connection to the broker failed. "
-            //          "Retrying connection in %hu ms.",
-            //          usNextRetryBackOff));
-            //     vTaskDelay(pdMS_TO_TICKS(usNextRetryBackOff));
-            // }
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            if (backoff_status == BackoffAlgorithmSuccess) {
+                LogWarn(
+                    ("Connection to the broker failed. "
+                     "Retrying connection in %hu ms.",
+                     backoff));
+                vTaskDelay(pdMS_TO_TICKS(backoff));
+            }
         }
 
-        // if (xBackoffAlgStatus == BackoffAlgorithmRetriesExhausted) {
-        //     LogError(
-        //         ("Connection to the broker failed, all attempts
-        //         exhausted."));
-        // }
+        if (backoff_status == BackoffAlgorithmRetriesExhausted) {
+            LogError(
+                ("Connection to the broker failed, all attempts exhausted."));
+        }
     } while ((xConnected != pdPASS) &&
-             (xBackoffAlgStatus == BackoffAlgorithmSuccess));
+             (backoff_status == BackoffAlgorithmSuccess));
 
     /* Set the socket wakeup callback and ensure the read block time. */
     if (xConnected) {
