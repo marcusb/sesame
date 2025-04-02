@@ -238,9 +238,6 @@ static MQTTStatus_t mqtt_init(void) {
     MQTTStatus_t xReturn;
     MQTTFixedBuffer_t xFixedBuffer = {.pBuffer = xNetworkBuffer,
                                       .size = MQTT_AGENT_NETWORK_BUFFER_SIZE};
-    static uint8_t staticQueueStorageArea[MQTT_AGENT_COMMAND_QUEUE_LENGTH *
-                                          sizeof(MQTTAgentCommand_t*)];
-    static StaticQueue_t staticQueueStructure;
     MQTTAgentMessageInterface_t messageInterface = {
         .pMsgCtx = NULL,
         .send = (MQTTAgentMessageSend_t)Agent_MessageSend,
@@ -248,9 +245,8 @@ static MQTTStatus_t mqtt_init(void) {
         .getCommand = agent_get_cmd,
         .releaseCommand = agent_release_cmd};
 
-    xCommandQueue.queue = xQueueCreateStatic(
-        MQTT_AGENT_COMMAND_QUEUE_LENGTH, sizeof(MQTTAgentCommand_t*),
-        staticQueueStorageArea, &staticQueueStructure);
+    xCommandQueue.queue = xQueueCreate(MQTT_AGENT_COMMAND_QUEUE_LENGTH,
+                                       sizeof(MQTTAgentCommand_t*));
     configASSERT(xCommandQueue.queue);
     messageInterface.pMsgCtx = &xCommandQueue;
 
