@@ -39,7 +39,6 @@
 #include "core_mqtt_agent.h"
 #include "core_mqtt_agent_message_interface.h"
 #include "freertos_agent_message.h"
-#include "freertos_command_pool.h"
 #include "queue.h"
 #include "task.h"
 #include "transport_plaintext.h"
@@ -211,6 +210,15 @@ static void incoming_pub_cb(MQTTAgentContext_t* ctx, uint16_t packet_id,
     }
 }
 
+static MQTTAgentCommand_t* agent_get_cmd(uint32_t block_time_ms) {
+    return pvPortMalloc(sizeof(MQTTAgentCommand_t));
+}
+
+static bool agent_release_cmd(MQTTAgentCommand_t* cmd) {
+    vPortFree(cmd);
+    return true;
+}
+
 /**
  * @brief Initializes an MQTT context, including transport interface and
  * network buffer.
@@ -229,17 +237,14 @@ static MQTTStatus_t mqtt_init(void) {
         .pMsgCtx = NULL,
         .send = (MQTTAgentMessageSend_t)Agent_MessageSend,
         .recv = (MQTTAgentMessageRecv_t)Agent_MessageReceive,
-        .getCommand = Agent_GetCommand,
-        .releaseCommand = Agent_ReleaseCommand};
+        .getCommand = agent_get_cmd,
+        .releaseCommand = agent_release_cmd};
 
     xCommandQueue.queue = xQueueCreateStatic(
         MQTT_AGENT_COMMAND_QUEUE_LENGTH, sizeof(MQTTAgentCommand_t*),
         staticQueueStorageArea, &staticQueueStructure);
     configASSERT(xCommandQueue.queue);
     messageInterface.pMsgCtx = &xCommandQueue;
-
-    /* Initialize the task pool. */
-    Agent_InitializePool();
 
     /* Initialize MQTT library. */
     xReturn = MQTTAgent_Init(&mqtt_agent_context, &messageInterface,

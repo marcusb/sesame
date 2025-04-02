@@ -48,8 +48,7 @@ target_sources(${exe_target}
     "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
     "${afr_ports_dir}/wifi/iot_wifi.c"
-    "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_agent_message.c"
-    "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_command_pool.c")
+    "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_agent_message.c")
 target_include_directories(${exe_target}
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
