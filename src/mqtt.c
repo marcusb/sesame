@@ -48,7 +48,6 @@
 #include "app_logging.h"
 #include "backoff_algorithm.h"
 #include "controller.h"
-#include "subscription_manager.h"
 
 static QueueHandle_t pub_queue;
 
@@ -157,17 +156,6 @@ static uint8_t xNetworkBuffer[MQTT_AGENT_NETWORK_BUFFER_SIZE];
 static MQTTAgentMessageContext_t xCommandQueue;
 
 /**
- * @brief The global array of subscription elements.
- *
- * @note No thread safety is required to this array, since the updates the
- * array elements are done only from one task at a time. The subscription
- * manager implementation expects that the array of the subscription elements
- * used for storing subscriptions to be initialized to 0. As this is a global
- * array, it will be initialized to 0 by default.
- */
-SubscriptionElement_t subscriptions[SUBSCRIPTION_MANAGER_MAX_SUBSCRIPTIONS];
-
-/**
  * @brief The timer query function provided to the MQTT context.
  *
  * @return Time in milliseconds.
@@ -191,16 +179,36 @@ static uint32_t prvGetTimeMs(void) {
 
 static void incoming_pub_cb(MQTTAgentContext_t* ctx, uint16_t packet_id,
                             MQTTPublishInfo_t* pub_info) {
-    (void)packet_id;
+    bool matched;
+    MQTT_MatchTopic(pub_info->pTopicName, pub_info->topicNameLength, cmd_topic,
+                    strlen(cmd_topic), &matched);
+    if (matched) {
+        static char buf[MSG_BUF_LEN];
+        size_t len = pub_info->payloadLength;
+        if (len >= MSG_BUF_LEN) {
+            len = MSG_BUF_LEN - 1;
+        }
+        memcpy((void*)buf, pub_info->pPayload, len);
+        buf[len] = '\0';
+        LogDebug(("Received incoming publish message %s", buf));
 
-    bool res = handleIncomingPublishes(
-        (SubscriptionElement_t*)ctx->pIncomingCallbackContext, pub_info);
-
-    /* If there are no callbacks to handle the incoming publishes,
-     * handle it as an unsolicited publish. */
-    if (!res) {
-        /* Ensure the topic string is terminated for printing.  This will over-
-         * write the message ID, which is restored afterwards. */
+        char* endptr;
+        long val = strtol(buf, &endptr, 10);
+        if (endptr != buf) {
+            door_cmd_t cmd;
+            if (val == 0) {
+                cmd = DOOR_CMD_CLOSE;
+            } else if (val == 1) {
+                cmd = DOOR_CMD_OPEN;
+            } else {
+                return;
+            }
+            ctrl_msg_t msg = {CTRL_MSG_DOOR_CONTROL, {.door_control = {cmd}}};
+            xQueueSendToBack(ctrl_queue, &msg, 100);
+        }
+    } else {
+        /* Ensure the topic string is terminated for printing.  This will
+         * over- write the message ID, which is restored afterwards. */
         char* p = (char*)&(pub_info->pTopicName[pub_info->topicNameLength]);
         char c = *p;
         *p = 0x00;
@@ -247,191 +255,16 @@ static MQTTStatus_t mqtt_init(void) {
     messageInterface.pMsgCtx = &xCommandQueue;
 
     /* Initialize MQTT library. */
-    xReturn = MQTTAgent_Init(&mqtt_agent_context, &messageInterface,
-                             &xFixedBuffer, &transport, prvGetTimeMs,
-                             incoming_pub_cb, subscriptions);
+    xReturn =
+        MQTTAgent_Init(&mqtt_agent_context, &messageInterface, &xFixedBuffer,
+                       &transport, prvGetTimeMs, incoming_pub_cb, NULL);
 
     return xReturn;
 }
 
-/**
- * @brief Passed into MQTTAgent_Subscribe() as the callback to execute when the
- * broker ACKs the SUBSCRIBE message. This callback implementation is used for
- * handling the completion of resubscribes. Any topic filter failed to
- * resubscribe will be removed from the subscription list.
- *
- * See https://freertos.org/mqtt/mqtt-agent-demo.html#example_mqtt_api_call
- *
- * @param[in] pxCommandContext Context of the initial command.
- * @param[in] pxReturnInfo The result of the command.
- */
-static void prvSubscriptionCommandCallback(
-    MQTTAgentCommandContext_t* pxCommandContext,
-    MQTTAgentReturnInfo_t* pxReturnInfo) {
-    size_t lIndex = 0;
-    MQTTAgentSubscribeArgs_t* pxSubscribeArgs =
-        (MQTTAgentSubscribeArgs_t*)pxCommandContext;
-
-    /* If the return code is success, no further action is required as all the
-     * topic filters are already part of the subscription list. */
-    if (pxReturnInfo->returnCode != MQTTSuccess) {
-        /* Check through each of the suback codes and determine if there are
-         * any failures. */
-        for (lIndex = 0; lIndex < pxSubscribeArgs->numSubscriptions; lIndex++) {
-            /* This demo doesn't attempt to resubscribe in the event that a
-             * SUBACK failed. */
-            if (pxReturnInfo->pSubackCodes[lIndex] == MQTTSubAckFailure) {
-                LogError(
-                    ("Failed to resubscribe to topic %.*s.",
-                     pxSubscribeArgs->pSubscribeInfo[lIndex].topicFilterLength,
-                     pxSubscribeArgs->pSubscribeInfo[lIndex].pTopicFilter));
-                /* Remove subscription callback for unsubscribe. */
-                removeSubscription(
-                    subscriptions,
-                    pxSubscribeArgs->pSubscribeInfo[lIndex].pTopicFilter,
-                    pxSubscribeArgs->pSubscribeInfo[lIndex].topicFilterLength);
-            }
-        }
-
-        /* Hit an assert as some of the tasks won't be able to proceed
-         * correctly without the subscriptions. This logic will be updated with
-         * exponential backoff and retry.  */
-        configASSERT(pdTRUE);
-    }
-}
-
-/**
- * @brief Function to attempt to resubscribe to the topics already present in
- * the subscription list.
- *
- * This function will be invoked when this demo requests the broker to
- * reestablish the session and the broker cannot do so. This function will
- * enqueue commands to the MQTT Agent queue and will be processed once the
- * command loop starts.
- *
- * @return `MQTTSuccess` if adding subscribes to the command queue succeeds,
- * else appropriate error code from MQTTAgent_Subscribe.
- * */
-static MQTTStatus_t prvHandleResubscribe(void) {
-    MQTTStatus_t xResult = MQTTBadParameter;
-    uint32_t ulIndex = 0U;
-    uint16_t usNumSubscriptions = 0U;
-
-    /* These variables need to stay in scope until command completes. */
-    static MQTTAgentSubscribeArgs_t xSubArgs = {0};
-    static MQTTSubscribeInfo_t
-        xSubInfo[SUBSCRIPTION_MANAGER_MAX_SUBSCRIPTIONS] = {0};
-    static MQTTAgentCommandInfo_t xCommandParams = {0};
-
-    /* Loop through each subscription in the subscription list and add a
-     * subscribe command to the command queue. */
-    for (ulIndex = 0U; ulIndex < SUBSCRIPTION_MANAGER_MAX_SUBSCRIPTIONS;
-         ulIndex++) {
-        /* Check if there is a subscription in the subscription list. This demo
-         * doesn't check for duplicate subscriptions. */
-        if (subscriptions[ulIndex].usFilterStringLength != 0) {
-            xSubInfo[usNumSubscriptions].pTopicFilter =
-                subscriptions[ulIndex].pcSubscriptionFilterString;
-            xSubInfo[usNumSubscriptions].topicFilterLength =
-                subscriptions[ulIndex].usFilterStringLength;
-
-            /* QoS1 is used for all the subscriptions in this demo. */
-            xSubInfo[usNumSubscriptions].qos = MQTTQoS1;
-
-            LogInfo(("Resubscribe to the topic %.*s will be attempted.",
-                     xSubInfo[usNumSubscriptions].topicFilterLength,
-                     xSubInfo[usNumSubscriptions].pTopicFilter));
-
-            usNumSubscriptions++;
-        }
-    }
-
-    if (usNumSubscriptions > 0U) {
-        xSubArgs.pSubscribeInfo = xSubInfo;
-        xSubArgs.numSubscriptions = usNumSubscriptions;
-
-        /* The block time can be 0 as the command loop is not running at this
-         * point. */
-        xCommandParams.blockTimeMs = 0U;
-        xCommandParams.cmdCompleteCallback = prvSubscriptionCommandCallback;
-        xCommandParams.pCmdCompleteCallbackContext = (void*)&xSubArgs;
-
-        /* Enqueue subscribe to the command queue. These commands will be
-         * processed only when command loop starts. */
-        xResult = MQTTAgent_Subscribe(&mqtt_agent_context, &xSubArgs,
-                                      &xCommandParams);
-    } else {
-        /* Mark the resubscribe as success if there is nothing to be
-         * subscribed.
-         */
-        xResult = MQTTSuccess;
-    }
-
-    if (xResult != MQTTSuccess) {
-        LogError(("Failed to enqueue the MQTT subscribe command. xResult=%s.",
-                  MQTT_Status_strerror(xResult)));
-    }
-
-    return xResult;
-}
-
-static void handle_incoming_pub(void* ctx, MQTTPublishInfo_t* pub_info) {
-    (void)ctx;
-
-    static char buf[MSG_BUF_LEN];
-    size_t len = pub_info->payloadLength;
-    if (len >= MSG_BUF_LEN) {
-        len = MSG_BUF_LEN - 1;
-    }
-    memcpy((void*)buf, pub_info->pPayload, len);
-    buf[len] = '\0';
-    LogDebug(("Received incoming publish message %s", buf));
-
-    char* endptr;
-    long val = strtol(buf, &endptr, 10);
-    if (endptr != buf) {
-        door_cmd_t cmd;
-        if (val == 0) {
-            cmd = DOOR_CMD_CLOSE;
-        } else if (val == 1) {
-            cmd = DOOR_CMD_OPEN;
-        } else {
-            return;
-        }
-        ctrl_msg_t msg = {CTRL_MSG_DOOR_CONTROL, {.door_control = {cmd}}};
-        xQueueSendToBack(ctrl_queue, &msg, 100);
-    }
-}
-
 static void subscribe_cb(MQTTAgentCommandContext_t* ctx,
                          MQTTAgentReturnInfo_t* return_info) {
-    MQTTAgentSubscribeArgs_t* args = (MQTTAgentSubscribeArgs_t*)ctx->args;
-
-    /* Store the result in the application defined context so the task that
-     * initiated the subscribe can check the operation's status.  Also send the
-     * status as the notification value.  These things are just done for
-     * demonstration purposes. */
     ctx->status = return_info->returnCode;
-
-    /* Check if the subscribe operation is a success. Only one topic is
-     * subscribed by this demo. */
-    if (return_info->returnCode == MQTTSuccess) {
-        /* Add subscription so that incoming publishes are routed to the
-         * application callback. */
-        bool res = addSubscription(
-            (SubscriptionElement_t*)mqtt_agent_context.pIncomingCallbackContext,
-            args->pSubscribeInfo->pTopicFilter,
-            args->pSubscribeInfo->topicFilterLength, handle_incoming_pub, NULL);
-
-        if (!res) {
-            LogError(
-                ("Failed to register an incoming publish callback for topic "
-                 "%.*s.",
-                 args->pSubscribeInfo->topicFilterLength,
-                 args->pSubscribeInfo->pTopicFilter));
-        }
-    }
-
     xTaskNotify(ctx->notify_task, (uint32_t)(return_info->returnCode),
                 eSetValueWithOverwrite);
 }
@@ -446,15 +279,15 @@ static bool subscribe(MQTTQoS_t qos, char* topic_filter) {
     }
     taskEXIT_CRITICAL();
 
-    /* Complete the subscribe information.  The topic string must persist for
-     * duration of subscription! */
+    /* Complete the subscribe information.  The topic string must persist
+     * for duration of subscription! */
     MQTTSubscribeInfo_t subscribe_info = {qos, topic_filter,
                                           strlen(topic_filter)};
     MQTTAgentSubscribeArgs_t args = {&subscribe_info, 1};
 
-    /* Complete an application defined context associated with this subscribe
-     * message. This gets updated in the callback function so the variable must
-     * persist until the callback executes. */
+    /* Complete an application defined context associated with this
+     * subscribe message. This gets updated in the callback function so the
+     * variable must persist until the callback executes. */
     MQTTAgentCommandContext_t ctx = {0, xTaskGetCurrentTaskHandle(), msg_id,
                                      &args};
     MQTTAgentCommandInfo_t params = {subscribe_cb, (void*)&ctx,
@@ -474,9 +307,9 @@ static bool subscribe(MQTTQoS_t qos, char* topic_filter) {
         res = MQTTAgent_Subscribe(&mqtt_agent_context, &args, &params);
     } while (res != MQTTSuccess);
 
-    /* Wait for acks to the subscribe message - this is optional but done here
-     * so the code below can check the notification sent by the callback
-     * matches the msg_id value set in the context above. */
+    /* Wait for acks to the subscribe message - this is optional but done
+     * here so the code below can check the notification sent by the
+     * callback matches the msg_id value set in the context above. */
     BaseType_t acked =
         xTaskNotifyWait(0, 0, NULL, pdMS_TO_TICKS(NOTIFICATION_WAIT_MS));
 
@@ -495,8 +328,11 @@ static bool subscribe(MQTTQoS_t qos, char* topic_filter) {
     return acked;
 }
 
+static void subscribe_topics() { subscribe(MQTTQoS0, cmd_topic); }
+
 /**
- * @brief Sends an MQTT Connect packet over the already connected TCP socket.
+ * @brief Sends an MQTT Connect packet over the already connected TCP
+ * socket.
  *
  * @param[in] clean_session If a clean session should be established.
  *
@@ -528,9 +364,9 @@ static MQTTStatus_t mqtt_connect(const MqttConfig* cfg, bool clean_session) {
     if (res == MQTTSuccess && !clean_session) {
         res = MQTTAgent_ResumeSession(&mqtt_agent_context, session_present);
 
-        /* Resubscribe to all the subscribed topics. */
         if ((res == MQTTSuccess) && (session_present == false)) {
-            res = prvHandleResubscribe();
+            LogInfo(("resubscribing to topics"));
+            subscribe_topics();
         }
     }
 
@@ -539,10 +375,10 @@ static MQTTStatus_t mqtt_connect(const MqttConfig* cfg, bool clean_session) {
 
 /**
  * @brief Callback executed when there is activity on the TCP socket that is
- * connected to the MQTT broker.  If there are no messages in the MQTT agent's
- * command queue then the callback send a message to ensure the MQTT agent
- * task unblocks and can therefore process whatever is necessary on the socket
- * (if anything) as quickly as possible.
+ * connected to the MQTT broker.  If there are no messages in the MQTT
+ * agent's command queue then the callback send a message to ensure the MQTT
+ * agent task unblocks and can therefore process whatever is necessary on
+ * the socket (if anything) as quickly as possible.
  *
  * @param[in] pxSocket Socket with data, unused.
  */
@@ -555,7 +391,8 @@ static void prvMQTTClientSocketWakeupCallback(Socket_t pxSocket) {
     (void)pxSocket;
 
     /* A socket used by the MQTT task may need attention.  Send an event
-     * to the MQTT task to make sure the task is not blocked on xCommandQueue.
+     * to the MQTT task to make sure the task is not blocked on
+     * xCommandQueue.
      */
     if ((uxQueueMessagesWaiting(xCommandQueue.queue) == 0U) &&
         (FreeRTOS_recvcount(pxSocket) > 0)) {
@@ -673,7 +510,8 @@ static void connect_broker(const MqttConfig* cfg) {
         socket_connect(cfg->broker_host, cfg->broker_port, &network_context);
     configASSERT(xNetworkStatus == pdPASS);
 
-    /* Initialize the MQTT context with the buffer and transport interface. */
+    /* Initialize the MQTT context with the buffer and transport interface.
+     */
     xMQTTStatus = mqtt_init();
     configASSERT(xMQTTStatus == MQTTSuccess);
 
@@ -688,16 +526,17 @@ static void agent_task(void* params) {
 
     MQTTStatus_t status;
     do {
-        /* MQTTAgent_CommandLoop() is effectively the agent implementation.  It
-         * will manage the MQTT protocol until such time that an error occurs,
-         * which could be a disconnect.  If an error occurs the MQTT context on
-         * which the error happened is returned so there can be an attempt to
-         * clean up and reconnect however the application writer prefers. */
+        /* MQTTAgent_CommandLoop() is effectively the agent implementation.
+         * It will manage the MQTT protocol until such time that an error
+         * occurs, which could be a disconnect.  If an error occurs the MQTT
+         * context on which the error happened is returned so there can be
+         * an attempt to clean up and reconnect however the application
+         * writer prefers. */
         status = MQTTAgent_CommandLoop(&mqtt_agent_context);
         BaseType_t res = pdFAIL;
 
-        /* Success is returned for disconnect or termination. The socket should
-         * be disconnected. */
+        /* Success is returned for disconnect or termination. The socket
+         * should be disconnected. */
         if (status == MQTTSuccess) {
             /* MQTT Disconnect. Disconnect the socket. */
             res = socket_disconnect(&network_context);
@@ -804,7 +643,7 @@ void mqtt_task(void* params) {
                 NULL);
 
     publish(lwt_topic, LWT_ONLINE);
-    subscribe(MQTTQoS0, cmd_topic);
+    subscribe_topics();
     pub_queue = xQueueCreate(4, sizeof(door_state_msg_t));
 
     // publishing blocks until the MQTT callback is received, so
