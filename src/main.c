@@ -82,8 +82,8 @@ static void log_console(const log_msg_t *log) {
     if (level > LOG_LEVEL_LAST || level < 0) {
         level = LOG_NONE;
     }
-    wmprintf("%lu %lu %c %s\r\n", log->msg_id, log->ticks, levels[level],
-             log->msg);
+    wmprintf("%lu %lu %c[%s] %s\r\n", log->msg_id, log->ticks, levels[level],
+             log->task_name, log->msg);
 }
 
 static void gpio_cb(int pin, void *data) {

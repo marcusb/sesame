@@ -49,8 +49,6 @@
 #include "backoff_algorithm.h"
 #include "controller.h"
 
-static QueueHandle_t pub_queue;
-
 static char state_topic[64];
 static char lwt_topic[64];
 static char cmd_topic[64];
@@ -262,8 +260,7 @@ static bool subscribe(MQTTQoS_t qos, char* topic_filter) {
     /* Complete an application defined context associated with this
      * subscribe message. This gets updated in the callback function so the
      * variable must persist until the callback executes. */
-    MQTTAgentCommandContext_t ctx = {0, xTaskGetCurrentTaskHandle(), msg_id,
-                                     &args};
+    MQTTAgentCommandContext_t ctx = {0, xTaskGetCurrentTaskHandle(), msg_id};
     MQTTAgentCommandInfo_t params = {subscribe_cb, (void*)&ctx,
                                      MAX_COMMAND_SEND_BLOCK_TIME_MS};
 
@@ -528,6 +525,7 @@ static void agent_task(void* params) {
 
 static void publish(const char* topic, const char* payload, bool retain) {
     if (!mqtt_initialized) {
+        LogInfo(("MQTT not initialized, skipping pub"));
         return;
     }
     MQTTAgentCommandInfo_t command_params = {NULL, NULL,
@@ -586,7 +584,7 @@ void mqtt_task(void* params) {
     snprintf(cmd_topic, sizeof(cmd_topic), "%s/cmd", prefix);
 
     connect_broker(cfg);
-    xTaskCreate(agent_task, "MQTT-Agent", 512, NULL, tskIDLE_PRIORITY + 3,
+    xTaskCreate(agent_task, "MQTT-Agent", 512, NULL, tskIDLE_PRIORITY + 4,
                 NULL);
     mqtt_initialized = true;
     publish(lwt_topic, LWT_ONLINE, true);
