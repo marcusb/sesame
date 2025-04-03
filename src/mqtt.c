@@ -548,41 +548,17 @@ static void agent_task(void* params) {
     } while (status != MQTTSuccess);
 }
 
-static void cmd_complete_cb(MQTTAgentCommandContext_t* ctx,
-                            MQTTAgentReturnInfo_t* return_info) {
-    ctx->status = return_info->returnCode;
-    if (ctx->notify_task != NULL) {
-        xTaskNotify(ctx->notify_task, ctx->notify_val, eSetValueWithOverwrite);
-    }
-}
-
-void publish(const char* topic, const char* payload, bool retain) {
-    uint32_t msg_id;
-    xTaskNotifyStateClear(NULL);
-    taskENTER_CRITICAL();
-    {
-        msg_id = ++next_msg_id;
-    }
-    taskEXIT_CRITICAL();
-
-    MQTTAgentCommandContext_t command_context = {0, xTaskGetCurrentTaskHandle(),
-                                                 msg_id, 0};
-    MQTTAgentCommandInfo_t command_params = {cmd_complete_cb, &command_context,
+static void publish(const char* topic, const char* payload, bool retain) {
+    MQTTAgentCommandInfo_t command_params = {NULL, NULL,
                                              MAX_COMMAND_SEND_BLOCK_TIME_MS};
-    MQTTPublishInfo_t publish_info = {
-        MQTTQoS0, retain, false, topic, strlen(topic), payload, strlen(payload)};
+    MQTTPublishInfo_t publish_info = {MQTTQoS0,       retain,        false,
+                                      topic,          strlen(topic), payload,
+                                      strlen(payload)};
 
     MQTTAgent_Publish(&mqtt_agent_context, &publish_info, &command_params);
-
-    uint32_t notify_val = 0;
-    xTaskNotifyWait(0, 0, &notify_val, pdMS_TO_TICKS(NOTIFICATION_WAIT_MS));
-    if (notify_val != msg_id) {
-        LogInfo(
-            ("MQTT message failed to send, status %d", command_context.status));
-    }
 }
 
-void do_publish_state(const door_state_msg_t* msg) {
+void publish_state(const door_state_msg_t* msg) {
     static char payload[128];
 
     char* state;
@@ -635,25 +611,7 @@ void mqtt_task(void* params) {
 
     publish(lwt_topic, LWT_ONLINE, true);
     subscribe_topics();
-    pub_queue = xQueueCreate(4, sizeof(door_state_msg_t));
-
-    // publishing blocks until the MQTT callback is received, so
-    // we use this task for publishing to avoid blocking the calling thread
-    for (;;) {
-        door_state_msg_t cmd;
-        if (xQueueReceive(pub_queue, &cmd, portMAX_DELAY) == pdPASS) {
-            do_publish_state(&cmd);
-        }
-    }
 
 ret:
     vTaskDelete(NULL);
-}
-
-void publish_state(const door_state_msg_t* msg) {
-    if (pub_queue != NULL) {
-        xQueueSendToBack(pub_queue, msg, 0);
-    } else {
-        LogDebug(("MQTT not started, dropping state update"));
-    }
 }
