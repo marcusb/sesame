@@ -217,7 +217,7 @@ extern void vLoggingPrintf(const char* pcFormatString, ...);
 #define ipconfigUSE_TCP (1)
 
 /* USE_WIN: Let TCP use windowing mechanism. */
-#define ipconfigUSE_TCP_WIN (1)
+#define ipconfigUSE_TCP_WIN (0)
 
 /* The MTU is the maximum number of bytes the payload of a network frame can
  * contain. Setting this to a number lower than that of the network you are
@@ -270,7 +270,7 @@ extern void vLoggingPrintf(const char* pcFormatString, ...);
  * TCP socket will use up to 2 x 6 descriptors, meaning that it can have 2 x 6
  * outstanding packets (for Rx and Tx).  When using up to 10 TP sockets
  * simultaneously, one could define TCP_WIN_SEG_COUNT as 120. */
-#define ipconfigTCP_WIN_SEG_COUNT 240
+#define ipconfigTCP_WIN_SEG_COUNT 32
 
 /* Each TCP socket has a circular buffers for Rx and Tx, which have a fixed
  * maximum size.  Define the size of Rx buffer for TCP sockets. */
