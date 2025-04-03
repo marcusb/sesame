@@ -556,7 +556,7 @@ static void cmd_complete_cb(MQTTAgentCommandContext_t* ctx,
     }
 }
 
-void publish(const char* topic, const char* payload) {
+void publish(const char* topic, const char* payload, bool retain) {
     uint32_t msg_id;
     xTaskNotifyStateClear(NULL);
     taskENTER_CRITICAL();
@@ -570,7 +570,7 @@ void publish(const char* topic, const char* payload) {
     MQTTAgentCommandInfo_t command_params = {cmd_complete_cb, &command_context,
                                              MAX_COMMAND_SEND_BLOCK_TIME_MS};
     MQTTPublishInfo_t publish_info = {
-        MQTTQoS0, true, false, topic, strlen(topic), payload, strlen(payload)};
+        MQTTQoS0, retain, false, topic, strlen(topic), payload, strlen(payload)};
 
     MQTTAgent_Publish(&mqtt_agent_context, &publish_info, &command_params);
 
@@ -614,7 +614,7 @@ void do_publish_state(const door_state_msg_t* msg) {
     snprintf(payload, sizeof(payload),
              "{\"contact\":\"%s\",\"dir\":\"%s\",\"pos\":%d}", state, dir,
              msg->pos);
-    publish(state_topic, payload);
+    publish(state_topic, payload, false);
 }
 
 void mqtt_task(void* params) {
@@ -633,7 +633,7 @@ void mqtt_task(void* params) {
     xTaskCreate(agent_task, "MQTT-Agent", 512, NULL, tskIDLE_PRIORITY + 3,
                 NULL);
 
-    publish(lwt_topic, LWT_ONLINE);
+    publish(lwt_topic, LWT_ONLINE, true);
     subscribe_topics();
     pub_queue = xQueueCreate(4, sizeof(door_state_msg_t));
 
