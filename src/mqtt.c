@@ -66,7 +66,6 @@ struct MQTTAgentCommandContext {
     MQTTStatus_t status;
     TaskHandle_t notify_task;
     uint32_t notify_val;
-    void* args;
 };
 
 static PlaintextTransportParams_t transport_params;
@@ -75,6 +74,7 @@ static TransportInterface_t transport = {
     Plaintext_FreeRTOS_recv, Plaintext_FreeRTOS_send, NULL, &network_context};
 
 static uint32_t next_msg_id;
+static bool mqtt_initialized;
 
 /**
  * @brief Dimensions the buffer used to serialize and deserialize MQTT packets.
@@ -140,15 +140,6 @@ static uint32_t next_msg_id;
  */
 #define TRANSPORT_SEND_RECV_TIMEOUT_MS (750)
 
-/**
- * @brief Global entry time into the application to use as a reference timestamp
- * in the #prvGetTimeMs function. #prvGetTimeMs will always return the
- * difference between the current time and the global entry time. This will
- * reduce the chances of overflow for the 32 bit unsigned integer used for
- * holding the timestamp.
- */
-static uint32_t elapsed;
-
 static MQTTAgentContext_t mqtt_agent_context;
 
 static uint8_t xNetworkBuffer[MQTT_AGENT_NETWORK_BUFFER_SIZE];
@@ -160,21 +151,8 @@ static MQTTAgentMessageContext_t xCommandQueue;
  *
  * @return Time in milliseconds.
  */
-static uint32_t prvGetTimeMs(void) {
-    TickType_t xTickCount = 0;
-    uint32_t ulTimeMs = 0UL;
-
-    /* Get the current tick count. */
-    xTickCount = xTaskGetTickCount();
-
-    /* Convert the ticks to milliseconds. */
-    ulTimeMs = pdTICKS_TO_MS(xTickCount);
-
-    /* Reduce ulGlobalEntryTimeMs from obtained time so as to always return the
-     * elapsed time in the application. */
-    ulTimeMs = (uint32_t)(ulTimeMs - elapsed);
-
-    return ulTimeMs;
+static uint32_t get_time_millis(void) {
+    return pdTICKS_TO_MS(xTaskGetTickCount());
 }
 
 static void incoming_pub_cb(MQTTAgentContext_t* ctx, uint16_t packet_id,
@@ -253,7 +231,7 @@ static MQTTStatus_t mqtt_init(void) {
     /* Initialize MQTT library. */
     xReturn =
         MQTTAgent_Init(&mqtt_agent_context, &messageInterface, &xFixedBuffer,
-                       &transport, prvGetTimeMs, incoming_pub_cb, NULL);
+                       &transport, get_time_millis, incoming_pub_cb, NULL);
 
     return xReturn;
 }
@@ -549,6 +527,9 @@ static void agent_task(void* params) {
 }
 
 static void publish(const char* topic, const char* payload, bool retain) {
+    if (!mqtt_initialized) {
+        return;
+    }
     MQTTAgentCommandInfo_t command_params = {NULL, NULL,
                                              MAX_COMMAND_SEND_BLOCK_TIME_MS};
     MQTTPublishInfo_t publish_info = {MQTTQoS0,       retain,        false,
@@ -599,7 +580,6 @@ void mqtt_task(void* params) {
         goto ret;
     }
 
-    elapsed = prvGetTimeMs();
     const char* prefix = *cfg->prefix ? cfg->prefix : "sesame";
     snprintf(state_topic, sizeof(state_topic), "%s/state", prefix);
     snprintf(lwt_topic, sizeof(lwt_topic), "%s/availability", prefix);
@@ -608,7 +588,7 @@ void mqtt_task(void* params) {
     connect_broker(cfg);
     xTaskCreate(agent_task, "MQTT-Agent", 512, NULL, tskIDLE_PRIORITY + 3,
                 NULL);
-
+    mqtt_initialized = true;
     publish(lwt_topic, LWT_ONLINE, true);
     subscribe_topics();
 
