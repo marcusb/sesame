@@ -1,9 +1,12 @@
+#include <time.h>
+
 // FreeRTOS
 #include "FreeRTOS.h"
 #include "FreeRTOS_IP.h"
 #include "FreeRTOS_Sockets.h"
 
 // Application
+
 #include "app_config.pb.h"
 #include "logging.h"
 #include "syslog.h"

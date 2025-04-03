@@ -26,10 +26,12 @@
 
 #include "mqtt.h"
 
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 // FreeRTOS
 #include "FreeRTOS.h"
@@ -138,6 +140,8 @@ static bool mqtt_initialized;
  */
 #define TRANSPORT_SEND_RECV_TIMEOUT_MS (750)
 
+#define SECONDS_PER_DAY (86400)
+
 static MQTTAgentContext_t mqtt_agent_context;
 
 static uint8_t xNetworkBuffer[MQTT_AGENT_NETWORK_BUFFER_SIZE];
@@ -153,24 +157,36 @@ static uint32_t get_time_millis(void) {
     return pdTICKS_TO_MS(xTaskGetTickCount());
 }
 
+static unsigned long strntoul(const char* p, size_t len, const char** endp) {
+    unsigned long x = 0;
+    const char* end = p + len;
+    while (p < end && *p == ' ') {
+        p++;
+    }
+    while (p < end) {
+        char c = *p++;
+        if (!isdigit(c)) {
+            break;
+        }
+        x += c - '0';
+        x *= 10;
+    }
+    *endp = end;
+    return x;
+}
+
 static void incoming_pub_cb(MQTTAgentContext_t* ctx, uint16_t packet_id,
                             MQTTPublishInfo_t* pub_info) {
     bool matched;
     MQTT_MatchTopic(pub_info->pTopicName, pub_info->topicNameLength, cmd_topic,
                     strlen(cmd_topic), &matched);
     if (matched) {
-        static char buf[MSG_BUF_LEN];
-        size_t len = pub_info->payloadLength;
-        if (len >= MSG_BUF_LEN) {
-            len = MSG_BUF_LEN - 1;
-        }
-        memcpy((void*)buf, pub_info->pPayload, len);
-        buf[len] = '\0';
-        LogDebug(("Received incoming publish message %s", buf));
-
-        char* endptr;
-        long val = strtol(buf, &endptr, 10);
-        if (endptr != buf) {
+        LogDebug(("Received incoming publish message %.*s",
+                  pub_info->topicNameLength, pub_info->pTopicName));
+        const char* endptr;
+        long val =
+            strntoul(pub_info->pPayload, pub_info->payloadLength, &endptr);
+        if (endptr != pub_info->pPayload) {
             door_cmd_t cmd;
             if (val == 0) {
                 cmd = DOOR_CMD_CLOSE;
@@ -538,8 +554,6 @@ static void publish(const char* topic, const char* payload, bool retain) {
 }
 
 void publish_state(const door_state_msg_t* msg) {
-    static char payload[128];
-
     char* state;
     switch (msg->state) {
         case DCM_DOOR_STATE_CLOSED:
@@ -566,9 +580,21 @@ void publish_state(const door_state_msg_t* msg) {
             dir = "UNDEF";
     }
 
-    snprintf(payload, sizeof(payload),
-             "{\"contact\":\"%s\",\"dir\":\"%s\",\"pos\":%d}", state, dir,
-             msg->pos);
+    static const char fmt[] =
+        "{\"contact\":\"%s\",\"dir\":\"%s\",\"pos\":%d,\"uptime\":\"%ldT%s\","
+        "\"uptime_sec\":%ld,\"heap_free_bytes\":%u}";
+    long uptime_s = pdTICKS_TO_MS(xTaskGetTickCount()) / 1000;
+    long days = uptime_s / SECONDS_PER_DAY;
+    time_t time_ms = uptime_s % SECONDS_PER_DAY;
+    char tm_hms[9] = {0};
+    struct tm tm;
+    if (gmtime_r(&time_ms, &tm) &&
+        strftime(tm_hms, sizeof(tm_hms), "%H:%M:%S", &tm) == 0) {
+        *tm_hms = '\0';
+    }
+    static char payload[128];
+    snprintf(payload, sizeof(payload), fmt, state, dir, msg->pos, days, tm_hms,
+             uptime_s, xPortGetFreeHeapSize());
     publish(state_topic, payload, false);
 }
 
