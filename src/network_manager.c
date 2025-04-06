@@ -18,7 +18,7 @@
 #include "app_logging.h"
 #include "backoff_algorithm.h"
 #include "network.h"
-#include "rtc_support.h"
+#include "time_util.h"
 
 #define WIFI_CONNECTION_BACKOFF_BASE_MS (1000)
 #define WIFI_CONNECTION_RETRIES (2)
@@ -39,7 +39,8 @@ static const char psm_key_wlan_passwd[] = "wlan.passwd";
 static const char psm_key_hostname[] = "wlan.hostname";
 static BackoffAlgorithmContext_t connect_retry_params;
 static struct wlan_network ap_network;
-static long next_connect_time;
+static TickType_t mark;
+static TickType_t connect_interval;
 static char hostname[32] = "sesame";
 
 const char *pcApplicationHostnameHook() { return hostname; }
@@ -128,12 +129,13 @@ static void connect_attempt_failed() {
         LogInfo(("connection attempt %d of %d failed, next in %d ms",
                  connect_retry_params.attemptsDone,
                  connect_retry_params.maxRetryAttempts + 1, backoff));
-        next_connect_time = get_epoch_millis() + backoff;
+        mark = xTaskGetTickCount();
+        connect_interval = pdMS_TO_TICKS(backoff);
     }
 }
 
 static int connect_sta(void) {
-    next_connect_time = LONG_MAX;
+    connect_interval = portMAX_DELAY;
     WIFINetworkParams_t wifi_params = {0};
     int res = get_network_config(&wifi_params);
     if (res < 0) {
@@ -340,7 +342,7 @@ void network_manager_task(void *params) {
             }
         }
         if (network_state == STA_CONNECTING &&
-            get_epoch_millis() > next_connect_time) {
+            xTaskGetTickCount() - mark > connect_interval) {
             connect_sta();
         } else if (network_state == STA_CONNECT_FAILED) {
             network_state = STA_IDLE;

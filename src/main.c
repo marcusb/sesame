@@ -41,8 +41,8 @@
 #include "network.h"
 #include "ota.h"
 #include "pic_uart.h"
-#include "rtc_support.h"
 #include "syslog.h"
+#include "time_util.h"
 
 #define BTN_WIFI GPIO_22
 #define BTN_OTA GPIO_23
@@ -188,7 +188,7 @@ static void platform_init(void) {
 
     wmtime_init();
     pm_init();
-    open_rtc();
+    setup_rtc();
 
     cli_init();
     pm_cli_init();

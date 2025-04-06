@@ -50,6 +50,7 @@
 #include "app_logging.h"
 #include "backoff_algorithm.h"
 #include "controller.h"
+#include "time_util.h"
 
 static char state_topic[64];
 static char lwt_topic[64];
@@ -148,15 +149,6 @@ static uint8_t xNetworkBuffer[MQTT_AGENT_NETWORK_BUFFER_SIZE];
 
 static MQTTAgentMessageContext_t xCommandQueue;
 
-/**
- * @brief The timer query function provided to the MQTT context.
- *
- * @return Time in milliseconds.
- */
-static uint32_t get_time_millis(void) {
-    return pdTICKS_TO_MS(xTaskGetTickCount());
-}
-
 static unsigned long strntoul(const char* p, size_t len, const char** endp) {
     unsigned long x = 0;
     const char* end = p + len;
@@ -219,6 +211,8 @@ static bool agent_release_cmd(MQTTAgentCommand_t* cmd) {
     return true;
 }
 
+static unsigned long current_time_ms() { return tick_ms(); }
+
 /**
  * @brief Initializes an MQTT context, including transport interface and
  * network buffer.
@@ -245,7 +239,7 @@ static MQTTStatus_t mqtt_init(void) {
     /* Initialize MQTT library. */
     xReturn =
         MQTTAgent_Init(&mqtt_agent_context, &messageInterface, &xFixedBuffer,
-                       &transport, get_time_millis, incoming_pub_cb, NULL);
+                       &transport, current_time_ms, incoming_pub_cb, NULL);
 
     return xReturn;
 }
@@ -581,10 +575,10 @@ void publish_state(const door_state_msg_t* msg) {
     }
 
     static const char fmt[] =
-        "{\"contact\":\"%s\",\"dir\":\"%s\",\"pos\":%d,\"uptime\":\"%ldT%s\","
-        "\"uptime_sec\":%ld,\"heap_free_bytes\":%u}";
-    long uptime_s = pdTICKS_TO_MS(xTaskGetTickCount()) / 1000;
-    long days = uptime_s / SECONDS_PER_DAY;
+        "{\"contact\":\"%s\",\"dir\":\"%s\",\"pos\":%d,\"uptime\":\"%uT%s\","
+        "\"uptime_sec\":%u,\"heap_free_bytes\":%u}";
+    unsigned uptime_s = tick_ms() / 1000;
+    unsigned days = uptime_s / SECONDS_PER_DAY;
     time_t time_ms = uptime_s % SECONDS_PER_DAY;
     char tm_hms[9] = {0};
     struct tm tm;
