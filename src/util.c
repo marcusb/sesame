@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "app_logging.h"
@@ -30,7 +31,7 @@ void debug_hexdump(char dir, const uint8_t *data, unsigned len) {
             *p++ = ' ';
             p = print_ascii(p, line, data + i);
             *p = '\0';
-            LogDebug((s));
+            LogDebug(("%s", s));
             p = s;
             p += sprintf(p, "   ");
             line = data + i;
@@ -43,6 +44,6 @@ void debug_hexdump(char dir, const uint8_t *data, unsigned len) {
         }
         p = print_ascii(p, line, data + i);
         *p = '\0';
-        LogDebug((s));
+        LogDebug(("%s", s));
     }
 }
