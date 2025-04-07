@@ -160,10 +160,10 @@ static unsigned long strntoul(const char* p, size_t len, const char** endp) {
         if (!isdigit(c)) {
             break;
         }
-        x += c - '0';
         x *= 10;
+        x += c - '0';
     }
-    *endp = end;
+    *endp = p;
     return x;
 }
 
