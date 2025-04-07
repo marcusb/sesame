@@ -86,8 +86,9 @@ static void log_prepare(uint8_t log_level, const char *filename,
     if (n < 0) {
         return;
     }
-    // allocate some extra for the filename info
-    n += 24;
+    // allocate some extra for the filename info, cap length
+    // as safety precaution to avoid OOM
+    n = min(n + 24, configLOGGING_MAX_MESSAGE_LENGTH);
     char *p = log.msg = pvPortMalloc(n);
     if (p == NULL) {
         return;
@@ -114,6 +115,7 @@ static void log_prepare(uint8_t log_level, const char *filename,
     }
     vsnprintf(p, n, fmt, args);
     if (xQueueSend(log_queue, &log, 0) != pdPASS) {
+        configPRINT_STRING(log.msg);
         vPortFree(log.msg);
     }
 }
