@@ -35,7 +35,6 @@ target_sources(${exe_target}
     "${CMAKE_CURRENT_SOURCE_DIR}/src/idle_task.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/logging.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mbedtls_error_dummy.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mqtt.c"
