@@ -18,20 +18,13 @@ set(afr_ports_dir "${CMAKE_CURRENT_LIST_DIR}/marvell/boards/mw300_rd/ports")
 set(exe_target sesame)
 set(CMAKE_BUILD_TYPE Debug)
 
-get_filename_component(FREERTOS_DIR "${CMAKE_CURRENT_LIST_DIR}/FreeRTOS/FreeRTOS" REALPATH)
-message(DEBUG "FREERTOS_DIR is ${FREERTOS_DIR}")
-get_filename_component(FREERTOS_PLUS_DIR "${CMAKE_CURRENT_LIST_DIR}/FreeRTOS/FreeRTOS-Plus" REALPATH)
-message(DEBUG "FREERTOS_PLUS_DIR is ${FREERTOS_PLUS_DIR}")
-
-set(KERNEL_DIR "${FREERTOS_DIR}/Source")
-message(DEBUG "KERNEL_DIR is ${KERNEL_DIR_PATH}")
-
 add_executable(${exe_target})
 
 target_sources(${exe_target}
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/idle_task.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
@@ -45,13 +38,11 @@ target_sources(${exe_target}
     "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/time_util.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
-    "${afr_ports_dir}/wifi/iot_wifi.c"
-    "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/freertos_agent_message.c")
+    "${afr_ports_dir}/wifi/iot_wifi.c")
 target_include_directories(${exe_target}
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "libraries/abstractions/wifi/include"
-    "${FREERTOS_PLUS_DIR}/Demo/Common/coreMQTT_Agent_Interface/include")
+    "libraries/abstractions/wifi/include")
 
 add_library(globals INTERFACE)
 
@@ -64,6 +55,22 @@ target_compile_definitions(freertos_config
     projCOVERAGE_TEST=0)
 target_link_libraries(freertos_config
     INTERFACE globals)
+
+add_library(logging STATIC)
+target_sources(logging
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/logging.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/string_util.c")
+target_include_directories(logging
+    PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_compile_options(logging
+    PUBLIC
+    -DLOGGING_ENABLE_METADATA_WITH_C99_AND_GNU_EXTENSION=0)
+target_link_libraries(logging
+    PRIVATE
+    freertos_kernel
+    globals)
 
 # -------------------------------------------------------------------------------------------------
 # Compiler settings
@@ -189,9 +196,8 @@ nanopb_generate_cpp(TARGET proto RELPATH proto
 	proto/app_config.proto)
 
 # -------------------------------------------------------------------------------------------------
-# FreeRTOS portable layers
+# FreeRTOS
 # -------------------------------------------------------------------------------------------------
-# ==================== Marvell ====================
 
 set(FREERTOS_HEAP "5" CACHE STRING "" FORCE)
 set(FREERTOS_PORT "GCC_ARM_CM4F" CACHE STRING "" FORCE)
@@ -199,14 +205,11 @@ set(FREERTOS_PORT "GCC_ARM_CM4F" CACHE STRING "" FORCE)
 set(FREERTOS_PLUS_TCP_BUFFER_ALLOCATION "2" CACHE STRING "" FORCE)
 set(FREERTOS_PLUS_TCP_NETWORK_IF "A_CUSTOM_NETWORK_IF" CACHE STRING "" FORCE)
 
-add_subdirectory("${KERNEL_DIR}")
-add_subdirectory("${FREERTOS_PLUS_DIR}/Source/FreeRTOS-Plus-TCP")
-#FetchContent_Declare(freertos_plus_tcp
-#    GIT_REPOSITORY https://github.com/FreeRTOS/FreeRTOS-Plus-TCP.git
-#    GIT_TAG        V4.1.0
-#    GIT_SUBMODULES ""
-#)
-#FetchContent_MakeAvailable(freertos_plus_tcp)
+FetchContent_Declare(freertos_plus_tcp
+    GIT_REPOSITORY https://github.com/FreeRTOS/FreeRTOS-Plus-TCP.git
+    GIT_TAG        V4.2.2
+)
+FetchContent_MakeAvailable(freertos_plus_tcp freertos_kernel)
 
 target_link_libraries(freertos_kernel
     PRIVATE
@@ -236,35 +239,24 @@ target_link_libraries(freertos_plus_tcp_network_if
 add_library(freertos_plus_transport STATIC)
 target_sources(freertos_plus_transport
     PRIVATE
-    "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport/transport_plaintext.c"
-    "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport/tcp_sockets_wrapper/ports/freertos_plus_tcp/tcp_sockets_wrapper.c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/libraries/network_transport/transport_plaintext.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/libraries/network_transport/tcp_sockets_wrapper/ports/freertos_plus_tcp/tcp_sockets_wrapper.c")
 target_include_directories(freertos_plus_transport
     PUBLIC
-    "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport"
-    "${FREERTOS_PLUS_DIR}/Source/Application-Protocols/network_transport/tcp_sockets_wrapper/include")
+    "${CMAKE_CURRENT_SOURCE_DIR}/libraries/network_transport"
+    "${CMAKE_CURRENT_SOURCE_DIR}/libraries/network_transport/tcp_sockets_wrapper/include")
 target_link_libraries(freertos_plus_transport
     PUBLIC
     coreHTTP
     freertos_plus_tcp
     logging)
 
-add_library(logging STATIC)
-target_sources(logging
-    PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/logging.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/string_util.c")
-target_include_directories(logging
-    PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_compile_options(logging
-    PUBLIC
-    -DLOGGING_ENABLE_METADATA_WITH_C99_AND_GNU_EXTENSION=0)
-target_link_libraries(logging
-    PRIVATE
-    freertos_kernel
-    globals)
-
-include("${FREERTOS_PLUS_DIR}/Source/Utilities/backoff_algorithm/backoffAlgorithmFilePaths.cmake")
+FetchContent_Declare(backoff_algorithm
+    GIT_REPOSITORY https://github.com/FreeRTOS/backoffAlgorithm.git
+    GIT_TAG        v1.4.1
+)
+FetchContent_MakeAvailable(backoff_algorithm)
+include("${backoff_algorithm_SOURCE_DIR}/backoffAlgorithmFilePaths.cmake")
 add_library(backoff_algorithm STATIC)
 target_sources(backoff_algorithm
     PRIVATE
@@ -279,8 +271,11 @@ target_link_libraries(backoff_algorithm
 set(ENABLE_PROGRAMS OFF CACHE BOOL INTERNAL)
 set(ENABLE_TESTING OFF CACHE BOOL INTERNAL)
 
-add_subdirectory("${FREERTOS_PLUS_DIR}/ThirdParty/mbedtls")
-
+FetchContent_Declare(mbedtls
+    GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
+    GIT_TAG        v3.6.3
+)
+FetchContent_MakeAvailable(mbedtls)
 target_link_libraries(mbedtls
     PRIVATE
     freertos_kernel)
@@ -294,7 +289,12 @@ target_compile_definitions(mbedcrypto
     PUBLIC
     MBEDTLS_CONFIG_FILE="mbedtls_app_config.h")
 
-include("${FREERTOS_PLUS_DIR}/Source/corePKCS11/pkcsFilePaths.cmake")
+FetchContent_Declare(core_pkcs11
+    GIT_REPOSITORY https://github.com/FreeRTOS/corePKCS11.git
+    GIT_TAG        v3.6.2
+)
+FetchContent_MakeAvailable(core_pkcs11)
+include("${core_pkcs11_SOURCE_DIR}/pkcsFilePaths.cmake")
 add_library(core_pkcs11 STATIC)
 target_sources(core_pkcs11
     PRIVATE
@@ -314,7 +314,12 @@ target_link_libraries(core_pkcs11
     mbedtls
     logging)
 
-include("${FREERTOS_PLUS_DIR}/Source/Application-Protocols/coreHTTP/httpFilePaths.cmake")
+FetchContent_Declare(coreHTTP
+    GIT_REPOSITORY https://github.com/FreeRTOS/coreHTTP.git
+    GIT_TAG        v3.1.1
+)
+FetchContent_MakeAvailable(coreHTTP)
+include("${corehttp_SOURCE_DIR}/httpFilePaths.cmake")
 add_library(coreHTTP STATIC)
 target_sources(coreHTTP
     PRIVATE "${HTTP_SOURCES}")
@@ -326,7 +331,13 @@ target_link_libraries(coreHTTP
     freertos_kernel
     logging)
 
-include("${FREERTOS_PLUS_DIR}/Source/Application-Protocols/coreMQTT/mqttFilePaths.cmake")
+
+FetchContent_Declare(coreMQTT
+    GIT_REPOSITORY https://github.com/FreeRTOS/coreMQTT.git
+    GIT_TAG        v2.3.1
+)
+FetchContent_MakeAvailable(coreMQTT)
+include("${coremqtt_SOURCE_DIR}/mqttFilePaths.cmake")
 add_library(coreMQTT STATIC)
 target_sources(coreMQTT
     PRIVATE
@@ -341,7 +352,12 @@ target_link_libraries(coreMQTT
     freertos_kernel
     logging)
 
-include("${FREERTOS_PLUS_DIR}/Source/Application-Protocols/coreMQTT-Agent/mqttAgentFilePaths.cmake")
+FetchContent_Declare(coreMQTT-Agent
+    GIT_REPOSITORY https://github.com/FreeRTOS/coreMQTT-Agent.git
+    GIT_TAG        v1.3.1
+)
+FetchContent_MakeAvailable(coreMQTT-Agent)
+include("${coremqtt-agent_SOURCE_DIR}/mqttAgentFilePaths.cmake")
 add_library(coreMQTT_agent STATIC)
 target_sources(coreMQTT_agent
     PRIVATE "${MQTT_AGENT_SOURCES}")
@@ -352,7 +368,12 @@ target_link_libraries(coreMQTT_agent
     coreMQTT
     logging)
 
-include("${FREERTOS_PLUS_DIR}/Source/coreJSON/jsonFilePaths.cmake")
+FetchContent_Declare(coreJSON
+    GIT_REPOSITORY https://github.com/FreeRTOS/coreJSON.git
+    GIT_TAG        v3.3.0
+)
+FetchContent_MakeAvailable(coreJSON)
+include("${corejson_SOURCE_DIR}/jsonFilePaths.cmake")
 add_library(coreJSON STATIC)
 target_sources(coreJSON
     PRIVATE "${JSON_SOURCES}")
@@ -360,6 +381,8 @@ target_include_directories(coreJSON
     PUBLIC "${JSON_INCLUDE_PUBLIC_DIRS}")
 target_link_libraries(coreJSON
     PRIVATE globals)
+
+# ==================== Marvell ====================
 
 add_library(wmsdk STATIC)
 target_sources(wmsdk
