@@ -78,7 +78,6 @@ void handle_data_packet(uint8_t interface, const uint8_t* buffer,
     uint8_t* payload = mlan_get_payload(buffer, &payload_len, &interface_i);
 
     if (eConsiderFrameForProcessing(payload) != eProcessBuffer) {
-        net_d("Dropping packet\r\n");
         return;
     }
 

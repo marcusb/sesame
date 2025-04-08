@@ -207,7 +207,7 @@ set(FREERTOS_PLUS_TCP_NETWORK_IF "A_CUSTOM_NETWORK_IF" CACHE STRING "" FORCE)
 
 FetchContent_Declare(freertos_plus_tcp
     GIT_REPOSITORY https://github.com/FreeRTOS/FreeRTOS-Plus-TCP.git
-    GIT_TAG        V4.2.2
+    GIT_TAG        V4.3.1
 )
 FetchContent_MakeAvailable(freertos_plus_tcp freertos_kernel)
 
