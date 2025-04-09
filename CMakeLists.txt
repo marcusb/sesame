@@ -368,20 +368,6 @@ target_link_libraries(coreMQTT_agent
     coreMQTT
     logging)
 
-FetchContent_Declare(coreJSON
-    GIT_REPOSITORY https://github.com/FreeRTOS/coreJSON.git
-    GIT_TAG        v3.3.0
-)
-FetchContent_MakeAvailable(coreJSON)
-include("${corejson_SOURCE_DIR}/jsonFilePaths.cmake")
-add_library(coreJSON STATIC)
-target_sources(coreJSON
-    PRIVATE "${JSON_SOURCES}")
-target_include_directories(coreJSON
-    PUBLIC "${JSON_INCLUDE_PUBLIC_DIRS}")
-target_link_libraries(coreJSON
-    PRIVATE globals)
-
 # ==================== Marvell ====================
 
 add_library(wmsdk STATIC)
@@ -497,7 +483,6 @@ target_link_libraries(${exe_target}
     "${mw320_dir}/bin/libs/librfget.a"
     coreHTTP
     coreMQTT_agent
-    coreJSON
     freertos_plus_transport
     freertos_plus_tcp
     freertos_plus_tcp_network_if

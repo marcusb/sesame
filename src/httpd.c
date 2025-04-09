@@ -5,7 +5,6 @@
 
 // FreeRTOS
 #include "FreeRTOS.h"
-#include "core_json.h"
 #include "queue.h"
 #include "task.h"
 
@@ -117,51 +116,6 @@ static void send_status(const http_request_t* req, int status) {
     FreeRTOS_send(req->socket, req->buf, len, 0);
 }
 
-void process_cfg_network(const http_request_t* req) {
-    JSONStatus_t res = JSON_Validate(req->body_start, req->content_length);
-    if (res != JSONSuccess) {
-        goto bad_req;
-    }
-    ctrl_msg_t msg = {CTRL_MSG_WIFI_CONFIG};
-    static const char ssid_key[] = "wifi.ssid";
-    static const char passwd_key[] = "wifi.passwd";
-    static const char hostname_key[] = "wifi.hostname";
-    char* value;
-    size_t len;
-
-    res = JSON_Search(req->body_start, req->content_length, ssid_key,
-                      sizeof(ssid_key) - 1, &value, &len);
-    if (res == JSONSuccess) {
-        len = min(len, wificonfigMAX_SSID_LEN);
-        memcpy(msg.msg.wifi_cfg.network_params.ucSSID, value, len);
-        msg.msg.wifi_cfg.network_params.ucSSIDLength = len;
-    }
-
-    res = JSON_Search(req->body_start, req->content_length, passwd_key,
-                      sizeof(passwd_key) - 1, &value, &len);
-    if (res == JSONSuccess) {
-        len = min(len, wificonfigMAX_PASSPHRASE_LEN);
-        memcpy(msg.msg.wifi_cfg.network_params.xPassword.xWPA.cPassphrase,
-               value, len);
-        msg.msg.wifi_cfg.network_params.xPassword.xWPA.ucLength = len;
-    }
-
-    res = JSON_Search(req->body_start, req->content_length, hostname_key,
-                      sizeof(hostname_key) - 1, &value, &len);
-    if (res == JSONSuccess) {
-        len = min(len, sizeof(msg.msg.wifi_cfg.hostname) - 1);
-        memcpy(msg.msg.wifi_cfg.hostname, value, len);
-        msg.msg.wifi_cfg.hostname[len] = '\0';
-    }
-
-    xQueueSendToBack(ctrl_queue, &msg, 100);
-    send_status(req, REPLY_OK);
-    return;
-
-bad_req:
-    send_status(req, BAD_REQUEST);
-}
-
 static void process_cfg(const http_request_t* req, ctrl_msg_type_t type,
                         const pb_msgdesc_t* desc) {
     ctrl_msg_t msg = {type};
@@ -189,7 +143,7 @@ static void do_request(const http_request_t* req) {
                 xQueueSendToBack(ctrl_queue, &msg, 100);
                 send_status(req, REPLY_OK);
             } else if (strcmp(req->url, "/cfg/network") == 0) {
-                process_cfg_network(req);
+                process_cfg(req, CTRL_MSG_WIFI_CONFIG, NetworkConfig_fields);
             } else if (strcmp(req->url, "/cfg/mqtt") == 0) {
                 process_cfg(req, CTRL_MSG_MQTT_CONFIG, MqttConfig_fields);
             } else if (strcmp(req->url, "/cfg/logging") == 0) {

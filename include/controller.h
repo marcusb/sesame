@@ -3,7 +3,6 @@
 #include "FreeRTOS.h"
 #include "app_config.pb.h"
 #include "idcm_msg.h"
-#include "iot_wifi.h"
 
 typedef enum {
     CTRL_MSG_UNKNOWN,
@@ -33,18 +32,13 @@ typedef struct {
 } door_state_msg_t;
 
 typedef struct {
-    WIFINetworkParams_t network_params;
-    char hostname[32];
-} wifi_cfg_msg_t;
-
-typedef struct {
     ctrl_msg_type_t type;
 
     union {
         ota_upgrade_msg_t ota_upgrade;
         door_control_msg_t door_control;
         door_state_msg_t door_state;
-        wifi_cfg_msg_t wifi_cfg;
+        NetworkConfig network_cfg;
         MqttConfig mqtt_cfg;
         LoggingConfig logging_cfg;
     } msg;

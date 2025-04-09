@@ -10,14 +10,16 @@
 #include "queue.h"
 
 // wmsdk
-#include "psm-v2.h"
+#include "iot_wifi.h"
 #include "wlan.h"
 #include "wm_wlan.h"
 
 // Application
 #include "app_logging.h"
 #include "backoff_algorithm.h"
+#include "config_manager.h"
 #include "network.h"
+#include "string_util.h"
 #include "time_util.h"
 
 #define WIFI_CONNECTION_BACKOFF_BASE_MS (1000)
@@ -30,18 +32,13 @@ typedef enum {
     STA_CONNECT_FAILED
 } connection_state_t;
 
-extern psm_hnd_t psm_hnd;
-
 static connection_state_t network_state = STA_IDLE;
 static QueueHandle_t nm_queue;
-static const char psm_key_ssid[] = "wlan.ssid";
-static const char psm_key_wlan_passwd[] = "wlan.passwd";
-static const char psm_key_hostname[] = "wlan.hostname";
 static BackoffAlgorithmContext_t connect_retry_params;
 static struct wlan_network ap_network;
 static TickType_t mark;
 static TickType_t connect_interval;
-static char hostname[32] = "sesame";
+static char hostname[33] = "sesame";
 
 const char *pcApplicationHostnameHook() { return hostname; }
 
@@ -63,58 +60,27 @@ static void mem_clear(void *pBuf, size_t size) {
 }
 
 static int get_network_config(WIFINetworkParams_t *params) {
-    int ret = psm_get_variable(psm_hnd, psm_key_ssid, params->ucSSID,
-                               sizeof(params->ucSSID));
-    if (ret < 0) {
-        LogDebug(("psm read ssid failed %d", ret));
-        return ret;
+    char *p = stpncpy((char *)params->ucSSID, app_config.network_config.ssid,
+                      sizeof(params->ucSSID));
+    int n = p - (char *)params->ucSSID;
+    params->ucSSIDLength = n;
+    if (n == 0) {
+        return -1;
     }
-    params->ucSSIDLength = ret;
 
-    ret = psm_get_variable(psm_hnd, psm_key_wlan_passwd,
-                           params->xPassword.xWPA.cPassphrase,
-                           sizeof(params->xPassword.xWPA.cPassphrase));
-    if (ret < 0) {
-        LogDebug(("psm read passwd failed %d", ret));
-        return ret;
-    }
-    params->xPassword.xWPA.ucLength = ret;
+    p = stpncpy((char *)params->xPassword.xWPA.cPassphrase,
+                app_config.network_config.password,
+                sizeof(params->xPassword.xWPA.cPassphrase));
+    n = p - (char *)params->xPassword.xWPA.cPassphrase;
+    params->xPassword.xWPA.ucLength = n;
     params->xSecurity = eWiFiSecurityWPA2;
-
-    ret = psm_get_variable(psm_hnd, psm_key_hostname, hostname,
-                           sizeof(hostname) - 1);
-    if (ret >= 0) {
-        hostname[ret] = '\0';
-    }
-    return 0;
-}
-
-static int set_network_config(const wifi_cfg_msg_t *cfg) {
-    int ret =
-        psm_set_variable(psm_hnd, psm_key_ssid, cfg->network_params.ucSSID,
-                         cfg->network_params.ucSSIDLength);
-    if (ret < 0) {
-        LogError(("psm write ssid failed %d", ret));
-        return ret;
+    if (n == 0) {
+        return -1;
     }
 
-    if (cfg->network_params.xPassword.xWPA.ucLength > 0) {
-        ret = psm_set_variable(psm_hnd, psm_key_wlan_passwd,
-                               cfg->network_params.xPassword.xWPA.cPassphrase,
-                               cfg->network_params.xPassword.xWPA.ucLength);
-        if (ret < 0) {
-            LogError(("psm write passwd failed %d", ret));
-            return ret;
-        }
-    }
-
-    if (strlen(cfg->hostname) > 0) {
-        ret = psm_set_variable(psm_hnd, psm_key_hostname, cfg->hostname,
-                               strlen(cfg->hostname));
-        if (ret < 0) {
-            LogError(("psm write hostname failed %d", ret));
-            return ret;
-        }
+    n = strtcpy(hostname, app_config.network_config.hostname, sizeof(hostname));
+    if (n <= 0) {
+        strtcpy(hostname, "sesame", sizeof(hostname));
     }
     return 0;
 }
@@ -330,11 +296,6 @@ void network_manager_task(void *params) {
             switch (cmd.type) {
                 case NM_CMD_AP_MODE:
                     start_ap();
-                    break;
-
-                case NM_CMD_WIFI_CONFIG:
-                    set_network_config(&cmd.msg.wifi_cfg);
-                    start_ap_connection();
                     break;
 
                 default:

@@ -304,9 +304,11 @@ int main(void) {
                     break;
 
                 case CTRL_MSG_WIFI_CONFIG: {
-                    nm_msg_t cmd = {NM_CMD_WIFI_CONFIG,
-                                    {.wifi_cfg = ctrl_msg.msg.wifi_cfg}};
-                    xQueueSendToBack(nm_queue, &cmd, 0);
+                    app_config.network_config = ctrl_msg.msg.network_cfg;
+                    app_config.has_network_config = true;
+                    save_config();
+                    vTaskDelay(500);
+                    reboot();
                     break;
                 }
 
