@@ -17,7 +17,19 @@
 static struct freertos_sockaddr udp_log_addr;
 static Socket_t syslog_sock;
 
-static void create_log_socket(void *p1, uint32_t p2) {
+static void do_configure(void *p1, uint32_t p2) {
+    const SyslogConfig *cfg = (const SyslogConfig *)p1;
+
+    uint32_t host_ip = FreeRTOS_gethostbyname(cfg->syslog_host);
+    if (!host_ip) {
+        return;
+    }
+    udp_log_addr = (struct freertos_sockaddr){sizeof(struct freertos_sockaddr),
+                                              FREERTOS_AF_INET,
+                                              FreeRTOS_htons(cfg->syslog_port),
+                                              0,
+                                              {.ulIP_IPv4 = host_ip}};
+
     Socket_t sock = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM,
                                     FREERTOS_IPPROTO_UDP);
     if (sock != FREERTOS_INVALID_SOCKET) {
@@ -34,16 +46,9 @@ void configure_logging(const SyslogConfig *cfg) {
         return;
     }
 
-    udp_log_addr = (struct freertos_sockaddr){
-        sizeof(struct freertos_sockaddr),
-        FREERTOS_AF_INET,
-        FreeRTOS_htons(cfg->syslog_port),
-        0,
-        {.ulIP_IPv4 = FreeRTOS_inet_addr(cfg->syslog_host)}};
-
     // Schedule socket creation because this function is called from the IP task
     // and the IP task cannot itself wait for a socket to bind.
-    xTimerPendFunctionCall(create_log_socket, NULL, 0, 1000);
+    xTimerPendFunctionCall(do_configure, (void *)cfg, 0, 100);
 }
 
 void log_syslog(const log_msg_t *log) {
