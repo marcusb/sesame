@@ -7,35 +7,24 @@
 
 /* FreeRTOS includes. */
 #include "FreeRTOS.h"
-#include "list.h"
-
-/* FreeRTOS+TCP includes. */
-#include "FreeRTOS_IP.h"
-
-/* FreeRTOS+TCP includes. */
 #include "FreeRTOS_IP.h"
 #include "FreeRTOS_IP_Private.h"
 #include "FreeRTOS_Sockets.h"
 #include "NetworkBufferManagement.h"
 #include "NetworkInterface.h"
+#include "list.h"
 #include "mw300_rd_net.h"
 
 /* wmsdk includes */
-#include "wifi-decl.h"
-#include "wifi.h"
+#include "mlan_api.h"
+#include "mlan_fw.h"
+#include "wifi-sdio.h"
 #include "wm_net.h"
-#include "wmerrno.h"
 #include "wmlog.h"
 
-#define net_e(...) wmlog_e("freertos_tcp", ##__VA_ARGS__)
-#define net_w(...) wmlog_w("freertos_tcp", ##__VA_ARGS__)
-#define net_d(...) wmlog("freertos_tcp", ##__VA_ARGS__)
-
-// global output buffer provided by the WiFi driver
-extern uint8_t outbuf[2048];
-
-uint8_t* mlan_get_payload(const uint8_t* rcvdata, uint16_t* payload_len,
-                          int* interface);
+#define net_e(...) wmlog_e("net", ##__VA_ARGS__)
+#define net_w(...) wmlog_w("net", ##__VA_ARGS__)
+#define net_d(...) wmlog("net", ##__VA_ARGS__)
 
 #define NUM_INTERFACES 2
 static NetworkInterface_t* interfaces[NUM_INTERFACES];
@@ -47,9 +36,8 @@ _Static_assert(BSS_TYPE_UAP < NUM_INTERFACES, "ifindex");
  *******************************************************/
 
 void net_interface_down(void* intrfc_handle) {
-    net_d("net_interface_down\r\n");
-    NetworkInterface_t* iface = (NetworkInterface_t*)intrfc_handle;
-    FreeRTOS_NetworkDown(iface);
+    NetworkInterface_t* netif = (NetworkInterface_t*)intrfc_handle;
+    FreeRTOS_NetworkDown(netif);
 }
 
 void* net_get_mlan_handle() { return interfaces[BSS_TYPE_STA]; }
@@ -57,56 +45,74 @@ void* net_get_mlan_handle() { return interfaces[BSS_TYPE_STA]; }
 void* net_get_uap_handle(void) { return interfaces[BSS_TYPE_UAP]; }
 
 int net_get_if_addr(struct wlan_ip_config* addr, void* intrfc_handle) {
-    NetworkInterface_t* iface = (NetworkInterface_t*)intrfc_handle;
-    NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(iface);
-    if (ep != NULL) {
-        addr->ipv4.address = ep->ipv4_settings.ulIPAddress;
-        addr->ipv4.netmask = ep->ipv4_settings.ulNetMask;
-        addr->ipv4.gw = ep->ipv4_settings.ulGatewayAddress;
-        addr->ipv4.dns1 = ep->ipv4_settings.ulDNSServerAddresses[0];
-        addr->ipv4.dns2 = ep->ipv4_settings.ulDNSServerAddresses[1];
-        return WM_SUCCESS;
-    } else {
+    NetworkInterface_t* netif = (NetworkInterface_t*)intrfc_handle;
+    NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(netif);
+    if (ep == NULL) {
         return WM_FAIL;
+    }
+    addr->ipv4.address = ep->ipv4_settings.ulIPAddress;
+    addr->ipv4.netmask = ep->ipv4_settings.ulNetMask;
+    addr->ipv4.gw = ep->ipv4_settings.ulGatewayAddress;
+    addr->ipv4.dns1 = ep->ipv4_settings.ulDNSServerAddresses[0];
+    addr->ipv4.dns2 = ep->ipv4_settings.ulDNSServerAddresses[1];
+    return WM_SUCCESS;
+}
+
+static void deliver_packet_above(uint8_t iface, const uint8_t* data,
+                                 const uint16_t len) {
+    NetworkBufferDescriptor_t* buf =
+        pxGetNetworkBufferWithDescriptor(len, pdMS_TO_TICKS(250));
+    if (buf == NULL) {
+        return;
+    }
+    buf->xDataLength = len;
+    memcpy(buf->pucEthernetBuffer, data, len);
+    buf->pxInterface = interfaces[iface];
+    buf->pxEndPoint =
+        FreeRTOS_MatchingEndpoint(buf->pxInterface, buf->pucEthernetBuffer);
+
+    IPStackEvent_t xRxEvent = {eNetworkRxEvent, buf};
+    if (xSendEventStructToIPTask(&xRxEvent, pdMS_TO_TICKS(250)) == pdFAIL) {
+        net_w("failed to enqueue packet to network stack");
+        vReleaseNetworkBufferAndDescriptor(buf);
+        return;
     }
 }
 
-void handle_data_packet(uint8_t interface, const uint8_t* buffer,
-                        uint16_t len) {
-    t_u16 payload_len;
-    int interface_i = interface;
-    uint8_t* payload = mlan_get_payload(buffer, &payload_len, &interface_i);
+static void handle_data_packet(const uint8_t interface, const uint8_t* data,
+                               const uint16_t len) {
+    if (interface >= NUM_INTERFACES || interfaces[interface] == NULL) {
+        return;
+    }
+    RxPD* rxpd = (RxPD*)((t_u8*)data + INTF_HEADER_LEN);
+    if (rxpd->rx_pkt_type == PKT_TYPE_AMSDU) {
+        wrapper_wlan_handle_amsdu_rx_packet(data, len);
+        return;
+    }
 
+    const uint8_t* payload = (const uint8_t*)rxpd + rxpd->rx_pkt_offset;
     if (eConsiderFrameForProcessing(payload) != eProcessBuffer) {
         return;
     }
 
-    if (interface >= NUM_INTERFACES) {
-        net_e("invalid interface %d\n", interface);
-    }
+    deliver_packet_above(interface, payload, rxpd->rx_pkt_length);
+}
 
-    const TickType_t xDescriptorWaitTime = pdMS_TO_TICKS(250);
-    NetworkBufferDescriptor_t* pxNetworkBuffer =
-        pxGetNetworkBufferWithDescriptor(len, xDescriptorWaitTime);
+static void handle_amsdu_data_packet(uint8_t interface, uint8_t* rcvdata,
+                                     uint16_t datalen) {
+    deliver_packet_above(interface, rcvdata, datalen);
+}
 
-    if (pxNetworkBuffer != NULL) {
-        pxNetworkBuffer->xDataLength = payload_len;
-        memcpy(pxNetworkBuffer->pucEthernetBuffer, payload, payload_len);
+static void handle_deliver_packet_above(uint8_t interface, void* lwip_pbuf) {
+    // struct pbuf* p = (struct pbuf*)lwip_pbuf;
+    // deliver_packet_above(p, interface);
+    net_e("handle_deliver_packet_above()");
+}
 
-        pxNetworkBuffer->pxInterface = interfaces[interface];
-        pxNetworkBuffer->pxEndPoint = FreeRTOS_MatchingEndpoint(
-            pxNetworkBuffer->pxInterface, pxNetworkBuffer->pucEthernetBuffer);
-
-        IPStackEvent_t xRxEvent = {eNetworkRxEvent, pxNetworkBuffer};
-
-        if (xSendEventStructToIPTask(&xRxEvent, xDescriptorWaitTime) ==
-            pdFAIL) {
-            wmprintf("Failed to enqueue packet to network stack %p, len %d",
-                     payload, payload_len);
-            vReleaseNetworkBufferAndDescriptor(pxNetworkBuffer);
-            return;
-        }
-    }
+static inline bool wrapper_net_is_ip_or_ipv6(const uint8_t* buffer) {
+    const EthernetHeader_t* eth = (const EthernetHeader_t*)buffer;
+    return eth->usFrameType == ipIPv4_FRAME_TYPE ||
+           eth->usFrameType == ipIPv6_FRAME_TYPE;
 }
 
 void net_wlan_init(void) {
@@ -114,6 +120,11 @@ void net_wlan_init(void) {
 
     if (!net_wlan_init_done) {
         wifi_register_data_input_callback(&handle_data_packet);
+        wifi_register_amsdu_data_input_callback(&handle_amsdu_data_packet);
+        wifi_register_deliver_packet_above_callback(
+            &handle_deliver_packet_above);
+        wifi_register_wrapper_net_is_ip_or_ipv6_callback(
+            &wrapper_net_is_ip_or_ipv6);
         wlan_wlcmgr_send_msg(WIFI_EVENT_NET_INTERFACE_CONFIG,
                              WIFI_EVENT_REASON_SUCCESS, NULL);
         net_wlan_init_done = 1;
@@ -125,10 +136,16 @@ int net_configure_address(struct wlan_ip_config* addr, void* intrfc_handle) {
     if (addr == NULL || intrfc_handle == NULL) {
         return -WM_E_INVAL;
     }
-
-    wlan_wlcmgr_send_msg(WIFI_EVENT_NET_STA_ADDR_CONFIG,
-                         WIFI_EVENT_REASON_SUCCESS, NULL);
-    return 0;
+    NetworkInterface_t* netif = (NetworkInterface_t*)intrfc_handle;
+    uint8_t if_index = (int)netif->pvArgument;
+    if (if_index == BSS_TYPE_STA) {
+        wlan_wlcmgr_send_msg(WIFI_EVENT_NET_STA_ADDR_CONFIG,
+                             WIFI_EVENT_REASON_SUCCESS, NULL);
+    } else if (if_index == BSS_TYPE_UAP) {
+        wlan_wlcmgr_send_msg(WIFI_EVENT_UAP_NET_ADDR_CONFIG,
+                             WIFI_EVENT_REASON_SUCCESS, NULL);
+    }
+    return WM_SUCCESS;
 }
 
 void net_configure_dns(struct wlan_ip_config* ip, enum wlan_bss_role role) {}
@@ -148,18 +165,18 @@ void vNetworkInterfaceAllocateRAMToBuffers(
     NetworkBufferDescriptor_t
         pxNetworkBuffers[ipconfigNUM_NETWORK_BUFFER_DESCRIPTORS]) {}
 
-static BaseType_t xMW300_NetworkInterfaceInitialise(NetworkInterface_t* iface) {
-    uint8_t if_index = (int)iface->pvArgument;
+static BaseType_t netif_init(NetworkInterface_t* netif) {
+    uint8_t if_index = (int)netif->pvArgument;
     configASSERT(if_index < NUM_INTERFACES);
-    interfaces[if_index] = iface;
+    interfaces[if_index] = netif;
 
-    mac_addr_t mac_addr;
+    wifi_mac_addr_t mac_addr;
     int ret = wifi_get_device_mac_addr(&mac_addr);
     if (ret != WM_SUCCESS) {
         net_d("Failed to get mac address");
         return pdFALSE;
     }
-    NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(iface);
+    NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(netif);
     if (ep != NULL) {
         memcpy(ep->xMACAddress.ucBytes, mac_addr.mac,
                sizeof(ep->xMACAddress.ucBytes));
@@ -177,69 +194,71 @@ static BaseType_t xMW300_NetworkInterfaceInitialise(NetworkInterface_t* iface) {
             ret = -WM_E_INVAL;
     }
     if (ret != WM_SUCCESS) {
-        net_e("wlan get connection state failed\r\n");
+        // wlan may not be initialized yet
         return pdFALSE;
     }
     return state == WLAN_ASSOCIATED || state == WLAN_CONNECTING ||
            state == WLAN_CONNECTED || state == WLAN_UAP_STARTED;
 }
 
-static BaseType_t xMW300_GetPhyLinkStatus(NetworkInterface_t* iface) {
-    return iface->bits.bInterfaceUp;
+static BaseType_t get_phy_link_status(NetworkInterface_t* netif) {
+    return netif->bits.bInterfaceUp;
 }
 
-static BaseType_t xMW300_NetworkInterfaceOutput(
-    NetworkInterface_t* iface, NetworkBufferDescriptor_t* const pxNetworkBuffer,
-    BaseType_t xReleaseAfterSend) {
-    if ((pxNetworkBuffer == NULL) ||
-        (pxNetworkBuffer->pucEthernetBuffer == NULL) ||
-        (pxNetworkBuffer->xDataLength == 0)) {
-        net_d("Incorrect params");
+static BaseType_t low_level_output(NetworkInterface_t* netif,
+                                   NetworkBufferDescriptor_t* const buf,
+                                   BaseType_t release_after_send) {
+    if ((buf == NULL) || (buf->pucEthernetBuffer == NULL) ||
+        (buf->xDataLength == 0)) {
+        net_w("incorrect params");
         return pdFALSE;
     }
 
-    memset(outbuf, 0x00, sizeof(outbuf));
-    uint8_t pkt_len = 22 + 4; /* sizeof(TxPD) + INTF_HEADER_LEN */
-    memcpy(outbuf + pkt_len, pxNetworkBuffer->pucEthernetBuffer,
-           pxNetworkBuffer->xDataLength);
-    uint8_t if_idx = (int)iface->pvArgument;
-    int ret = wifi_low_level_output(if_idx, outbuf + pkt_len,
-                                    pxNetworkBuffer->xDataLength);
+    uint32_t outbuf_len;
+    uint8_t* outbuf = wifi_get_outbuf(&outbuf_len);
+    if (!outbuf) {
+        return pdFALSE;
+    }
+    uint8_t pkt_len = sizeof(TxPD) + INTF_HEADER_LEN;
+    configASSERT(pkt_len + buf->xDataLength <= outbuf_len);
+    memset(outbuf, 0x00, pkt_len);
+    memcpy(outbuf + pkt_len, buf->pucEthernetBuffer, buf->xDataLength);
 
+    uint8_t if_idx = (int)netif->pvArgument;
+    int ret = wifi_low_level_output(if_idx, outbuf + pkt_len, buf->xDataLength);
     if (ret != WM_SUCCESS) {
         net_e("Failed output %p, length %d, error %d \r\n",
-              pxNetworkBuffer->pucEthernetBuffer, pxNetworkBuffer->xDataLength,
-              ret);
+              buf->pucEthernetBuffer, buf->xDataLength, ret);
     }
 
-    if (xReleaseAfterSend != pdFALSE) {
-        vReleaseNetworkBufferAndDescriptor(pxNetworkBuffer);
+    if (release_after_send != pdFALSE) {
+        vReleaseNetworkBufferAndDescriptor(buf);
     }
 
     return ret == WM_SUCCESS ? pdTRUE : pdFALSE;
 }
 
-NetworkInterface_t* pxMW300_FillInterfaceDescriptor(
-    uint8_t if_type, NetworkInterface_t* pxInterface) {
-    memset(pxInterface, 0, sizeof(*pxInterface));
+NetworkInterface_t* mw300_new_netif_desc(uint8_t if_type,
+                                         NetworkInterface_t* netif) {
+    memset(netif, 0, sizeof(*netif));
     switch (if_type) {
         case BSS_TYPE_STA:
-            pxInterface->pcName = "wl0";
+            netif->pcName = "wl0";
             break;
         case BSS_TYPE_UAP:
-            pxInterface->pcName = "ap0";
+            netif->pcName = "ap0";
             break;
         default:
             net_e("invalid if_type %u", if_type);
             return NULL;
     }
 
-    pxInterface->pvArgument = (void*)(int)if_type;
-    pxInterface->pfInitialise = xMW300_NetworkInterfaceInitialise;
-    pxInterface->pfOutput = xMW300_NetworkInterfaceOutput;
-    pxInterface->pfGetPhyLinkStatus = xMW300_GetPhyLinkStatus;
+    netif->pvArgument = (void*)(int)if_type;
+    netif->pfInitialise = netif_init;
+    netif->pfOutput = low_level_output;
+    netif->pfGetPhyLinkStatus = get_phy_link_status;
 
-    FreeRTOS_AddNetworkInterface(pxInterface);
+    FreeRTOS_AddNetworkInterface(netif);
 
-    return pxInterface;
+    return netif;
 }

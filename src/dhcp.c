@@ -1,6 +1,7 @@
 #include "dhcp.h"
 
 #include <stdlib.h>
+#include <time.h>
 
 // FreeRTOS
 #include "FreeRTOS_DHCP.h"
@@ -9,14 +10,13 @@
 
 // wmsdk
 #include "crc32.h"
-#include "wmtime.h"
 
 // Application
 #include "app_logging.h"
 #include "dhcp.h"
+#include "time_util.h"
 #include "util.h"
 
-// lease time 24 hours
 #define MAX_LEASES 12
 
 /* a DHCP client must be prepared to receive a message of up to 576 octets */
@@ -88,7 +88,7 @@ static int get_lease(unsigned long crc) {
     // Don't need to check again AFTER the clean up as for DHCP REQUEST the
     // client should already have the lease and for DHCP DISCOVER we will check
     // once more to assign a new lease
-    time_t now = wmtime_time_get_posix();
+    time_t now = get_epoch_millis() / 1000;
     for (int i = 0; i < MAX_LEASES; i++) {
         if (leases[i].expires < now) {
             set_lease(i, 0, 0, DHCP_LEASE_AVAIL, 0);
@@ -203,7 +203,7 @@ static void process_dhcp_msg(NetworkEndPoint_t *endpoint,
 
     int lease = get_lease(crc);
     uint8_t response = dhcpMESSAGE_TYPE_NACK;
-    time_t now = wmtime_time_get_posix();
+    time_t now = get_epoch_millis() / 1000;
     if (msg_type == dhcpMESSAGE_TYPE_DISCOVER) {
         if (lease == -1) {
             // use existing lease or get a new one

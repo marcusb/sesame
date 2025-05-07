@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.23)
 
-include("${CMAKE_CURRENT_LIST_DIR}/cmake/afr_utils.cmake")
-
 # Needed for CMake's test compilation check
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
@@ -10,39 +8,63 @@ project(
   VERSION 0.1
   LANGUAGES C ASM)
 
-option(USE_BACKTRACE "Include facility for dumping stack traces")
-
-set(mw320_dir "${CMAKE_CURRENT_LIST_DIR}/marvell/WMSDK/mw320")
-set(afr_ports_dir "${CMAKE_CURRENT_LIST_DIR}/marvell/boards/mw300_rd/ports")
-
-set(exe_target sesame)
 set(CMAKE_BUILD_TYPE Debug)
 
-add_executable(${exe_target})
+if(CMAKE_CROSSCOMPILING)
 
-target_sources(${exe_target}
+option(USE_BACKTRACE "Include facility for dumping stack traces" ON)
+
+set(exe_target sesame)
+set(exe_target_ram "${exe_target}_ram")
+set(CMAKE_EXECUTABLE_SUFFIX ".axf")
+
+add_library(board STATIC)
+target_sources(board PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/board/board.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/board/clock_config.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/board/sdmmc_config.c"
+)
+target_compile_definitions(board
+    PUBLIC
+    SDIO_ENABLED)
+target_include_directories(board
+    PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/board"
+)
+target_link_libraries(board
+    PUBLIC
+    globals
+    mw320_sdmmc_sdio
+    mw320_sdmmc_host_sdioc
+    mw320_drivers_power
+    PRIVATE
+    mw320_utility_debug_console
+)
+
+add_library(app_shared STATIC)
+target_sources(app_shared
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/idle_task.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/mbedtls_error_dummy.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mqtt.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/network_manager.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ota.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ota_client.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/pic_uart.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/random.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/pin_mux.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/time_util.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
-    "${afr_ports_dir}/wifi/iot_wifi.c")
-target_include_directories(${exe_target}
+)
+target_include_directories(app_shared
     PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "libraries/abstractions/wifi/include")
+    "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 add_library(globals INTERFACE)
 
@@ -64,26 +86,26 @@ target_sources(logging
 target_include_directories(logging
     PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_compile_options(logging
+target_compile_definitions(logging
     PUBLIC
-    -DLOGGING_ENABLE_METADATA_WITH_C99_AND_GNU_EXTENSION=0)
+    LOGGING_ENABLE_METADATA_WITH_C99_AND_GNU_EXTENSION=0)
 target_link_libraries(logging
     PRIVATE
     freertos_kernel
-    globals)
+    globals
+    mw320_utility_debug_console
+)
 
 # -------------------------------------------------------------------------------------------------
 # Compiler settings
 # -------------------------------------------------------------------------------------------------
 
-# Compiler flags
-set(SDK_VERSION_INTERNAL "\"v1.2.r6.p1\"")
-set(SDK_VERSION ${SDK_VERSION_INTERNAL})
-
-set(global-cflags-y
+target_compile_options(globals
+    INTERFACE
     "-mcpu=cortex-m4"
     "-mthumb"
-    "-Os"
+    "-mfloat-abi=softfp"
+    "-mfpu=fpv4-sp-d16"
     "-fdata-sections"
     "-ffunction-sections"
     "-ffreestanding"
@@ -98,57 +120,14 @@ set(global-cflags-y
     "-Wno-sign-compare"
     "-Wno-type-limits"
     "-std=c99"
-    "-DSDK_VERSION=${SDK_VERSION}")
-
-# ARM Cortex M4 flags
-set(tc-lflags-tc-cortex-m4-y
-    "-mcpu=cortex-m4"
-    "-mthumb"
-    "-Os"
-    "-fdata-sections"
-    "-ffunction-sections"
-    "-ffreestanding"
-    "-MMD"
-    "-Wall"
-    "-fno-strict-aliasing"
-    "-fno-common"
-    "-mfloat-abi=softfp"
-    "-mfpu=fpv4-sp-d16"
-    "-D__FPU_PRESENT"
-    "-D_DEFAULT_SOURCE"
-    "-D_GNU_SOURCE")
-
-target_compile_options(globals
-    INTERFACE ${global-cflags-y} ${tc-lflags-tc-cortex-m4-y})
-
-# Linker flags
-# gcc specific extra linker flags
-set(tc-lflags-y
-    "-nostartfiles"
-    "-specs=nano.specs"
-    "-specs=nosys.specs"
-    "-Wl,--wrap,malloc"
-    "-Wl,--wrap,free"
-    "-Wl,--wrap,calloc"
-    "-Wl,--wrap,realloc"
-    "-Wl,--wrap,printf"
-    "-Wl,--wrap,fprintf")
-
-# Xlinker flags
-set(CMAKE_C_LINKER_WRAPPER_FLAG "-Xlinker" " ")
-target_link_options(${exe_target}
-    PRIVATE
-    "LINKER:--undefined"
-    "LINKER:uxTopUsedPriority"
-    "LINKER:--cref"
-    "LINKER:--gc-sections"
-    "LINKER:--defsym=_rom_data=64"
-    "LINKER:-M"
-    "LINKER:-Map"
-    "LINKER:${exe_target}.map")
-
-target_link_options(freertos_config
-     INTERFACE ${tc-lflags-y} ${tc-lflags-tc-cortex-m4-y})
+    $<$<CONFIG:Debug>:-g>
+    $<$<CONFIG:Debug>:-Og>
+    $<$<CONFIG:Release>:-Os>)
+target_compile_definitions(globals
+    INTERFACE
+    __FPU_PRESENT
+    _DEFAULT_SOURCE
+    _GNU_SOURCE)
 
 # -------------------------------------------------------------------------------------------------
 # Backtrace
@@ -158,22 +137,21 @@ if (USE_BACKTRACE)
     add_library(backtrace STATIC)
     target_sources(backtrace
         PRIVATE
-        ./libraries/backtrace/backtrace/backtrace.c)
+        "${CMAKE_CURRENT_SOURCE_DIR}/libraries/backtrace/backtrace/backtrace.c")
     target_include_directories(backtrace
         PUBLIC
-        ./libraries/backtrace/include)
+        "${CMAKE_CURRENT_SOURCE_DIR}/libraries/backtrace/include")
     target_link_libraries(backtrace
         PRIVATE globals)
-
-    target_sources(${exe_target}
-        PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/fault.c")
-    target_link_libraries(${exe_target} PRIVATE backtrace)
-
-    list(APPEND global-cflags-y
+    target_link_libraries(app_shared PRIVATE backtrace)
+    target_compile_options(globals
+        INTERFACE
         "-funwind-tables"
         "-mpoke-function-name"
         "-fno-omit-frame-pointer")
+    target_compile_definitions(globals
+        INTERFACE
+        USE_BACKTRACE)
 endif()
 
 # -------------------------------------------------------------------------------------------------
@@ -211,30 +189,16 @@ FetchContent_Declare(freertos_plus_tcp
 )
 FetchContent_MakeAvailable(freertos_plus_tcp freertos_kernel)
 
-target_link_libraries(freertos_kernel
+target_sources(freertos_kernel
     PRIVATE
-    wmsdk
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/idle_task.c")
+target_link_libraries(freertos_kernel
     PUBLIC
     freertos_config)
 
-add_library(freertos_plus_tcp_network_if STATIC)
-target_sources(freertos_plus_tcp_network_if
+target_sources(freertos_plus_tcp
     PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/mw300_rd_net.c"
-)
-target_include_directories(freertos_plus_tcp_network_if
-    PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "${mw320_dir}/sdk/src/incl/platform/net/freertos-plus-tcp"
-)
-target_link_libraries(freertos_plus_tcp_network_if
-    PUBLIC
-    freertos_plus_tcp_port
-    freertos_plus_tcp_network_if_common
-    PRIVATE
-    freertos_kernel
-    freertos_plus_tcp
-    wmsdk)
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/random.c")
 
 add_library(freertos_plus_transport STATIC)
 target_sources(freertos_plus_transport
@@ -250,6 +214,11 @@ target_link_libraries(freertos_plus_transport
     coreHTTP
     freertos_plus_tcp
     logging)
+
+add_library(freertos_plus_tcp_network_if INTERFACE)
+target_link_libraries(freertos_plus_tcp_network_if
+    INTERFACE
+    mw320_wlcmgr)
 
 FetchContent_Declare(backoff_algorithm
     GIT_REPOSITORY https://github.com/FreeRTOS/backoffAlgorithm.git
@@ -276,43 +245,10 @@ FetchContent_Declare(mbedtls
     GIT_TAG        v3.6.3
 )
 FetchContent_MakeAvailable(mbedtls)
-target_link_libraries(mbedtls
-    PRIVATE
-    freertos_kernel)
-target_link_libraries(mbedx509
-    PRIVATE
-    freertos_kernel)
-target_link_libraries(mbedcrypto
-    PRIVATE
-    freertos_kernel)
 target_compile_definitions(mbedcrypto
     PUBLIC
-    MBEDTLS_CONFIG_FILE="mbedtls_app_config.h")
-
-FetchContent_Declare(core_pkcs11
-    GIT_REPOSITORY https://github.com/FreeRTOS/corePKCS11.git
-    GIT_TAG        v3.6.2
+    "MBEDTLS_CONFIG_FILE=\"mbedtls_app_config.h\""
 )
-FetchContent_MakeAvailable(core_pkcs11)
-include("${core_pkcs11_SOURCE_DIR}/pkcsFilePaths.cmake")
-add_library(core_pkcs11 STATIC)
-target_sources(core_pkcs11
-    PRIVATE
-    "${PKCS_SOURCES}"
-    "libraries/crypto/src/iot_crypto.c"
-    "${afr_ports_dir}/pkcs11/core_pkcs11_pal.c")
-target_include_directories(core_pkcs11
-    PUBLIC
-    "${PKCS_INCLUDE_PUBLIC_DIRS}"
-    "${PKCS_PAL_INCLUDE_PUBLIC_DIRS}"
-    "libraries/crypto/include")
-target_link_libraries(core_pkcs11
-    PRIVATE
-    wmsdk
-    PUBLIC
-    freertos_kernel
-    mbedtls
-    logging)
 
 FetchContent_Declare(coreHTTP
     GIT_REPOSITORY https://github.com/FreeRTOS/coreHTTP.git
@@ -368,150 +304,200 @@ target_link_libraries(coreMQTT_agent
     coreMQTT
     logging)
 
-# ==================== Marvell ====================
+include("mw320_sdk.cmake")
 
-add_library(wmsdk STATIC)
-target_sources(wmsdk
-    PRIVATE
-    "board/board.c"
-    "${mw320_dir}/sdk/external/FreeRTOS/Source/FreeRTOS-openocd.c"
-    "${mw320_dir}/sdk/src/core/cli/cli.c"
-    "${mw320_dir}/sdk/src/core/cli/cli_mem_simple.c"
-    "${mw320_dir}/sdk/src/core/cli/cli_utils.c"
-    "${mw320_dir}/sdk/src/core/mdev/mdev.c"
-    "${mw320_dir}/sdk/src/core/pwrmgr/pwrmgr.c"
-    "${mw320_dir}/sdk/src/core/pwrmgr/pwrmgr_cli.c"
-    "${mw320_dir}/sdk/src/core/util/boot_flags.c"
-    "${mw320_dir}/sdk/src/core/util/crc/crc32.c"
-    "${mw320_dir}/sdk/src/core/util/crc/soft_crc16.c"
-    "${mw320_dir}/sdk/src/core/util/crc/soft_crc32.c"
-    "${mw320_dir}/sdk/src/core/util/critical_error.c"
-    "${mw320_dir}/sdk/src/core/util/dumphex.c"
-    "${mw320_dir}/sdk/src/core/util/flash.c"
-    "${mw320_dir}/sdk/src/core/util/hexbin.c"
-    "${mw320_dir}/sdk/src/core/util/keystore.c"
-    "${mw320_dir}/sdk/src/core/util/panic.c"
-    "${mw320_dir}/sdk/src/core/util/wm_utils.c"
-    "${mw320_dir}/sdk/src/core/util/wm_wlan.c"
-    "${mw320_dir}/sdk/src/core/wmstdio/console.c"
-    "${mw320_dir}/sdk/src/core/wmstdio/wmassert.c"
-    "${mw320_dir}/sdk/src/core/wmstdio/wmstdio.c"
-    "${mw320_dir}/sdk/src/core/wmtime/hwrtc.c"
-    "${mw320_dir}/sdk/src/core/wmtime/swrtc.c"
-    "${mw320_dir}/sdk/src/core/wmtime/wmtime.c"
-    "${mw320_dir}/sdk/src/core/wmtime/wmtime_cli.c"
-    "${mw320_dir}/sdk/src/drivers/common/cyccnt.c"
-    "${mw320_dir}/sdk/src/drivers/common/hardfault/hardfault.c"
-    "${mw320_dir}/sdk/src/drivers/common/mdev_acomp.c"
-    "${mw320_dir}/sdk/src/drivers/common/mdev_aes.c"
-    "${mw320_dir}/sdk/src/drivers/common/mdev_crc.c"
-    "${mw320_dir}/sdk/src/drivers/common/mdev_dac.c"
-    "${mw320_dir}/sdk/src/drivers/common/mdev_gpio.c"
-    "${mw320_dir}/sdk/src/drivers/common/mdev_gpt.c"
-    "${mw320_dir}/sdk/src/drivers/common/mdev_usb_host.c"
-    "${mw320_dir}/sdk/src/drivers/common/mdev_usb_host_port.c"
-    "${mw320_dir}/sdk/src/drivers/common/mdev_wdt.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_acomp.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_adc.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_aes.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_bg.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_clock.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_crc.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_dac.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_dma.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_driver.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_flash.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_flashc.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_gpio.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_gpt.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_i2c.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_mpu.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_pinmux.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_pmu.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_qspi.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_rtc.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_sdio.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_spi_flash.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_ssp.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_uart.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_usb.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/lowlevel/mw300_wdt.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/mdev_adc.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/mdev_dma.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/mdev_i2c.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/mdev_iflash.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/mdev_pinmux.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/mdev_pm.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/mdev_rfctrl.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/mdev_rtc.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/mdev_sdio.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/mdev_ssp.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/mdev_startup.c"
-    "${mw320_dir}/sdk/src/drivers/mw300/mdev_uart.c"
-    "${mw320_dir}/sdk/src/middleware/xz/decompress.c"
-    "${mw320_dir}/sdk/src/middleware/xz/xz_crc32.c"
-    "${mw320_dir}/sdk/src/middleware/xz/xz_dec_lzma2.c"
-    "${mw320_dir}/sdk/src/middleware/xz/xz_dec_stream.c"
-    "${mw320_dir}/sdk/src/platform/os/freertos/os.c"
-    "${mw320_dir}/sdk/src/platform/os/freertos/os_cli.c"
+add_library(mw320_sdk INTERFACE)
+target_link_libraries(mw320_sdk
+    INTERFACE
+    mw320_wlcmgr
+    mw320_drivers_aes
+    mw320_drivers_gpio
+    mw320_drivers_rtc
+    mw320_drivers_wdt
+    mw320_device_startup
+    mw320_utility_debug_console
+    mw320_boot2_psm
 )
-target_compile_options(wmsdk
-    PUBLIC
-    -include "${mw320_dir}/sdk/src/incl/autoconf.h"
-)
-target_include_directories(wmsdk
-    PUBLIC
-    "${mw320_dir}/sdk/src/incl"
-    "${mw320_dir}/sdk/src/incl/sdk"
-    "${mw320_dir}/sdk/src/incl/libc/arm_gcc"
-    "${mw320_dir}/sdk/src/incl/sdk/drivers"
-    "${mw320_dir}/sdk/src/incl/sdk/drivers/wlan"
-    "${mw320_dir}/sdk/src/incl/sdk/drivers/mw300"
-    "${mw320_dir}/sdk/src/incl/sdk/drivers/mw300/regs"
-    "${mw320_dir}/sdk/src/incl/platform/os/freertos"
-    "${mw320_dir}/sdk/src/boards"
-    "${mw320_dir}/sdk/src/drivers/common/hardfault")
-target_link_libraries(wmsdk
-    PUBLIC
-    freertos_kernel
-    mbedcrypto)
 
-target_link_libraries(${exe_target}
+target_link_libraries(app_shared
     PUBLIC
-    "${mw320_dir}/bin/libs/libwifidriver.a"
-    "${mw320_dir}/bin/libs/libwlcmgr.a"
-    "${mw320_dir}/bin/libs/librfget.a"
     coreHTTP
     coreMQTT_agent
     freertos_plus_transport
     freertos_plus_tcp
     freertos_plus_tcp_network_if
-    mbedtls
-    core_pkcs11
-    wmsdk
-    "${mw320_dir}/bin/libs/libpsm.a"
-    "${mw320_dir}/bin/libs/libpart.a"
+    mbedcrypto
+    mw320_sdk
+    board
     logging
     backoff_algorithm
-    proto
+    proto)
+target_link_options(app_shared
+    PUBLIC
+    "-mcpu=cortex-m4"
+    "-mthumb"
+    "-mfloat-abi=softfp"
+    "-mfpu=fpv4-sp-d16"
+    "-specs=nano.specs"
+    "-specs=nosys.specs"
+    "-Wl,--wrap,malloc"
+    "-Wl,--wrap,free"
+    "-Wl,--wrap,calloc"
+    "-Wl,--wrap,realloc"
+    "-Wl,--wrap,printf"
+    "-Wl,--wrap,fprintf"
+    "-Wl,--undefined,uxTopUsedPriority"
+    "-Wl,--cref"
+    "-Wl,--gc-sections"
+    "-Wl,--nmagic")
 
+add_executable("${exe_target}")
+target_sources("${exe_target}"
     PRIVATE
-    -T"${mw320_dir}/build/toolchains/arm_gcc/mw300.ld")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/newlib_wrappers.c")
+target_link_libraries("${exe_target}" PRIVATE app_shared)
+target_link_options("${exe_target}"
+    PRIVATE
+    "-Wl,-Map,${exe_target}.map"
+    "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_flash.ld")
 
-set(CMAKE_EXECUTABLE_SUFFIX ".axf")
+add_executable("${exe_target_ram}")
+target_sources("${exe_target_ram}"
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/newlib_wrappers.c")
+target_link_libraries("${exe_target_ram}" PRIVATE app_shared)
+target_link_options("${exe_target_ram}"
+    PRIVATE
+    "-Wl,-Map,${exe_target_ram}.map"
+    "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")
 
-# Convert afx file to bin file
-if("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")
-    set(axf2fw "${mw320_dir}/sdk/tools/bin/Linux/axf2firmware")
-    execute_process(COMMAND chmod +x "${axf2fw}")  # TODO, workaround for FreeRTOS console permission issue.
-else()
-    message(FATAL_ERROR "Only Linux host is supported for marvell.")
-endif()
-
+set(axf2firmware "${CMAKE_CURRENT_SOURCE_DIR}/marvell/WMSDK/mw320/sdk/tools/bin/Linux/axf2firmware")
 add_custom_command(
     TARGET ${exe_target} POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E remove "${exe_target}.bin"
-    COMMAND "${axf2fw}" "${exe_target}.axf" "${exe_target}.bin"
+    COMMAND "${axf2firmware}" "${exe_target}.axf" "${exe_target}.bin"
 )
 
-set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES "${exe_target}.bin" "${exe_target}.map")
+set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
+    "${exe_target}.bin" "${exe_target}.map" "${exe_target_ram}.bin" "${exe_target_ram}.map")
+
+# -------------------------------------------------------------------------------------------------
+# boot2
+# -------------------------------------------------------------------------------------------------
+
+add_executable(boot2)
+target_sources(boot2
+    PRIVATE
+    # "${CMAKE_CURRENT_SOURCE_DIR}/boot2/src/mw300/aes.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/boot2/src/mw300/boot2.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/boot2/src/mw300/main.c"
+    # "${CMAKE_CURRENT_SOURCE_DIR}/boot2/src/mw300/secure_boot2.c"
+    # "${CMAKE_CURRENT_SOURCE_DIR}/boot2/src/utils/crc32.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/marvell/WMSDK/mw320/sdk/src/libc/src/strlen.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/marvell/WMSDK/mw320/sdk/src/libc/src/vsnprintf.c"
+    # "${mw320_sdk_dir}/components/boot2_utils/boot_flags.c"
+    "${mw320_sdk_dir}/components/boot2_utils/crc32.c"
+    "${mw320_sdk_dir}/components/boot2_utils/partition.c"
+    "${mw320_sdk_dir}/components/flash/mflash/mw320/mflash_drv.c"
+)
+target_include_directories(boot2
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/boot2/src/mw300"
+    "${CMAKE_CURRENT_SOURCE_DIR}/boot2/src/utils"
+    "${CMAKE_CURRENT_SOURCE_DIR}/boot2/include"
+    "${mw320_sdk_dir}/boards/rdmw320_r0/driver_examples/qspi/polling_transfer"
+    "${mw320_sdk_dir}/components/boot2_utils"
+    "${mw320_sdk_dir}/components/flash/mflash"
+    "${mw320_sdk_dir}/components/flash/mflash/mw320"
+    "${mw320_sdk_dir}/middleware/wifi/incl"
+)
+target_compile_options(boot2
+    PRIVATE
+    "-mcpu=cortex-m4"
+    "-mthumb"
+    "-mfloat-abi=softfp"
+    "-mfpu=fpv4-sp-d16"
+    "-fdata-sections"
+    "-ffunction-sections"
+    "-ffreestanding"
+    "-MMD"
+    "-Wall"
+    "-fno-strict-aliasing"
+    "-fno-common"
+    "-Wextra"
+    "-Wno-unused-parameter"
+    "-Wno-empty-body"
+    "-Wno-missing-field-initializers"
+    "-Wno-sign-compare"
+    "-Wno-type-limits"
+    "-std=c99"
+    "-g"
+    "-Og"
+)
+target_compile_definitions(boot2
+    PRIVATE
+    UART_DEBUG
+    BOOT2_VERSION=\"1.1\"
+    __FPU_PRESENT
+    _DEFAULT_SOURCE
+    _GNU_SOURCE)
+target_link_options(boot2
+    PRIVATE
+    "-mcpu=cortex-m4"
+    "-mthumb"
+    "-nostartfiles"
+    "-specs=nosys.specs"
+    "LINKER:--undefined"
+    "LINKER:uxTopUsedPriority"
+    "LINKER:--cref"
+    "LINKER:--gc-sections"
+    "LINKER:-M"
+    "LINKER:-Map"
+    "LINKER:boot2.map")
+target_link_libraries(boot2
+    PRIVATE
+    mw320_drivers_crc
+    mw320_drivers_flashc
+    mw320_drivers_pinmux
+    mw320_drivers_power
+    mw320_drivers_qspi
+    mw320_drivers_uart
+    -T"${CMAKE_CURRENT_SOURCE_DIR}/boot2/src/mw300/boot2.ld")
+
+find_program(CMAKE_OBJCOPY ${TOOLCHAIN_PREFIX}objcopy)
+
+add_custom_command(
+  TARGET boot2 POST_BUILD
+  COMMAND ${CMAKE_OBJCOPY} boot2.axf -O binary bootloader.bin
+  COMMAND bh_generator bootloader.bin boot2.img
+  COMMAND "${CMAKE_COMMAND}" -E remove bootloader.bin
+)
+
+find_package(bootrom_header_gen)
+
+else()
+# native build
+add_executable(bh_generator)
+target_sources(bh_generator
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/boot2/src/mw300/bootrom_header/bootrom_header.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/boot2/src/utils/soft_crc16.c"
+)
+target_include_directories(bh_generator
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/boot2/src/mw300"
+    "${CMAKE_CURRENT_SOURCE_DIR}/boot2/src/utils"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../wmsdk_bundle-3.3.33/sdk/src/incl/sdk"
+)
+target_compile_options(bh_generator
+    PRIVATE
+    "-Wall")
+target_compile_definitions(bh_generator
+    PRIVATE
+    CONFIG_CPU_MW300)
+target_link_libraries(bh_generator
+    PRIVATE
+)
+export(TARGETS bh_generator FILE
+    "${CMAKE_BINARY_DIR}/bootrom_header_gen-config.cmake")
+endif()

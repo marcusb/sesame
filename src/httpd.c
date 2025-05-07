@@ -108,6 +108,11 @@ static void handle_fwupgrade() {
     xQueueSendToBack(ctrl_queue, &msg, 100);
 }
 
+static void handle_promote_update() {
+    ctrl_msg_t msg = {CTRL_MSG_OTA_PROMOTE};
+    xQueueSendToBack(ctrl_queue, &msg, 100);
+}
+
 static void send_status(const http_request_t* req, int status) {
     int len = snprintf(req->buf, BUF_SIZE,
                        "HTTP/1.1 %d %s\r\n"
@@ -131,6 +136,9 @@ static void do_request(const http_request_t* req) {
         case METHOD_POST:
             if (strcmp(req->url, "/fwupgrade") == 0) {
                 handle_fwupgrade();
+                send_status(req, REPLY_OK);
+            } else if (strcmp(req->url, "/promote") == 0) {
+                handle_promote_update();
                 send_status(req, REPLY_OK);
             } else if (strcmp(req->url, "/open") == 0) {
                 ctrl_msg_t msg = {CTRL_MSG_DOOR_CONTROL,
@@ -232,8 +240,8 @@ static void request_task(void* params) {
     BaseType_t res = 0;
     for (;;) {
         if (mark == rd_pos) {
-            // rd_pos has not moved, no more input was consumed, so need to read
-            // more
+            // rd_pos has not moved, no more input was consumed, so need to
+            // read more
             res = FreeRTOS_recv(socket, wr_pos, buf_end - wr_pos, 0);
             wr_pos += res;
             if (wr_pos == buf_end) {

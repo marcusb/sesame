@@ -8,44 +8,39 @@
 #include "FreeRTOS_IP.h"
 #include "NetworkInterface.h"
 #include "mw300_rd_net.h"
+#include "queue.h"
 #include "task.h"
 
-// wmsdk
-#include <board.h>
-
+// mw320
 #include "boot_flags.h"
 #include "cli.h"
-#include "flash.h"
-#include "iot_crypto.h"
+#include "fsl_aes.h"
+#include "fsl_debug_console.h"
+#include "fsl_gpio.h"
+#include "fsl_wdt.h"
+#include "ksdk_mbedtls.h"
 #include "logging.h"
-#include "mbedtls/entropy.h"
-#include "mdev_gpio.h"
-#include "mdev_pinmux.h"
-#include "mdev_wdt.h"
+#include "mflash_drv.h"
 #include "partition.h"
 #include "psm-v2.h"
-#include "pwrmgr.h"
-#include "queue.h"
 #include "wifi.h"
-#include "wmstdio.h"
-#include "wmtime.h"
 
 // Application
 #include "app_logging.h"
+#include "board.h"
 #include "config_manager.h"
 #include "controller.h"
 #include "dhcp.h"
+#include "gpio.h"
 #include "httpd.h"
 #include "leds.h"
 #include "mqtt.h"
 #include "network.h"
 #include "ota.h"
 #include "pic_uart.h"
+#include "pin_mux.h"
 #include "syslog.h"
 #include "time_util.h"
-
-#define BTN_WIFI GPIO_22
-#define BTN_OTA GPIO_23
 
 /* Logging Task Defines. */
 #define mainLOGGING_MESSAGE_QUEUE_LENGTH (16)
@@ -53,7 +48,6 @@
 // the global controller event queue, all tasks write to it
 QueueHandle_t ctrl_queue;
 psm_hnd_t psm_hnd;
-static mdev_t *wdt_dev;
 
 static QueueHandle_t ota_queue;
 static QueueHandle_t pic_queue;
@@ -69,12 +63,12 @@ static const uint8_t dns_server_addr[4] = {0};
 static NetworkInterface_t sta_iface;
 static NetworkInterface_t uap_iface;
 
-void wm_printf(const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    wmprintf(format, args);
-    va_end(args);
+#if 0
+static void hardfault() {
+    uint64_t x = *(uint64_t *)(0x20CDCDCD);
+    PRINTF("%lu", x);
 }
+#endif
 
 static void log_console(const log_msg_t *log) {
     static const char levels[] = "-EWID";
@@ -82,118 +76,134 @@ static void log_console(const log_msg_t *log) {
     if (level > LOG_LEVEL_LAST || level < 0) {
         level = LOG_NONE;
     }
-    wmprintf("%lu %lu %c[%s] %s\r\n", log->msg_id, log->ticks, levels[level],
-             log->task_name, log->msg);
+    PRINTF("%lu %lu %c[%s] %s\r\n", log->msg_id, log->ticks, levels[level],
+           log->task_name, log->msg);
 }
 
-static void gpio_cb(int pin, void *data) {
-    if (pin == BTN_WIFI) {
-        ctrl_msg_t msg = {CTRL_MSG_WIFI_BUTTON};
-        xQueueSendToBackFromISR(ctrl_queue, &msg, NULL);
-    } else if (pin == BTN_OTA) {
-        ctrl_msg_t msg = {CTRL_MSG_OTA_BUTTON};
-        xQueueSendToBackFromISR(ctrl_queue, &msg, NULL);
-    }
+extern unsigned __HeapBase, __HeapLimit, __HeapBase_sram0, __HeapLimit_sram0;
+static void setup_heap() {
+    HeapRegion_t xHeapRegions[] = {
+        {(uint8_t *)&__HeapBase_sram0,
+         (unsigned)&__HeapLimit_sram0 - (unsigned)&__HeapBase_sram0},
+        {(uint8_t *)&__HeapBase,
+         (unsigned)&__HeapLimit - (unsigned)&__HeapBase},
+        {NULL, 0}};
+
+    vPortDefineHeapRegions(xHeapRegions);
 }
 
-static void init_gpio_input(mdev_t *gpio_dev, int pin) {
-    gpio_drv_setdir(gpio_dev, pin, GPIO_INPUT);
-    int res =
-        gpio_drv_set_cb(gpio_dev, pin, GPIO_INT_FALLING_EDGE, NULL, gpio_cb);
-    if (res != WM_SUCCESS) {
-        LogError(("failed to regiser GPIO ISR"));
+typedef struct {
+    int gpio;
+    ctrl_msg_type_t msg_type;
+} button_def_t;
+
+static const button_def_t buttons[] = {
+    {BOARD_SW_WIFI_PIN, CTRL_MSG_WIFI_BUTTON},
+    {BOARD_SW_OTA_PIN, CTRL_MSG_OTA_BUTTON},
+    {-1}};
+
+void GPIO_IRQHandler(void) {
+    int pin;
+    for (int i = 0; (pin = buttons[i].gpio) != -1; i++) {
+        uint32_t port = GPIO_PORT(pin);
+        uint32_t mask = 1UL << GPIO_PORT_PIN(pin);
+        if (GPIO_PortGetInterruptFlags(GPIO, port) & mask) {
+            GPIO_PortClearInterruptFlags(GPIO, port, mask);
+            ctrl_msg_t msg = {buttons[i].msg_type};
+            xQueueSendToBackFromISR(ctrl_queue, &msg, NULL);
+        }
     }
+    SDK_ISR_EXIT_BARRIER;
+}
+
+static void init_gpio_input(int pin) {
+    gpio_pin_config_t sw_config = {
+        kGPIO_DigitalInput,
+        0,
+    };
+    GPIO_PinSetInterruptConfig(GPIO, pin, kGPIO_InterruptFallingEdge);
+    GPIO_PortEnableInterrupts(GPIO, GPIO_PORT(pin), 1UL << GPIO_PORT_PIN(pin));
+    GPIO_PinInit(GPIO, pin, &sw_config);
 }
 
 static void init_gpio() {
-    gpio_drv_init();
-    PMU_VbatBrndetConfig_Type vbat_brndet_cfg = {PMU_VBAT_BRNDET_TRIGVOLT_7,
-                                                 PMU_VBAT_BRNDET_HYST_3,
-                                                 PMU_VBAT_BRNDET_FILT_0};
-    PMU_ConfigVbatBrndet(&vbat_brndet_cfg);
+    EnableIRQ(GPIO_IRQn);
+    // lower interrupt priority so we can call FreeRTOS syscalls from ISR
+    NVIC_SetPriority(GPIO_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 
-    mdev_t *gpio_dev = gpio_drv_open("MDEV_GPIO");
-    if (gpio_dev == NULL) {
-        configPRINT("gpio_drv_open failed\r\n");
-        return;
-    }
-
-    pinmux_drv_init();
-    mdev_t *pinmux_dev = pinmux_drv_open("MDEV_PINMUX");
-    if (pinmux_dev == NULL) {
-        configPRINT("pinux_drv_open failed\r\n");
-        return;
-    }
-
-    pinmux_drv_setfunc(pinmux_dev, GPIO_0, GPIO0_GPIO0);
-    gpio_drv_setdir(gpio_dev, GPIO_0, GPIO_OUTPUT);
-    gpio_drv_write(gpio_dev, GPIO_0, GPIO_IO_LOW);
+    gpio_set_output(0);
+    gpio_clear(0);
 
     // set_PIC16LF15_SIGNAL_LOW
-    // (GPIO) pin 46 set to RUN (0)
-    pinmux_drv_setfunc(pinmux_dev, GPIO_46, GPIO46_GPIO46);
-    gpio_drv_setdir(gpio_dev, GPIO_46, GPIO_OUTPUT);
-    gpio_drv_write(gpio_dev, GPIO_46, GPIO_IO_LOW);
+    // GPIO46 set to RUN (0)
+    gpio_set_output(46);
+    gpio_clear(46);
 
-    pinmux_drv_setfunc(pinmux_dev, GPIO_48, GPIO48_GPIO48);
-    gpio_drv_setdir(gpio_dev, GPIO_48, GPIO_OUTPUT);
-    gpio_drv_write(gpio_dev, GPIO_48, GPIO_IO_HIGH);
+    gpio_set_output(48);
+    gpio_set(48);
 
     // set_PIC16LF15_RESET_RELEASE
-    // (GPIO) pin 1 set to RESET (1) ???
-    pinmux_drv_setfunc(pinmux_dev, GPIO_1, GPIO1_GPIO1);
-    gpio_drv_setdir(gpio_dev, GPIO_1, GPIO_OUTPUT);
-    gpio_drv_write(gpio_dev, GPIO_1, GPIO_IO_LOW);
+    // GPIO pin 1 set to RESET (1)
+    gpio_set_output(1);
+    gpio_clear(1);
 
-    pinmux_drv_setfunc(pinmux_dev, GPIO_49, GPIO49_GPIO49);
-    gpio_drv_setdir(gpio_dev, GPIO_49, GPIO_OUTPUT);
-    gpio_drv_write(gpio_dev, GPIO_49, GPIO_IO_HIGH);
-    vTaskDelay(800);
+    gpio_set_output(49);
+    gpio_set(49);
 
-    // set up buttons
-    pinmux_drv_setfunc(pinmux_dev, BTN_WIFI, GPIO22_GPIO22);
-    init_gpio_input(gpio_dev, BTN_WIFI);
-    pinmux_drv_setfunc(pinmux_dev, BTN_OTA, GPIO23_GPIO23);
-    init_gpio_input(gpio_dev, BTN_OTA);
-
-    pinmux_drv_close(pinmux_dev);
-    gpio_drv_close(gpio_dev);
+    int pin;
+    for (int i = 0; (pin = buttons[i].gpio) != -1; i++) {
+        init_gpio_input(pin);
+    }
 }
 
 static void psm_init() {
     static flash_desc_t fl;
     int ret = part_get_desc_from_id(FC_COMP_PSM, &fl);
     if (ret != WM_SUCCESS) {
-        configPRINT("Unable to get flash desc from id\r\n");
+        LogError(("Unable to get flash desc from id"));
     }
 
     ret = psm_module_init(&fl, &psm_hnd, NULL);
     if (ret != 0) {
-        configPRINT("Failed to initialize psm module\r\n");
+        LogError(("Failed to initialize psm module\r\n"));
     }
+}
+
+static void report_boot_flags(void) {
+    PRINTF("Boot Flags: 0x%x\r\n", g_boot_flags);
+    PRINTF(" - Partition Table: %d\r\n",
+           !(!(g_boot_flags & BOOT_PARTITION_TABLE_MASK)));
+    PRINTF(" - Firmware Partition: %d\r\n", g_boot_flags & BOOT_PARTITION_MASK);
+    if (g_boot_flags & BOOT_MAIN_FIRMWARE_BAD_CRC) {
+        PRINTF(" - Backup firmware due to CRC error in main firmware\r\n");
+    }
+    PRINTF("Boot Info:\r\n");
+    PRINTF(" - Chip revision id: 0x%x\r\n", SYS_CTL->REV_ID);
+    PRINTF("Reset Cause Register: 0x%x\r\n", boot_reset_cause());
+    if (boot_reset_cause() & (1 << 5)) {
+        PRINTF(" - Watchdog reset bit is set\r\n");
+    };
 }
 
 /**
  * @brief Initialize board functions that do not require FreeRTOS
  */
 static void platform_init(void) {
-    wmstdio_init(UART0_ID, 0);
-    boot_report_flags();
-
-    wifi_set_packet_retry_count(3);
-    psm_init();
-    CRYPTO_Init();
+    boot_init();
+    report_boot_flags();
     init_gpio();
-    flash_drv_init();
+    mflash_drv_init();
+    part_init();
+    check_ota_test_image();
+    psm_init();
 
-    wmtime_init();
-    pm_init();
+    // pm_init();
     setup_rtc();
 
-    cli_init();
-    pm_cli_init();
-    wmtime_cli_init();
-    pm_mcu_cli_init();
+    // cli_init();
+    // pm_cli_init();
+    // wmtime_cli_init();
+    // pm_mcu_cli_init();
 }
 
 static void create_tasks() {
@@ -222,31 +232,31 @@ static void create_tasks() {
 void reboot() {
     wifi_deinit();
     LogInfo(("rebooting"));
-    pm_reboot_soc();
+    NVIC_SystemReset();
+    // pm_reboot_soc();
 }
 
-void init_watchdog() {
-    int ret = wdt_drv_init();
-    if (ret != WM_SUCCESS) {
-        return;
-    }
-    wdt_dev = wdt_drv_open("MDEV_WDT");
-    if (wdt_dev == NULL) {
-        return;
-    }
-    // timeout about 20 seconds
-    ret = wdt_drv_set_timeout(wdt_dev, 0xd);
-    if (ret != WM_SUCCESS) {
-        return;
-    }
-    wdt_drv_start(wdt_dev);
+static void init_watchdog() {
+    wdt_config_t config;
+    WDT_GetDefaultConfig(&config);
+    config.timeoutValue = kWDT_TimeoutVal2ToThePowerOf29;
+    config.timeoutMode = kWDT_ModeTimeoutInterrupt;
+    config.enableWDT = true;
+    WDT_Init(WDT, &config);
+    EnableIRQ(WDT_IRQn);
+    WDT_DisableInterrupt(WDT);
 }
 
-int main(void) {
+static void main_task(void *param) {
     platform_init();
-    init_watchdog();
 
-    /* Create tasks that are not dependent on the Wi-Fi being initialized. */
+    // initialize watchdog, unless debugger is connected
+    if (CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk) {
+        PRINTF("debugger connected, not starting watchdog\r\n");
+    } else {
+        init_watchdog();
+    }
+
     register_log_backend(log_console);
     register_log_backend(log_syslog);
     init_logging(512, tskIDLE_PRIORITY, mainLOGGING_MESSAGE_QUEUE_LENGTH);
@@ -254,13 +264,13 @@ int main(void) {
     load_config();
 
     static NetworkEndPoint_t sta_endpoint;
-    pxMW300_FillInterfaceDescriptor(BSS_TYPE_STA, &sta_iface);
+    mw300_new_netif_desc(BSS_TYPE_STA, &sta_iface);
     FreeRTOS_FillEndPoint(&sta_iface, &sta_endpoint, default_ip_addr, netmask,
                           gateway_addr, dns_server_addr, mac_addr);
     sta_endpoint.bits.bWantDHCP = pdTRUE;
 
     static NetworkEndPoint_t uap_endpoint;
-    pxMW300_FillInterfaceDescriptor(BSS_TYPE_UAP, &uap_iface);
+    mw300_new_netif_desc(BSS_TYPE_UAP, &uap_iface);
     FreeRTOS_FillEndPoint(&uap_iface, &uap_endpoint, default_ip_addr, netmask,
                           gateway_addr, dns_server_addr, mac_addr);
 
@@ -270,11 +280,17 @@ int main(void) {
     create_tasks();
     ctrl_msg_t ctrl_msg;
     for (;;) {
-        wdt_drv_strobe(wdt_dev);
+        WDT_Refresh(WDT);
         if (xQueueReceive(ctrl_queue, &ctrl_msg, 1000) == pdPASS) {
             switch (ctrl_msg.type) {
                 case CTRL_MSG_OTA_UPGRADE: {
                     ota_cmd_t cmd = OTA_CMD_UPGRADE;
+                    xQueueSendToBack(ota_queue, &cmd, 0);
+                    break;
+                }
+
+                case CTRL_MSG_OTA_PROMOTE: {
+                    ota_cmd_t cmd = OTA_CMD_PROMOTE;
                     xQueueSendToBack(ota_queue, &cmd, 0);
                     break;
                 }
@@ -333,8 +349,27 @@ int main(void) {
             }
         }
     }
+}
 
-    // not reached
+int main(void) {
+    board_init_pins();
+    init_boot_clocks();
+    init_debug_console();
+
+    AES_Init(AES);
+
+    uint8_t hash[32];
+    uint32_t len = sizeof(hash);
+    BOARD_GetHash(hash, &len);
+    configASSERT(len > 0U);
+    mbedtls_hardware_init_hash(hash, len);
+
+    setup_heap();
+    if (xTaskCreate(main_task, "main", configMINIMAL_STACK_SIZE + 896, NULL,
+                    tskIDLE_PRIORITY + 3, NULL) != pdPASS) {
+        PRINTF("main task creation failed\r\n");
+    }
+    vTaskStartScheduler();
     return 0;
 }
 
@@ -392,24 +427,17 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
  * configASSERT. See FreeRTOSConfig.h to define configASSERT to something
  * different.
  */
-void vAssertCalled(const char *pcFile, uint32_t ulLine) {
-    const uint32_t ulLongSleep = 1000UL;
+void vAssertCalled(const char *file, uint32_t line) {
     volatile uint32_t ulBlockVariable = 0UL;
-    volatile char *pcFileName = (volatile char *)pcFile;
-    volatile uint32_t ulLineNumber = ulLine;
 
-    (void)pcFileName;
-    (void)ulLineNumber;
+    PRINTF("assert in %s:%lu\r\n", file, line);
 
-    wmprintf("vAssertCalled %s, %ld\n", pcFile, (long)ulLine);
-    wmstdio_flush();
-
-    /* Setting ulBlockVariable to a non-zero value in the debugger will allow
-     * this function to be exited. */
+    /* Setting ulBlockVariable to a non-zero value in the debugger will
+     * allow this function to be exited. */
     taskDISABLE_INTERRUPTS();
     {
         while (ulBlockVariable == 0UL) {
-            vTaskDelay(pdMS_TO_TICKS(ulLongSleep));
+            vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }
     taskENABLE_INTERRUPTS();
@@ -419,17 +447,11 @@ void vAssertCalled(const char *pcFile, uint32_t ulLine) {
  * @brief Warn user if pvPortMalloc fails.
  *
  * Called if a call to pvPortMalloc() fails because there is insufficient
- * free memory available in the FreeRTOS heap.  pvPortMalloc() is called
- * internally by FreeRTOS API functions that create tasks, queues, software
- * timers, and semaphores.  The size of the FreeRTOS heap is set by the
- * configTOTAL_HEAP_SIZE configuration constant in FreeRTOSConfig.h.
- *
+ * free memory available in the FreeRTOS heap.
  */
 void vApplicationMallocFailedHook() {
-    configPRINT_STRING(("ERROR: Malloc failed to allocate memory\r\n"));
+    PRINTF(("ERROR: Malloc failed to allocate memory\r\n"));
     taskDISABLE_INTERRUPTS();
-
-    /* Loop forever */
     for (;;) {
     }
 }
@@ -446,79 +468,8 @@ void vApplicationMallocFailedHook() {
  *
  */
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *task_name) {
-    wmprintf("ERROR: stack overflow in task %s\r\n", task_name);
+    PRINTF("ERROR: stack overflow in task %s\r\n", task_name);
     portDISABLE_INTERRUPTS();
-
-    /* Loop forever */
     for (;;) {
     }
-}
-
-#undef xTimerGenericCommand
-BaseType_t xTimerGenericCommand(TimerHandle_t timer,
-                                const BaseType_t command_id,
-                                const TickType_t opt_value,
-                                BaseType_t *const higher_prio_task_woken,
-                                const TickType_t ticks_to_wait) {
-    return xTimerGenericCommandFromTask(timer, command_id, opt_value,
-                                        higher_prio_task_woken, ticks_to_wait);
-}
-
-void abort(void) {
-    configASSERT(false);
-    while (true) {
-    }
-}
-
-/**
- * @brief Implements libc calloc semantics using the FreeRTOS heap
- */
-void *pvCalloc(size_t xNumElements, size_t xSize) {
-    void *pvNew = pvPortMalloc(xNumElements * xSize);
-
-    if (NULL != pvNew) {
-        memset(pvNew, 0, xNumElements * xSize);
-    }
-
-    return pvNew;
-}
-
-void *pvPortReAlloc(void *p, size_t size) {
-    void *pvReturn;
-
-    vTaskSuspendAll();
-    {
-        pvReturn = realloc(p, size);
-    }
-    xTaskResumeAll();
-
-    return pvReturn;
-}
-
-extern unsigned _heap_start, _heap_end;
-extern unsigned _heap_2_start, _heap_2_end;
-extern os_mutex_t biglock;
-
-void app_init(void *params) {
-    int ret = os_mutex_create(&biglock, "big_lock", OS_MUTEX_INHERIT);
-    if (ret != WM_SUCCESS) os_thread_self_complete(NULL);
-    main();
-    os_thread_delete(NULL);
-}
-
-int os_init() {
-    HeapRegion_t xHeapRegions[] = {
-        {(uint8_t *)&_heap_start,
-         (unsigned)&_heap_end - (unsigned)&_heap_start},
-        {(uint8_t *)&_heap_2_start,
-         (unsigned)&_heap_2_end - (unsigned)&_heap_2_start},
-        {NULL, 0}};
-
-    vPortDefineHeapRegions(xHeapRegions);
-
-    int ret = xTaskCreate(app_init, "app_init", configMINIMAL_STACK_SIZE + 896,
-                          NULL, tskIDLE_PRIORITY + 3, NULL);
-    vTaskStartScheduler();
-
-    return ret == pdPASS ? WM_SUCCESS : -WM_FAIL;
 }

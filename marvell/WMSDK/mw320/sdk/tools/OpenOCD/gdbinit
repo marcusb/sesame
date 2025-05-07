@@ -2,11 +2,11 @@
 # All Rights Reserved.
 
 #target extended-remote localhost:3333
-target extended-remote | python sdk/tools/OpenOCD/openocd.py
+target extended-remote | python ../marvell/WMSDK/mw320/sdk/tools/OpenOCD/openocd.py
 
 monitor halt
 
-source sdk/tools/OpenOCD/gdbcommands
+source ../marvell/WMSDK/mw320/sdk/tools/OpenOCD/gdbcommands
 
 set remote hardware-breakpoint-limit 6
 set remote hardware-watchpoint-limit 4
