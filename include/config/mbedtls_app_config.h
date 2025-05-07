@@ -12,6 +12,43 @@
  *  SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
  */
 
+ /**************************** KSDK ********************************************/
+
+#pragma once
+
+#include "fsl_device_registers.h"
+#include "fsl_debug_console.h"
+
+#include "fsl_aes.h"
+
+#define KSDK_MBEDTLS_AES_INSTANCE AES
+
+#define KSDK_MBEDTLS_MW_AES
+
+/**
+ * \def MBEDTLS_FREESCALE_FREERTOS_CALLOC_ALT
+ *
+ * Enable implementation for FreeRTOS's pvPortCalloc() in ksdk_mbedtls.c module.
+ * You can comment this macro if you provide your own alternate implementation.
+ *
+ */
+//#if USE_RTOS && defined(FSL_RTOS_FREE_RTOS)
+//#define MBEDTLS_FREESCALE_FREERTOS_CALLOC_ALT
+//#endif
+
+#if USE_RTOS && defined(FSL_RTOS_FREE_RTOS)
+#include "FreeRTOS.h"
+
+void *pvPortCalloc(size_t num, size_t size);
+
+#define MBEDTLS_PLATFORM_MEMORY
+#define MBEDTLS_PLATFORM_STD_CALLOC pvPortCalloc
+#define MBEDTLS_PLATFORM_STD_FREE vPortFree
+
+#endif /* USE_RTOS*/
+
+/**************************** KSDK end ****************************************/
+
 /**
  * This is an optional version symbol that enables compatibility handling of
  * config files.
@@ -205,15 +242,7 @@
  *
  * Enable this layer to allow use of alternative memory allocators.
  */
-#define MBEDTLS_PLATFORM_MEMORY
-
-#include <stddef.h>
-
-extern void * pvCalloc( size_t xNumElements,
-                        size_t xSize ) ;
-extern void vPortFree( void *pv );
-#define MBEDTLS_PLATFORM_CALLOC_MACRO pvCalloc
-#define MBEDTLS_PLATFORM_FREE_MACRO   vPortFree
+//#define MBEDTLS_PLATFORM_MEMORY
 
 /**
  * \def MBEDTLS_PLATFORM_NO_STD_FUNCTIONS
@@ -385,10 +414,11 @@ extern void vPortFree( void *pv );
  *            digests and ciphers instead.
  *
  */
-//#define MBEDTLS_AES_ALT
+#define MBEDTLS_AES_ALT
 //#define MBEDTLS_ARIA_ALT
 //#define MBEDTLS_CAMELLIA_ALT
-//#define MBEDTLS_CCM_ALT
+#define MBEDTLS_CCM_ALT
+#define MBEDTLS_CCM_CRYPT_ALT
 //#define MBEDTLS_CHACHA20_ALT
 //#define MBEDTLS_CHACHAPOLY_ALT
 //#define MBEDTLS_CMAC_ALT
@@ -461,10 +491,10 @@ extern void vPortFree( void *pv );
 //#define MBEDTLS_DES_SETKEY_ALT
 //#define MBEDTLS_DES_CRYPT_ECB_ALT
 //#define MBEDTLS_DES3_CRYPT_ECB_ALT
-//#define MBEDTLS_AES_SETKEY_ENC_ALT
-//#define MBEDTLS_AES_SETKEY_DEC_ALT
-//#define MBEDTLS_AES_ENCRYPT_ALT
-//#define MBEDTLS_AES_DECRYPT_ALT
+#define MBEDTLS_AES_SETKEY_ENC_ALT
+#define MBEDTLS_AES_SETKEY_DEC_ALT
+#define MBEDTLS_AES_ENCRYPT_ALT
+#define MBEDTLS_AES_DECRYPT_ALT
 //#define MBEDTLS_ECDH_GEN_PUBLIC_ALT
 //#define MBEDTLS_ECDH_COMPUTE_SHARED_ALT
 //#define MBEDTLS_ECDSA_VERIFY_ALT
@@ -679,14 +709,14 @@ extern void vPortFree( void *pv );
  *
  * Enable Output Feedback mode (OFB) for symmetric ciphers.
  */
-//#define MBEDTLS_CIPHER_MODE_OFB
+#define MBEDTLS_CIPHER_MODE_OFB
 
 /**
  * \def MBEDTLS_CIPHER_MODE_XTS
  *
  * Enable Xor-encrypt-xor with ciphertext stealing mode (XTS) for AES.
  */
-//#define MBEDTLS_CIPHER_MODE_XTS
+#define MBEDTLS_CIPHER_MODE_XTS
 
 /**
  * \def MBEDTLS_CIPHER_NULL_CIPHER
@@ -1361,7 +1391,7 @@ extern void vPortFree( void *pv );
  * \warning This interface is experimental and may change or be removed
  * without notice.
  */
-//#define MBEDTLS_PSA_CRYPTO_CLIENT
+#define MBEDTLS_PSA_CRYPTO_CLIENT
 
 /** \def MBEDTLS_PSA_CRYPTO_EXTERNAL_RNG
  *
@@ -1508,7 +1538,7 @@ extern void vPortFree( void *pv );
  *
  * Uncomment to enable the smaller implementation of SHA256.
  */
-//#define MBEDTLS_SHA256_SMALLER
+#define MBEDTLS_SHA256_SMALLER
 
 /**
  * \def MBEDTLS_SHA512_SMALLER
@@ -1518,7 +1548,7 @@ extern void vPortFree( void *pv );
  *
  * Uncomment to enable the smaller implementation of SHA512.
  */
-//#define MBEDTLS_SHA512_SMALLER
+#define MBEDTLS_SHA512_SMALLER
 
 /**
  * \def MBEDTLS_SSL_ALL_ALERT_MESSAGES
@@ -1692,7 +1722,7 @@ extern void vPortFree( void *pv );
  * Comment this macro to disable storing the peer's certificate
  * after the handshake.
  */
-//#define MBEDTLS_SSL_KEEP_PEER_CERTIFICATE
+#define MBEDTLS_SSL_KEEP_PEER_CERTIFICATE
 
 /**
  * \def MBEDTLS_SSL_RENEGOTIATION
@@ -1804,7 +1834,7 @@ extern void vPortFree( void *pv );
  * effect on the build.
  *
  */
-//#define MBEDTLS_SSL_TLS1_3_COMPATIBILITY_MODE
+#define MBEDTLS_SSL_TLS1_3_COMPATIBILITY_MODE
 
 /**
  * \def MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_ENABLED
@@ -1816,7 +1846,7 @@ extern void vPortFree( void *pv );
  * effect on the build.
  *
  */
-//#define MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_ENABLED
+#define MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_ENABLED
 
 /**
  * \def MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED
@@ -1834,7 +1864,7 @@ extern void vPortFree( void *pv );
  * effect on the build.
  *
  */
-//#define MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED
+#define MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED
 
 /**
  * \def MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_EPHEMERAL_ENABLED
@@ -1848,7 +1878,7 @@ extern void vPortFree( void *pv );
  * have any effect on the build.
  *
  */
-//#define MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_EPHEMERAL_ENABLED
+#define MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_EPHEMERAL_ENABLED
 
 /**
  * \def MBEDTLS_SSL_EARLY_DATA
@@ -2073,7 +2103,7 @@ extern void vPortFree( void *pv );
  *
  * Uncomment this to allow your own alternate threading implementation.
  */
-#define MBEDTLS_THREADING_ALT
+//#define MBEDTLS_THREADING_ALT
 
 /**
  * \def MBEDTLS_THREADING_PTHREAD
@@ -2522,7 +2552,7 @@ extern void vPortFree( void *pv );
  * This module enables the AES-CCM ciphersuites, if other requisites are
  * enabled as well.
  */
-//#define MBEDTLS_CCM_C
+#define MBEDTLS_CCM_C
 
 /**
  * \def MBEDTLS_CHACHA20_C
@@ -3145,7 +3175,7 @@ extern void vPortFree( void *pv );
  *           or MBEDTLS_PSA_CRYPTO_EXTERNAL_RNG.
  *
  */
-//#define MBEDTLS_PSA_CRYPTO_C
+#define MBEDTLS_PSA_CRYPTO_C
 
 /**
  * \def MBEDTLS_PSA_CRYPTO_SE_C
@@ -3353,7 +3383,7 @@ extern void vPortFree( void *pv );
  *
  * This module adds support for SHA-512.
  */
-//#define MBEDTLS_SHA512_C
+#define MBEDTLS_SHA512_C
 
 /**
  * \def MBEDTLS_SHA3_C
@@ -3521,7 +3551,7 @@ extern void vPortFree( void *pv );
  *
  * Enable this layer to allow use of mutexes within Mbed TLS
  */
-#define MBEDTLS_THREADING_C
+//#define MBEDTLS_THREADING_C
 
 /**
  * \def MBEDTLS_TIMING_C
@@ -3891,7 +3921,7 @@ extern void vPortFree( void *pv );
 //#define MBEDTLS_PLATFORM_TIME_MACRO            time /**< Default time macro to use, can be undefined. MBEDTLS_HAVE_TIME must be enabled */
 //#define MBEDTLS_PLATFORM_TIME_TYPE_MACRO       time_t /**< Default time macro to use, can be undefined. MBEDTLS_HAVE_TIME must be enabled */
 //#define MBEDTLS_PLATFORM_FPRINTF_MACRO      fprintf /**< Default fprintf macro to use, can be undefined */
-//#define MBEDTLS_PLATFORM_PRINTF_MACRO        printf /**< Default printf macro to use, can be undefined */
+#define MBEDTLS_PLATFORM_PRINTF_MACRO        PRINTF /**< Default printf macro to use, can be undefined */
 /* Note: your snprintf must correctly zero-terminate the buffer! */
 //#define MBEDTLS_PLATFORM_SNPRINTF_MACRO    snprintf /**< Default snprintf macro to use, can be undefined */
 //#define MBEDTLS_PLATFORM_VSNPRINTF_MACRO    vsnprintf /**< Default vsnprintf macro to use, can be undefined */
@@ -4122,3 +4152,13 @@ extern void vPortFree( void *pv );
 //#define MBEDTLS_X509_MAX_FILE_PATH_LEN     512 /**< Maximum length of a path/filename string in bytes including the null terminator character ('\0'). */
 
 /** \} name SECTION: Module configuration options */
+
+// compatibility macros needed for the mw320 port that were since removed from the library  
+
+/* MBEDTLS_ERR_AES_HW_ACCEL_FAILED is deprecated and should not be used. */
+#define MBEDTLS_ERR_AES_HW_ACCEL_FAILED                   -0x0025  /**< AES hardware accelerator failed. */
+/* MBEDTLS_ERR_CCM_HW_ACCEL_FAILED is deprecated and should not be used. */
+#define MBEDTLS_ERR_CCM_HW_ACCEL_FAILED -0x0011 /**< CCM hardware accelerator failed. */
+
+#define MBEDTLS_INTERNAL_VALIDATE_RET(cond, ret)  do { } while (0)
+#define MBEDTLS_INTERNAL_VALIDATE(cond)           do { } while (0)

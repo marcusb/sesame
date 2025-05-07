@@ -1,170 +1,182 @@
 #include "ota.h"
 
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+// FreeRTOS
 #include "FreeRTOS.h"
-#include "app_logging.h"
-#include "backoff_algorithm.h"
-#include "core_http_client.h"
-#include "ota.h"
-#include "partition.h"
 #include "queue.h"
-#include "rfget.h"
 #include "task.h"
 #include "transport_plaintext.h"
 
-#define RETRY_MAX_ATTEMPTS 3
-#define RETRY_MAX_BACKOFF_DELAY_MS 5000
-#define RETRY_BACKOFF_BASE_MS 500
+// mw320
+#include "boot_flags.h"
+#include "crc32.h"
+#include "mflash_drv.h"
+#include "partition.h"
 
-static const char METHOD_GET[] = "GET";
+// application
+#include "app_logging.h"
 
-// reserve some extra room for headers in the response buffer
-#define READ_SIZE 1024
-#define BUF_SIZE (READ_SIZE + 512)
+#define OTA_TEST_MODE_FLAG (1UL << 31U)
+#define FW_MAGIC_STR (('M' << 0) | ('R' << 8) | ('V' << 16) | ('L' << 24))
+#define FW_MAGIC_SIG \
+    ((0x7BUL << 0) | (0xF1UL << 8) | (0x9CUL << 16) | (0x2EUL << 24))
 
-struct NetworkContext {
-    PlaintextTransportParams_t* pParams;
+enum ota_status_t {
+    OTA_STATUS_NONE = 0,
+    OTA_STATUS_UPLOADED,
+    OTA_STATUS_TESTING,
+} ota_status = OTA_STATUS_NONE;
+
+/*
+ * Firmware magic signature
+ *
+ * First word is the string "MRVL" and is endian invariant.
+ * Second word = magic value 0x2e9cf17b.
+ * Third word = time stamp (seconds since 00:00:00 UTC, January 1, 1970).
+ */
+struct img_hdr {
+    uint32_t magic_str;
+    uint32_t magic_sig;
+    uint32_t time;
+    uint32_t seg_cnt;
+    uint32_t entry;
 };
 
-static PlaintextTransportParams_t transport_params;
-static NetworkContext_t network_context = {&transport_params};
-static TransportInterface_t transport = {
-    Plaintext_FreeRTOS_recv, Plaintext_FreeRTOS_send, NULL, &network_context};
+/* Maximum number of segments */
+#define SEG_CNT 9
 
-void reboot(void);
+struct seg_hdr {
+    uint32_t type;
+    uint32_t offset;
+    uint32_t len;
+    uint32_t laddr;
+    uint32_t crc;
+};
 
-bool load_ota_update(update_desc_t* upd_desc) {
-    const HTTPRequestInfo_t req = {
-        METHOD_GET,
-        strlen(req.pMethod),
-        "/sesame.bin",
-        strlen(req.pPath),
-        "172.16.10.1:8000",
-        strlen(req.pHost),
-        HTTP_REQUEST_KEEP_ALIVE_FLAG,
-    };
+static uint32_t calculate_image_crc(uint32_t flash_addr, uint32_t size) {
+    uint32_t buf[32];
+    uint32_t crc = 0;
+    uint32_t end = flash_addr + sizeof(buf);
 
-    BackoffAlgorithmStatus_t retry_status;
-    BackoffAlgorithmContext_t retry_params;
-    BackoffAlgorithm_InitializeParams(&retry_params, RETRY_BACKOFF_BASE_MS,
-                                      RETRY_MAX_BACKOFF_DELAY_MS,
-                                      RETRY_MAX_ATTEMPTS);
-    uint16_t backoff = 0;
-    HTTPStatus_t status;
-    int pos = 0;
-    int bytes_read = 0;
-    uint8_t* buf = pvPortMalloc(BUF_SIZE);
-    bool res;
-
-    do {
-        PlaintextTransportStatus_t conn_res = Plaintext_FreeRTOS_Connect(
-            &network_context, "172.16.1.10", 8000, 1000, 1000);
-        if (conn_res != PLAINTEXT_TRANSPORT_SUCCESS) {
-            goto conn_err;
+    while (flash_addr < end) {
+        int32_t n = min(sizeof(buf), end - flash_addr);
+        if (mflash_drv_read(flash_addr, buf, n) != kStatus_Success) {
+            return 0;
         }
+        crc = soft_crc32(buf, n, crc);
+        flash_addr += n;
+    }
+    return crc;
+}
 
-        do {
-            HTTPRequestHeaders_t headers;
-            headers.pBuffer = buf;
-            headers.bufferLen = BUF_SIZE;
-            status = HTTPClient_InitializeRequestHeaders(&headers, &req);
-            if (status != HTTPSuccess) {
-                goto req_err;
-            }
+static int validate_update_image(uint32_t flash_addr, uint32_t size) {
+    struct img_hdr ih;
+    struct seg_hdr sh;
+    int32_t result;
 
-            status =
-                HTTPClient_AddRangeHeader(&headers, pos, pos + READ_SIZE - 1);
-            if (status != HTTPSuccess) {
-                goto req_err;
-            }
+    if (size < sizeof(ih) + sizeof(sh)) {
+        return -1;
+    }
 
-            HTTPResponse_t resp = {0};
-            resp.pBuffer = buf;
-            resp.bufferLen = BUF_SIZE;
+    result = mflash_drv_read(flash_addr, (uint32_t*)&ih, sizeof(ih));
+    if (result != kStatus_Success) {
+        return -1;
+    }
 
-            status = HTTPClient_Send(&transport, &headers, NULL, 0, &resp, 0);
-            if (status != HTTPSuccess) {
-                goto req_err;
-            }
-            bytes_read = resp.bodyLen;
-            LogDebug(("updating mcufw ofs=0x%x, len=%d", pos, bytes_read));
-            if (rfget_update_data(upd_desc, (char*)resp.pBody, bytes_read) !=
-                WM_SUCCESS) {
-                LogError(("write data block failed"));
-                res = false;
-                goto ret;
-            }
-            pos += bytes_read;
+    /* MCUXpresso SDK image has only 1 segment */
+    if ((ih.magic_str != FW_MAGIC_STR) || (ih.magic_sig != FW_MAGIC_SIG) ||
+        ih.seg_cnt != 1U) {
+        return -1;
+    }
 
-            BackoffAlgorithm_InitializeParams(
-                &retry_params, RETRY_BACKOFF_BASE_MS,
-                RETRY_MAX_BACKOFF_DELAY_MS, RETRY_MAX_ATTEMPTS);
-        } while (bytes_read == READ_SIZE);
-        res = true;
-        goto ret;
+    result =
+        mflash_drv_read(flash_addr + sizeof(ih), (uint32_t*)&sh, sizeof(sh));
+    if (result != kStatus_Success) {
+        return -1;
+    }
 
-    req_err:
-        LogError(("HTTP req failed: %s", HTTPClient_strerror(status)));
-        Plaintext_FreeRTOS_Disconnect(&network_context);
-    conn_err:
-        retry_status =
-            BackoffAlgorithm_GetNextBackoff(&retry_params, rand(), &backoff);
-        if (retry_status == BackoffAlgorithmRetriesExhausted) {
-            res = false;
-            goto ret;
-        }
-        LogInfo(("attempt %d of %d failed, sleeping %d ms",
-                 retry_params.attemptsDone, retry_params.maxRetryAttempts,
-                 backoff));
-        vTaskDelay(pdMS_TO_TICKS(backoff));
-    } while (true);
-ret:
-    vPortFree(buf);
+    /* Image size should just cover segment end. */
+    if (sh.len + sh.offset != size) {
+        return -1;
+    }
+
+    if (calculate_image_crc(flash_addr + sh.offset, sh.len) != sh.crc) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int ota_init(ota_upd_state_t* ota_state) {
+    struct partition_entry* part = part_get_passive_partition_by_name("mcufw");
+    if (!part) {
+        LogError(("mcufw partition not found"));
+        return -1;
+    }
+    LogInfo(("updating partition at %p, gen=%d", part->start, part->gen_level));
+
+    if (mflash_drv_erase(part->start, part->size) != kStatus_Success) {
+        return -1;
+    }
+
+    ota_state->part = part;
+    ota_state->flash_addr = part->start;
+    ota_state->bytes_stored = 0;
+    return 0;
+}
+
+int ota_write_chunk(ota_upd_state_t* ota_state, const uint8_t* buf,
+                    uint32_t len) {
+    int32_t res = mflash_drv_write(ota_state->flash_addr, (uint32_t*)buf, len);
+    if (res != kStatus_Success) {
+        LogError(("flash write failed at addr=%x, len=%u",
+                  ota_state->flash_addr, len));
+        return -1;
+    }
+    ota_state->flash_addr += len;
+    ota_state->bytes_stored += len;
+    return 0;
+}
+
+int ota_finish(ota_upd_state_t* ota_state) {
+    int res =
+        validate_update_image(ota_state->part->start, ota_state->bytes_stored);
+    if (res) {
+        return res;
+    }
+    ota_status = OTA_STATUS_UPLOADED;
+    ota_state->part->gen_level = OTA_TEST_MODE_FLAG;
+    res = part_write_layout();
+    LogInfo(("new OTA test image uploaded", res));
     return res;
 }
 
-void ota_task(void* params) {
-    QueueHandle_t queue = (QueueHandle_t)params;
-    ota_cmd_t cmd;
-    for (;;) {
-        if (xQueueReceive(queue, &cmd, portMAX_DELAY) == pdPASS) {
-            switch (cmd) {
-                case OTA_CMD_UPGRADE:
-                    LogInfo(("mcufw update requested"));
-                    struct partition_entry* part =
-                        part_get_passive_partition_by_name("mcufw");
-                    if (!part) {
-                        LogError(("mcufw partition not found"));
-                        continue;
-                    }
-                    LogInfo(("updating partition at %p, gen=%d", part->start,
-                             part->gen_level));
-                    int res = rfget_init();
-                    if (res != WM_SUCCESS) {
-                        LogError(("rfget_init failed: %d", res));
-                        continue;
-                    }
-                    update_desc_t ud;
-                    if ((res = rfget_update_begin(&ud, part)) != WM_SUCCESS) {
-                        LogError(("rfget_update_begin failed: %d", res));
-                        continue;
-                    }
-                    if (load_ota_update(&ud)) {
-                        rfget_update_complete(&ud);
-                        LogInfo(("mcufw update complete"));
-                    } else {
-                        rfget_update_abort(&ud);
-                    }
-                    vTaskDelay(100);
-                    reboot();
-                    break;
-                default:
-                    LogError(("unknown ota cmd %d", cmd));
-            }
-        }
+void check_ota_test_image() {
+    struct partition_entry* part = part_get_active_partition_by_name("mcufw");
+
+    if (part->gen_level & OTA_TEST_MODE_FLAG) {
+        ota_status = OTA_STATUS_TESTING;
+        part->gen_level = 0;
+        part_write_layout();
+        LogInfo(("OTA test image running"));
     }
+}
+
+int ota_promote_image() {
+    if (ota_status == OTA_STATUS_TESTING) {
+        struct partition_entry* part_test =
+            part_get_active_partition_by_name("mcufw");
+        struct partition_entry* part_prod =
+            part_get_passive_partition_by_name("mcufw");
+        part_test->gen_level = part_prod->gen_level + 1;
+        int res = part_write_layout();
+        LogInfo(("promoted OTA test image with new gen_level %d, result=%d",
+                 part_test->gen_level, res));
+        ota_status = OTA_STATUS_NONE;
+        return res;
+    }
+    return -1;
 }

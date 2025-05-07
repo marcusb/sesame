@@ -6,6 +6,7 @@
 .vscode/
 # Ignore build results
 /build/
+/build-native/
 [Dd]ebug/
 [Dd]ebugPublic/
 [Dd]ebug_with_Libslirp/

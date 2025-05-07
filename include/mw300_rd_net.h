@@ -1,21 +1,9 @@
 #pragma once
 
-/* *INDENT-OFF* */
-#ifdef __cplusplus
-extern "C" {
-#endif
-/* *INDENT-ON* */
-
 #include <stdint.h>
 
 struct xNetworkInterface;
-struct xNetworkInterface *pxMW300_FillInterfaceDescriptor(
-    uint8_t if_type, struct xNetworkInterface *pxInterface);
+struct xNetworkInterface *mw300_new_netif_desc(
+    uint8_t if_type, struct xNetworkInterface *netif);
 
 void notify_dhcp_configured();
-
-/* *INDENT-OFF* */
-#ifdef __cplusplus
-} /* extern "C" */
-#endif
-/* *INDENT-ON* */

@@ -10,7 +10,6 @@
 #include "app_config.pb.h"
 #include "logging.h"
 #include "syslog.h"
-#include "wmtime.h"
 
 #define LOG_FACILITY_LOCAL0 16
 
@@ -69,15 +68,15 @@ void log_syslog(const log_msg_t *log) {
     remaining -= n;
 
     // include timestamp if it's realistic
-    struct tm tm;
-    if (wmtime_time_get(&tm) == 0 && tm.tm_year > 2024 &&
-        (n = strftime(p, remaining, "%FT%T%z", &tm)) > 0) {
-        p += n;
-        remaining -= n;
-    } else {
+    // struct tm tm;
+    // if (wmtime_time_get(&tm) == 0 && tm.tm_year > 2024 &&
+    //     (n = strftime(p, remaining, "%FT%T%z", &tm)) > 0) {
+    //     p += n;
+    //     remaining -= n;
+    // } else {
         *p++ = '-';
         remaining--;
-    }
+    // }
 
     n = snprintf(p, remaining, " %s sesame %s %lu - %s",
                  pcApplicationHostnameHook(), log->task_name, log->msg_id,

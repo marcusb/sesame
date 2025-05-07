@@ -6,6 +6,7 @@
 #include "queue.h"
 
 // Application
+#include "fsl_debug_console.h"
 #include "logging.h"
 #include "string_util.h"
 

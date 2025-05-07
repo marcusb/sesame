@@ -1,64 +1,60 @@
 #include "leds.h"
 
-#include <stdbool.h>
-
+// FreeRTOS
 #include "FreeRTOS.h"
-#include "app_logging.h"
-#include "mdev_gpio.h"
-#include "mdev_pinmux.h"
-#include "queue.h"
 #include "task.h"
 
-#define LED1 GPIO_16  // ota blue
-#define LED2 GPIO_27  // ota green
-#define LED3 GPIO_40  // ota red
-#define LED4 GPIO_41  // wifi blue
-#define LED5 GPIO_42  // wifi green
-#define LED6 GPIO_43  // wifi red
+// mw320
+#include "fsl_gpio.h"
 
-static void init_led(mdev_t* gpio_dev, mdev_t* pinmux_dev, int pin) {
-    pinmux_drv_setfunc(pinmux_dev, pin, PINMUX_FUNCTION_0);
-    gpio_drv_setdir(gpio_dev, pin, GPIO_OUTPUT);
-    gpio_drv_write(gpio_dev, pin, GPIO_IO_HIGH);
+// application
+#include "app_logging.h"
+#include "board.h"
+#include "gpio.h"
+#include "pin_mux.h"
+
+void gpio_set(int pin) {
+    GPIO_PortSet(GPIO, GPIO_PORT(pin), 1UL << GPIO_PORT_PIN(pin));
+}
+
+void gpio_clear(int pin) {
+    GPIO_PortClear(GPIO, GPIO_PORT(pin), 1UL << GPIO_PORT_PIN(pin));
+}
+
+void gpio_set_output(int pin) {
+    gpio_pin_config_t out_config = {
+        kGPIO_DigitalOutput,
+        0,
+    };
+    GPIO_PinInit(GPIO, pin, &out_config);
+}
+
+static void init_led(int pin) {
+    gpio_set_output(pin);
+    gpio_set(pin);
 }
 
 void led_task(void* const params) {
     LogInfo(("LED control task running"));
 
-    mdev_t* gpio_dev = gpio_drv_open("MDEV_GPIO");
-    if (gpio_dev == NULL) {
-        LogError(("gpio_drv_open failed"));
-        goto err;
-    }
-    mdev_t* pinmux_dev = pinmux_drv_open("MDEV_PINMUX");
-    if (pinmux_dev == NULL) {
-        LogError(("pinux_drv_open failed\r\n"));
-        goto err;
-    }
-    pinmux_drv_setfunc(pinmux_dev, GPIO_22, GPIO22_GPIO22);
-    pinmux_drv_setfunc(pinmux_dev, GPIO_23, GPIO23_GPIO23);
-
-    init_led(gpio_dev, pinmux_dev, LED1);
-    init_led(gpio_dev, pinmux_dev, LED2);
-    init_led(gpio_dev, pinmux_dev, LED3);
-    init_led(gpio_dev, pinmux_dev, LED4);
-    init_led(gpio_dev, pinmux_dev, LED5);
-    init_led(gpio_dev, pinmux_dev, LED6);
-    pinmux_drv_close(pinmux_dev);
+    init_led(BOARD_LED_OTA_BLUE_PIN);
+    init_led(BOARD_LED_OTA_GREEN_PIN);
+    init_led(BOARD_LED_OTA_RED_PIN);
+    init_led(BOARD_LED_WIFI_BLUE_PIN);
+    init_led(BOARD_LED_WIFI_GREEN_PIN);
+    init_led(BOARD_LED_WIFI_RED_PIN);
 
     for (;;) {
-        gpio_drv_write(gpio_dev, LED1, GPIO_IO_LOW);
-        gpio_drv_write(gpio_dev, LED2, GPIO_IO_HIGH);
-        gpio_drv_write(gpio_dev, LED4, GPIO_IO_HIGH);
-        gpio_drv_write(gpio_dev, LED5, GPIO_IO_LOW);
+        gpio_clear(BOARD_LED_OTA_BLUE_PIN);
+        gpio_set(BOARD_LED_OTA_GREEN_PIN);
+        gpio_set(BOARD_LED_WIFI_BLUE_PIN);
+        gpio_clear(BOARD_LED_WIFI_GREEN_PIN);
         vTaskDelay(800);
 
-        gpio_drv_write(gpio_dev, LED1, GPIO_IO_HIGH);
-        gpio_drv_write(gpio_dev, LED2, GPIO_IO_LOW);
-        gpio_drv_write(gpio_dev, LED4, GPIO_IO_LOW);
-        gpio_drv_write(gpio_dev, LED5, GPIO_IO_HIGH);
+        gpio_set(BOARD_LED_OTA_BLUE_PIN);
+        gpio_clear(BOARD_LED_OTA_GREEN_PIN);
+        gpio_clear(BOARD_LED_WIFI_BLUE_PIN);
+        gpio_set(BOARD_LED_WIFI_GREEN_PIN);
         vTaskDelay(800);
     }
-err:
-    vTaskDelete(NULL);
 }
