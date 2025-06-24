@@ -3,4 +3,4 @@
 	url = https://github.com/red-rocket-computing/backtrace.git
 [submodule "mw320_sdk"]
 	path = mw320_sdk
-	url = https://github.com/nxptest/mw320_sdk.git
+	url = https://github.com/marcusb/mw320_sdk.git
