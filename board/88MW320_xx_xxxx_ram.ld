@@ -142,23 +142,6 @@ SECTIONS
     PROVIDE_HIDDEN (__init_array_end = .);
   } > m_text
 
-  /* move bss of specific libraries
-   * to SRAM0 to make space in SRAM1
-   */
-  .bss_sram0 (NOLOAD):
-  {
-    /* This is used by the startup in order to initialize the .bss section */
-    . = ALIGN(4);
-    __START_BSS_SRAM0 = .;
-    __bss_sram0_start__ = .;
-    /*
-    *libmw320_wifidriver.a:(.bss .bss.*)
-    */
-    . = ALIGN(4);
-    __bss_sram0_end__ = .;
-    __END_BSS_SRAM0 = .;
-  } > m_text
-
   .fini_array :
   {
     PROVIDE_HIDDEN (__fini_array_start = .);

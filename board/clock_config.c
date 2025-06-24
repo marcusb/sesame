@@ -94,10 +94,8 @@ void init_boot_clocks(void) {
     /* Reset the PMU clock divider to 1 */
     CLOCK_SetClkDiv(kCLOCK_DivPmu, 1U);
 
-    if (BOARD_IS_XIP) {
-        /* Restart flash controller for XIP */
-        init_flashc();
-    }
+    /* Restart flash controller (needed for XIP and mflash operations) */
+    init_flashc();
 
     /* Set SystemCoreClock variable. */
     SystemCoreClock = BOARD_BOOTCLOCKRUN_CORE_CLOCK;
