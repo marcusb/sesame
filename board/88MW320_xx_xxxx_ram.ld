@@ -151,7 +151,9 @@ SECTIONS
     . = ALIGN(4);
     __START_BSS_SRAM0 = .;
     __bss_sram0_start__ = .;
+    /*
     *libmw320_wifidriver.a:(.bss .bss.*)
+    */
     . = ALIGN(4);
     __bss_sram0_end__ = .;
     __END_BSS_SRAM0 = .;

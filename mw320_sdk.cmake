@@ -231,6 +231,14 @@ target_link_libraries(mw320_utility_debug_console
     mw320_serial_manager
 )
 
+add_library(mw320_utility_assert STATIC)
+target_sources(mw320_utility_assert
+    PRIVATE
+    "${mw320_sdk_dir}/devices/88MW320/utilities/fsl_assert.c")
+target_link_libraries(mw320_utility_assert
+    PUBLIC
+    mw320_utility_debug_console)
+
 add_library(mw320_sdmmc_common STATIC)
 target_sources(mw320_sdmmc_common
     PRIVATE
