@@ -1,5 +1,7 @@
 #include "leds.h"
 
+#include "app_logging.h"
+
 // FreeRTOS
 #include "FreeRTOS.h"
 #include "task.h"
@@ -8,7 +10,6 @@
 #include "fsl_gpio.h"
 
 // application
-#include "app_logging.h"
 #include "board.h"
 #include "gpio.h"
 #include "pin_mux.h"

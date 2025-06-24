@@ -1,5 +1,7 @@
 #include "pic_uart.h"
 
+#include "app_logging.h"
+
 // FreeRTOS
 #include "FreeRTOS.h"
 #include "queue.h"
@@ -11,7 +13,6 @@
 #include "fsl_uart.h"
 
 // Application
-#include "app_logging.h"
 #include "controller.h"
 #include "gpio.h"
 #include "idcm_msg.h"

@@ -33,6 +33,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "app_logging.h"
+
 // FreeRTOS
 #include "FreeRTOS.h"
 #include "FreeRTOS_IP.h"
@@ -47,7 +49,6 @@
 
 // Application
 #include "app_config.pb.h"
-#include "app_logging.h"
 #include "backoff_algorithm.h"
 #include "controller.h"
 #include "time_util.h"

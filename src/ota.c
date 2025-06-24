@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app_logging.h"
+
 // FreeRTOS
 #include "FreeRTOS.h"
 #include "queue.h"
@@ -16,13 +18,11 @@
 #include "mflash_drv.h"
 #include "partition.h"
 
-// application
-#include "app_logging.h"
-
 #define OTA_TEST_MODE_FLAG (1UL << 31U)
 #define FW_MAGIC_STR (('M' << 0) | ('R' << 8) | ('V' << 16) | ('L' << 24))
 #define FW_MAGIC_SIG \
     ((0x7BUL << 0) | (0xF1UL << 8) | (0x9CUL << 16) | (0x2EUL << 24))
+#define FW_BLK_LOADABLE_SEGMENT 2
 
 enum ota_status_t {
     OTA_STATUS_NONE = 0,
@@ -59,7 +59,7 @@ struct seg_hdr {
 static uint32_t calculate_image_crc(uint32_t flash_addr, uint32_t size) {
     uint32_t buf[32];
     uint32_t crc = 0;
-    uint32_t end = flash_addr + sizeof(buf);
+    uint32_t end = flash_addr + size;
 
     while (flash_addr < end) {
         int32_t n = min(sizeof(buf), end - flash_addr);
@@ -83,28 +83,26 @@ static int validate_update_image(uint32_t flash_addr, uint32_t size) {
 
     result = mflash_drv_read(flash_addr, (uint32_t*)&ih, sizeof(ih));
     if (result != kStatus_Success) {
-        return -1;
+        return -2;
     }
 
-    /* MCUXpresso SDK image has only 1 segment */
-    if ((ih.magic_str != FW_MAGIC_STR) || (ih.magic_sig != FW_MAGIC_SIG) ||
-        ih.seg_cnt != 1U) {
-        return -1;
+    if ((ih.magic_str != FW_MAGIC_STR) || (ih.magic_sig != FW_MAGIC_SIG)) {
+        return -3;
     }
 
-    result =
-        mflash_drv_read(flash_addr + sizeof(ih), (uint32_t*)&sh, sizeof(sh));
-    if (result != kStatus_Success) {
-        return -1;
-    }
-
-    /* Image size should just cover segment end. */
-    if (sh.len + sh.offset != size) {
-        return -1;
-    }
-
-    if (calculate_image_crc(flash_addr + sh.offset, sh.len) != sh.crc) {
-        return -1;
+    uint32_t sh_addr = flash_addr + sizeof(ih);
+    for (int i = 0; i < min(ih.seg_cnt, SEG_CNT); i++) {
+        result = mflash_drv_read(sh_addr, (uint32_t*)&sh, sizeof(sh));
+        sh_addr += sizeof(sh);
+        if (result != kStatus_Success) {
+            return -4;
+        }
+        if (sh.type != FW_BLK_LOADABLE_SEGMENT) {
+            continue;
+        }
+        if (calculate_image_crc(flash_addr + sh.offset, sh.len) != sh.crc) {
+            return -5;
+        }
     }
 
     return 0;
@@ -145,12 +143,13 @@ int ota_finish(ota_upd_state_t* ota_state) {
     int res =
         validate_update_image(ota_state->part->start, ota_state->bytes_stored);
     if (res) {
+        LogWarn(("invalid firmware image (%d)", res));
         return res;
     }
     ota_status = OTA_STATUS_UPLOADED;
     ota_state->part->gen_level = OTA_TEST_MODE_FLAG;
     res = part_write_layout();
-    LogInfo(("new OTA test image uploaded", res));
+    LogInfo(("new OTA test image uploaded (%d)", res));
     return res;
 }
 
@@ -167,9 +166,10 @@ void check_ota_test_image() {
 
 int ota_promote_image() {
     if (ota_status == OTA_STATUS_TESTING) {
-        struct partition_entry* part_test =
-            part_get_active_partition_by_name("mcufw");
         struct partition_entry* part_prod =
+            part_get_active_partition_by_name("mcufw");
+        // running test image now has gen_level 0
+        struct partition_entry* part_test =
             part_get_passive_partition_by_name("mcufw");
         part_test->gen_level = part_prod->gen_level + 1;
         int res = part_write_layout();

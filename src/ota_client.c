@@ -3,21 +3,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app_logging.h"
+
 // FreeRTOS
 #include "FreeRTOS.h"
+#include "core_http_client.h"
 #include "queue.h"
 #include "task.h"
 #include "transport_plaintext.h"
 
 // application
-#include "app_logging.h"
 #include "backoff_algorithm.h"
-#include "core_http_client.h"
 #include "ota.h"
+#include "string_util.h"
 
 #define RETRY_MAX_ATTEMPTS 3
 #define RETRY_MAX_BACKOFF_DELAY_MS 5000
-#define RETRY_BACKOFF_BASE_MS 500
+#define RETRY_BACKOFF_BASE_MS 1000
 
 static const char METHOD_GET[] = "GET";
 
@@ -33,20 +35,63 @@ static PlaintextTransportParams_t transport_params;
 static NetworkContext_t network_context = {&transport_params};
 static TransportInterface_t transport = {
     Plaintext_FreeRTOS_recv, Plaintext_FreeRTOS_send, NULL, &network_context};
+static const char http_prefix[] = "http://";
 
-static void do_ota_update() {
+int parse_url(char* url, char* hostname, size_t max_hostname_len, char** path,
+              uint16_t* port) {
+    static const int prefix_len = sizeof(http_prefix) - 1;
+    if (strncmp(url, http_prefix, prefix_len)) {
+        return -1;
+    }
+    char* p = url + prefix_len;
+    if (*p == '\0') {
+        return -1;
+    }
+    char* q = strchrnul(p, '/');
+    // overwrite leading '/' with '\0' to terminate host-port part
+    char c = *q;
+    *q = '\0';
+    *path = q;
+
+    if ((q = strchr(p, ':'))) {
+        *q = '\0';
+        *port = atoi(q + 1);
+    } else {
+        *port = 80;
+    }
+
+    if (strtcpy(hostname, p, max_hostname_len) == -1) {
+        return -1;
+    }
+    // replace the leading '/'
+    **path = c;
+    return 0;
+}
+
+static void do_ota_update(FirmwareUpgradeFetchRequest* upgrade_msg) {
     ota_upd_state_t ota_state;
     if (ota_init(&ota_state)) {
         return;
     }
 
-    const HTTPRequestInfo_t req = {
+    char hostname[40];
+    char* path;
+    uint16_t port;
+    // reserve some room for appending port to hostname
+    if (parse_url(upgrade_msg->url, hostname, sizeof(hostname) - 6, &path,
+                  &port)) {
+        LogInfo(("invalid upgrade URL"));
+        return;
+    }
+    size_t hostname_len = strlen(hostname);
+
+    HTTPRequestInfo_t req = {
         METHOD_GET,
         strlen(req.pMethod),
-        "/sesame.fw.bin",
-        strlen(req.pPath),
-        "172.16.10.1:8000",
-        strlen(req.pHost),
+        path,
+        strlen(path),
+        hostname,
+        hostname_len,
         HTTP_REQUEST_KEEP_ALIVE_FLAG,
     };
 
@@ -62,11 +107,17 @@ static void do_ota_update() {
     uint8_t* buf = pvPortMalloc(BUF_SIZE);
 
     do {
+        hostname[hostname_len] = '\0';
         PlaintextTransportStatus_t conn_res = Plaintext_FreeRTOS_Connect(
-            &network_context, "172.16.1.10", 8000, 1000, 1000);
+            &network_context, hostname, port, 1000, 1000);
         if (conn_res != PLAINTEXT_TRANSPORT_SUCCESS) {
             goto conn_err;
         }
+
+        // append port to hostname for the request header
+        snprintf(hostname + hostname_len, sizeof(hostname) - hostname_len,
+                 ":%d", port);
+        req.hostLen = strlen(hostname);
 
         do {
             HTTPRequestHeaders_t headers;
@@ -127,13 +178,14 @@ ret:
 
 void ota_task(void* params) {
     QueueHandle_t queue = (QueueHandle_t)params;
-    ota_cmd_t cmd;
+    ota_msg_t msg;
     for (;;) {
-        if (xQueueReceive(queue, &cmd, portMAX_DELAY) == pdPASS) {
-            switch (cmd) {
+        if (xQueueReceive(queue, &msg, portMAX_DELAY) == pdPASS) {
+            switch (msg.cmd) {
                 case OTA_CMD_UPGRADE:
-                    LogInfo(("mcufw update requested"));
-                    do_ota_update();
+                    LogInfo(("mcufw update requested, url=%s",
+                             msg.msg.upgrade_msg.url));
+                    do_ota_update(&msg.msg.upgrade_msg);
                     break;
 
                 case OTA_CMD_PROMOTE:
@@ -141,7 +193,7 @@ void ota_task(void* params) {
                     break;
 
                 default:
-                    LogError(("unknown ota cmd %d", cmd));
+                    LogError(("unknown ota cmd"));
             }
         }
     }
