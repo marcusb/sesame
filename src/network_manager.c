@@ -4,6 +4,8 @@
 #include <string.h>
 #include <sys/time.h>
 
+#include "app_logging.h"
+
 // FreeRTOS
 #include "FreeRTOS.h"
 #include "FreeRTOS_IP.h"
@@ -16,7 +18,6 @@
 #include "wlan.h"
 
 // Application
-#include "app_logging.h"
 #include "backoff_algorithm.h"
 #include "config_manager.h"
 #include "network.h"

@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include "app_logging.h"
+
 // FreeRTOS
 #include "FreeRTOS_DHCP.h"
 #include "FreeRTOS_IP.h"
@@ -12,7 +14,6 @@
 #include "crc32.h"
 
 // Application
-#include "app_logging.h"
 #include "dhcp.h"
 #include "time_util.h"
 #include "util.h"

@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "app_logging.h"
+
 // FreeRTOS
 #include "FreeRTOS.h"
 #include "queue.h"
@@ -13,7 +15,8 @@
 #include "FreeRTOS_Sockets.h"
 
 // application
-#include "app_logging.h"
+#include "api.pb.h"
+#include "app_config.pb.h"
 #include "controller.h"
 #include "pb_decode.h"
 #include "util.h"
@@ -103,11 +106,6 @@ static const char* status_desc(int aCode) {
     return "Unknown";
 }
 
-static void handle_fwupgrade() {
-    ctrl_msg_t msg = {CTRL_MSG_OTA_UPGRADE};
-    xQueueSendToBack(ctrl_queue, &msg, 100);
-}
-
 static void handle_promote_update() {
     ctrl_msg_t msg = {CTRL_MSG_OTA_PROMOTE};
     xQueueSendToBack(ctrl_queue, &msg, 100);
@@ -121,8 +119,8 @@ static void send_status(const http_request_t* req, int status) {
     FreeRTOS_send(req->socket, req->buf, len, 0);
 }
 
-static void process_cfg(const http_request_t* req, ctrl_msg_type_t type,
-                        const pb_msgdesc_t* desc) {
+static void handle_ctrl_request(const http_request_t* req, ctrl_msg_type_t type,
+                                const pb_msgdesc_t* desc) {
     ctrl_msg_t msg = {type};
     pb_istream_t stream = pb_istream_from_buffer(
         (const pb_byte_t*)req->body_start, req->content_length);
@@ -135,8 +133,8 @@ static void do_request(const http_request_t* req) {
     switch (req->method) {
         case METHOD_POST:
             if (strcmp(req->url, "/fwupgrade") == 0) {
-                handle_fwupgrade();
-                send_status(req, REPLY_OK);
+                handle_ctrl_request(req, CTRL_MSG_OTA_UPGRADE,
+                                    &FirmwareUpgradeFetchRequest_msg);
             } else if (strcmp(req->url, "/promote") == 0) {
                 handle_promote_update();
                 send_status(req, REPLY_OK);
@@ -151,11 +149,13 @@ static void do_request(const http_request_t* req) {
                 xQueueSendToBack(ctrl_queue, &msg, 100);
                 send_status(req, REPLY_OK);
             } else if (strcmp(req->url, "/cfg/network") == 0) {
-                process_cfg(req, CTRL_MSG_WIFI_CONFIG, NetworkConfig_fields);
+                handle_ctrl_request(req, CTRL_MSG_WIFI_CONFIG,
+                                    &NetworkConfig_msg);
             } else if (strcmp(req->url, "/cfg/mqtt") == 0) {
-                process_cfg(req, CTRL_MSG_MQTT_CONFIG, MqttConfig_fields);
+                handle_ctrl_request(req, CTRL_MSG_MQTT_CONFIG, &MqttConfig_msg);
             } else if (strcmp(req->url, "/cfg/logging") == 0) {
-                process_cfg(req, CTRL_MSG_LOGGING_CONFIG, LoggingConfig_fields);
+                handle_ctrl_request(req, CTRL_MSG_LOGGING_CONFIG,
+                                    &LoggingConfig_msg);
             } else if (strcmp(req->url, "/restart") == 0) {
                 send_status(req, REPLY_OK);
                 LogDebug(("reboot requested, rebooting..."));

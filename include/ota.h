@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+#include "controller.h"
+
 // fwd declaration
 struct partition_entry;
 
@@ -10,6 +12,13 @@ typedef enum {
     OTA_CMD_UPGRADE = 1,
     OTA_CMD_PROMOTE = 2,
 } ota_cmd_t;
+
+typedef struct {
+    ota_cmd_t cmd;
+    union {
+        FirmwareUpgradeFetchRequest upgrade_msg;
+    } msg;
+} ota_msg_t;
 
 typedef struct {
     struct partition_entry* part;

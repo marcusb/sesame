@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app_logging.h"
+
 // FreeRTOS
 #include "FreeRTOS.h"
 #include "FreeRTOS_IP.h"
@@ -19,14 +21,12 @@
 #include "fsl_gpio.h"
 #include "fsl_wdt.h"
 #include "ksdk_mbedtls.h"
-#include "logging.h"
 #include "mflash_drv.h"
 #include "partition.h"
 #include "psm-v2.h"
 #include "wifi.h"
 
 // Application
-#include "app_logging.h"
 #include "board.h"
 #include "config_manager.h"
 #include "controller.h"
@@ -34,6 +34,7 @@
 #include "gpio.h"
 #include "httpd.h"
 #include "leds.h"
+#include "logging.h"
 #include "mqtt.h"
 #include "network.h"
 #include "ota.h"
@@ -185,34 +186,45 @@ static void report_boot_flags(void) {
     };
 }
 
+static void init_watchdog() {
+    wdt_config_t config;
+    WDT_GetDefaultConfig(&config);
+    config.timeoutValue = kWDT_TimeoutVal2ToThePowerOf29;
+    config.timeoutMode = kWDT_ModeTimeoutInterrupt;
+    config.enableWDT = true;
+    WDT_Init(WDT, &config);
+    EnableIRQ(WDT_IRQn);
+    WDT_DisableInterrupt(WDT);
+}
+
 /**
  * @brief Initialize board functions that do not require FreeRTOS
  */
-static void platform_init(void) {
+static void board_init(void) {
     boot_init();
     report_boot_flags();
     init_gpio();
     mflash_drv_init();
     part_init();
-    check_ota_test_image();
-    psm_init();
 
     // pm_init();
     setup_rtc();
 
-    // cli_init();
-    // pm_cli_init();
-    // wmtime_cli_init();
-    // pm_mcu_cli_init();
+    // initialize watchdog, unless debugger is connected
+    if (CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk) {
+        PRINTF("debugger connected, not starting watchdog\r\n");
+    } else {
+        init_watchdog();
+    }
 }
 
 static void create_tasks() {
     ctrl_queue = xQueueCreate(8, sizeof(ctrl_msg_t));
     configASSERT(ctrl_queue);
 
-    ota_queue = xQueueCreate(5, sizeof(ota_cmd_t));
+    ota_queue = xQueueCreate(5, sizeof(ota_msg_t));
     configASSERT(ota_queue);
-    xTaskCreate(ota_task, "OTA", 512, ota_queue, tskIDLE_PRIORITY, NULL);
+    xTaskCreate(ota_task, "OTA", 1024, ota_queue, tskIDLE_PRIORITY, NULL);
 
     pic_queue = xQueueCreate(5, sizeof(pic_cmd_t));
     configASSERT(pic_queue);
@@ -236,31 +248,15 @@ void reboot() {
     // pm_reboot_soc();
 }
 
-static void init_watchdog() {
-    wdt_config_t config;
-    WDT_GetDefaultConfig(&config);
-    config.timeoutValue = kWDT_TimeoutVal2ToThePowerOf29;
-    config.timeoutMode = kWDT_ModeTimeoutInterrupt;
-    config.enableWDT = true;
-    WDT_Init(WDT, &config);
-    EnableIRQ(WDT_IRQn);
-    WDT_DisableInterrupt(WDT);
-}
-
 static void main_task(void *param) {
-    platform_init();
-
-    // initialize watchdog, unless debugger is connected
-    if (CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk) {
-        PRINTF("debugger connected, not starting watchdog\r\n");
-    } else {
-        init_watchdog();
-    }
+    board_init();
 
     register_log_backend(log_console);
     register_log_backend(log_syslog);
     init_logging(512, tskIDLE_PRIORITY, mainLOGGING_MESSAGE_QUEUE_LENGTH);
 
+    check_ota_test_image();
+    psm_init();
     load_config();
 
     static NetworkEndPoint_t sta_endpoint;
@@ -284,14 +280,15 @@ static void main_task(void *param) {
         if (xQueueReceive(ctrl_queue, &ctrl_msg, 1000) == pdPASS) {
             switch (ctrl_msg.type) {
                 case CTRL_MSG_OTA_UPGRADE: {
-                    ota_cmd_t cmd = OTA_CMD_UPGRADE;
-                    xQueueSendToBack(ota_queue, &cmd, 0);
+                    ota_msg_t ota_msg = {OTA_CMD_UPGRADE,
+                                         .msg = {ctrl_msg.msg.ota_upgrade}};
+                    xQueueSendToBack(ota_queue, &ota_msg, 0);
                     break;
                 }
 
                 case CTRL_MSG_OTA_PROMOTE: {
-                    ota_cmd_t cmd = OTA_CMD_PROMOTE;
-                    xQueueSendToBack(ota_queue, &cmd, 0);
+                    ota_msg_t ota_msg = {OTA_CMD_PROMOTE};
+                    xQueueSendToBack(ota_queue, &ota_msg, 0);
                     break;
                 }
 

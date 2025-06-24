@@ -171,7 +171,8 @@ target_link_libraries(nanopb
     PUBLIC globals)
 
 nanopb_generate_cpp(TARGET proto RELPATH proto
-	proto/app_config.proto)
+	proto/api.proto
+    proto/app_config.proto)
 
 # -------------------------------------------------------------------------------------------------
 # FreeRTOS

@@ -1,16 +1,19 @@
+#include "app_logging.h"
+
 // wmsdk
 #include "psm-v2.h"
 
 // Application
 #include "app_config.pb.h"
-#include "app_logging.h"
 #include "config_manager.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
 
 extern psm_hnd_t psm_hnd;
 
-static const char psm_key_config[] = "appcfg";
+// key is written to flash by PSM, so it cannot reside in memory-mapped
+// flash in XIP mode (see mflash_drv_write())
+__attribute__((section(".data"))) static const char psm_key_config[] = "appcfg";
 static uint8_t buf[1024];
 
 AppConfig app_config = AppConfig_init_zero;

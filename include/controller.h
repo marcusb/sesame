@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FreeRTOS.h"
+#include "api.pb.h"
 #include "app_config.pb.h"
 #include "idcm_msg.h"
 
@@ -21,9 +22,6 @@ typedef enum {
 typedef enum { DOOR_CMD_UNKNOWN, DOOR_CMD_OPEN, DOOR_CMD_CLOSE } door_cmd_t;
 
 typedef struct {
-} ota_upgrade_msg_t;
-
-typedef struct {
     door_cmd_t command;
 } door_control_msg_t;
 
@@ -37,7 +35,7 @@ typedef struct {
     ctrl_msg_type_t type;
 
     union {
-        ota_upgrade_msg_t ota_upgrade;
+        FirmwareUpgradeFetchRequest ota_upgrade;
         door_control_msg_t door_control;
         door_state_msg_t door_state;
         NetworkConfig network_cfg;
