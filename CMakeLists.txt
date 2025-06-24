@@ -314,6 +314,7 @@ target_link_libraries(mw320_sdk
     mw320_drivers_rtc
     mw320_drivers_wdt
     mw320_device_startup
+    mw320_utility_assert
     mw320_utility_debug_console
     mw320_boot2_psm
 )
