@@ -420,27 +420,6 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
 }
 
 /**
- * @brief User defined assertion call. This function is plugged into
- * configASSERT. See FreeRTOSConfig.h to define configASSERT to something
- * different.
- */
-void vAssertCalled(const char *file, uint32_t line) {
-    volatile uint32_t ulBlockVariable = 0UL;
-
-    PRINTF("assert in %s:%lu\r\n", file, line);
-
-    /* Setting ulBlockVariable to a non-zero value in the debugger will
-     * allow this function to be exited. */
-    taskDISABLE_INTERRUPTS();
-    {
-        while (ulBlockVariable == 0UL) {
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-    }
-    taskENABLE_INTERRUPTS();
-}
-
-/**
  * @brief Warn user if pvPortMalloc fails.
  *
  * Called if a call to pvPortMalloc() fails because there is insufficient

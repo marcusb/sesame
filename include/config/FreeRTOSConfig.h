@@ -32,6 +32,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     extern uint32_t SystemCoreClock;
 #endif
 
+#include <assert.h>
+
 /*-----------------------------------------------------------
  * Application specific definitions.
  *
@@ -99,10 +101,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define configTIMER_QUEUE_LENGTH                10
 #define configTIMER_TASK_STACK_DEPTH            (configMINIMAL_STACK_SIZE * 2)
 
-/* Assert call defined for debug builds. */
-void vAssertCalled( const char * pcFile, uint32_t ulLine );
-
-#define configASSERT( x )    if( ( x ) == 0 ) vAssertCalled( __FILE__, __LINE__ )
+#define configASSERT( x )    assert( x )
 
 #if ( configGENERATE_RUN_TIME_STATS == 1 )
 /* wmsdk: Prototype of function defined in wmsdk */
