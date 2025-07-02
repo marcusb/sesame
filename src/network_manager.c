@@ -12,138 +12,63 @@
 #include "queue.h"
 
 // wmsdk
-#include "iot_wifi.h"
 #include "mflash_drv.h"
 #include "partition.h"
 #include "wlan.h"
 
 // Application
-#include "backoff_algorithm.h"
 #include "config_manager.h"
 #include "network.h"
 #include "string_util.h"
 #include "time_util.h"
 
-#define WIFI_CONNECTION_BACKOFF_BASE_MS (10 * 1000)
-#define WIFI_CONNECTION_RETRIES (2)
+#define RECONNECT_WAIT_TICKS pdMS_TO_TICKS(10000)
 
-typedef enum {
-    STA_IDLE,
-    STA_CONNECTING,
-    STA_CONNECTED,
-    STA_CONNECT_FAILED
-} connection_state_t;
+typedef enum { STA_IDLE, STA_CONNECT_FAILED } connection_state_t;
 
+static bool sta_initialized;
+static TickType_t last_conn_attempt;
 static connection_state_t network_state = STA_IDLE;
 static struct wlan_network client_network;
 static QueueHandle_t nm_queue;
-static BackoffAlgorithmContext_t connect_retry_params;
 static struct wlan_network ap_network;
-static TickType_t mark;
-static TickType_t connect_interval;
 static char hostname[33] = "sesame";
 
 const char *pcApplicationHostnameHook() { return hostname; }
 
-static int get_network_config(WIFINetworkParams_t *params) {
-    char *p = stpncpy((char *)params->ucSSID, app_config.network_config.ssid,
-                      sizeof(params->ucSSID));
-    int n = p - (char *)params->ucSSID;
-    params->ucSSIDLength = n;
-    if (n == 0) {
-        return -1;
-    }
-
-    p = stpncpy((char *)params->xPassword.xWPA.cPassphrase,
-                app_config.network_config.password,
-                sizeof(params->xPassword.xWPA.cPassphrase));
-    n = p - (char *)params->xPassword.xWPA.cPassphrase;
-    params->xPassword.xWPA.ucLength = n;
-    params->xSecurity = eWiFiSecurityWPA2;
-    if (n == 0) {
-        return -1;
-    }
-
-    n = strtcpy(hostname, app_config.network_config.hostname, sizeof(hostname));
-    if (n <= 0) {
-        strtcpy(hostname, "sesame", sizeof(hostname));
-    }
-    return 0;
-}
-
 static void connect_attempt_failed() {
-    uint16_t backoff;
-    BackoffAlgorithmStatus_t retry_status = BackoffAlgorithm_GetNextBackoff(
-        &connect_retry_params, rand(), &backoff);
-    if (retry_status == BackoffAlgorithmRetriesExhausted) {
-        network_state = STA_CONNECT_FAILED;
-    } else {
-        LogInfo(("connection attempt %d of %d failed, next in %d ms",
-                 connect_retry_params.attemptsDone,
-                 connect_retry_params.maxRetryAttempts + 1, backoff));
-        mark = xTaskGetTickCount();
-        connect_interval = pdMS_TO_TICKS(backoff);
-    }
+    last_conn_attempt = xTaskGetTickCount();
+    network_state = STA_CONNECT_FAILED;
 }
 
 static int init_sta_network(void) {
-    connect_interval = portMAX_DELAY;
-    WIFINetworkParams_t wifi_params = {0};
-    int res = get_network_config(&wifi_params);
-    if (res < 0) {
-        goto fail;
-    }
-
     memset(&client_network, 0, sizeof(client_network));
     strcpy(client_network.name, "client");
-    if (wifi_params.ucSSIDLength > IEEEtypes_SSID_SIZE) {
-        LogDebug(("SSID too long"));
-        goto fail;
-    }
-    memcpy(client_network.ssid, wifi_params.ucSSID, wifi_params.ucSSIDLength);
-
-    if (wifi_params.xPassword.xWPA.ucLength > WLAN_PSK_MAX_LENGTH - 1) {
-        // one extra char for null
-        LogDebug(("WPA password too long"));
-        goto fail;
-    }
-    memcpy(client_network.security.psk, wifi_params.xPassword.xWPA.cPassphrase,
-           wifi_params.xPassword.xWPA.ucLength);
-    client_network.security.psk_len = wifi_params.xPassword.xWPA.ucLength;
-
-    switch (wifi_params.xSecurity) {
-        case eWiFiSecurityOpen:
-            client_network.security.type = WLAN_SECURITY_NONE;
-            break;
-        case eWiFiSecurityWEP:
-            client_network.security.type = WLAN_SECURITY_WEP_OPEN;
-            break;
-        case eWiFiSecurityWPA:
-            client_network.security.type = WLAN_SECURITY_WPA;
-            break;
-        case eWiFiSecurityWPA2:
-            client_network.security.type = WLAN_SECURITY_WPA2;
-            break;
-        default:
-            LogDebug(("unsupported wifi sec type"));
-            goto fail;
-    }
+    stpncpy(client_network.ssid, app_config.network_config.ssid,
+            sizeof(client_network.ssid));
+    char *p =
+        stpncpy(client_network.security.psk, app_config.network_config.password,
+                sizeof(client_network.security.psk));
+    int pass_len = p - client_network.security.psk;
+    client_network.security.psk_len = pass_len;
+    client_network.security.type = WLAN_SECURITY_WPA2;
     client_network.type = WLAN_BSS_TYPE_STA;
     client_network.role = WLAN_BSS_ROLE_STA;
-    client_network.channel = wifi_params.ucChannel;
     client_network.ip.ipv4.addr_type = ADDR_TYPE_DHCP;
 
-    wlan_remove_network(client_network.name);
-    res = wlan_add_network(&client_network);
-    if (res != WM_SUCCESS) {
-        LogError(("wlan_add_network failed %d", res));
-        goto fail;
+    if (strtcpy(hostname, app_config.network_config.hostname,
+                sizeof(hostname)) <= 0) {
+        strtcpy(hostname, "sesame", sizeof(hostname));
     }
-    return 0;
 
-fail:
-    network_state = STA_CONNECT_FAILED;
-    return -1;
+    wlan_remove_network(client_network.name);
+    int res = wlan_add_network(&client_network);
+    if (res == WM_SUCCESS) {
+        return 0;
+    } else {
+        LogError(("wlan_add_network failed %d", res));
+        return -1;
+    }
 }
 
 static int connect_sta(void) {
@@ -156,22 +81,8 @@ static int connect_sta(void) {
     return 0;
 
 fail:
-    network_state = STA_CONNECT_FAILED;
+    connect_attempt_failed();
     return -1;
-}
-
-static void reconnect_sta() {
-    if (network_state == STA_CONNECTING) {
-        connect_sta();
-    }
-}
-
-static void start_sta_connection(void) {
-    BackoffAlgorithm_InitializeParams(
-        &connect_retry_params, WIFI_CONNECTION_BACKOFF_BASE_MS,
-        WIFI_CONNECTION_BACKOFF_BASE_MS * 2, WIFI_CONNECTION_RETRIES);
-    network_state = STA_CONNECTING;
-    connect_sta();
 }
 
 static void init_ap_network() {
@@ -190,64 +101,78 @@ static void init_ap_network() {
     }
 }
 
+void start_ap() {
+    static bool ap_started = false;
+    if (!ap_started) {
+        LogInfo(("Starting access point"));
+        int res = wlan_start_network("ap");
+        if (res == WM_SUCCESS) {
+            ap_started = true;
+        } else {
+            LogInfo(("failed to start AP: %d", res));
+        }
+    }
+}
+
 static int wlan_event_callback(enum wlan_event_reason event, void *data) {
+    const char *msg;
     switch (event) {
         case WLAN_REASON_INITIALIZED: {
-            wifi_fw_version_ext_t ver;
-            wifi_get_device_firmware_version_ext(&ver);
-            LogDebug(("wifi initialized, wlan fw v%s", ver.version_str));
             init_ap_network();
+            msg = "wlan initialized";
             if (init_sta_network() == 0) {
-                start_sta_connection();
+                sta_initialized = true;
+                connect_sta();
+            } else {
+                start_ap();
             }
             break;
         }
         case WLAN_REASON_SUCCESS:
-            LogDebug(("wifi connected"));
+            msg = "wifi connected";
             break;
         case WLAN_REASON_CONNECT_FAILED:
-            LogDebug(("wifi connect failed (invalid arg)"));
+            msg = "wifi connect failed (invalid arg)";
             connect_attempt_failed();
             break;
         case WLAN_REASON_NETWORK_NOT_FOUND:
-            LogDebug(("wifi connect failed (network not found)"));
+            msg = "wifi connect failed (network not found)";
             connect_attempt_failed();
             break;
         case WLAN_REASON_NETWORK_AUTH_FAILED:
-            LogDebug(("wifi connect failed (auth failed)"));
+            msg = "wifi connect failed (auth failed)";
             connect_attempt_failed();
             break;
         case WLAN_REASON_ADDRESS_FAILED:
-            LogDebug(("wifi disconnected (failed to obtain address)"));
+            msg = "wifi disconnected (failed to obtain address)";
             connect_attempt_failed();
             break;
         case WLAN_REASON_LINK_LOST:
-            LogDebug(("wifi disconnected (link lost)"));
+            msg = "wifi disconnected (link lost)";
+            connect_attempt_failed();
             break;
         case WLAN_REASON_USER_DISCONNECT:
-            LogDebug(("wifi disconnected by user request"));
-            reconnect_sta();
+            msg = "wifi disconnected by user request";
+            connect_attempt_failed();
             break;
         case WLAN_REASON_UAP_SUCCESS:
-            LogDebug(("wifi AP started"));
+            msg = "wifi AP started";
             break;
         case WLAN_REASON_UAP_STOPPED:
-            LogDebug(("wifi AP stopped"));
+            msg = "wifi AP stopped";
+            break;
+        case WLAN_REASON_PS_ENTER:
+            msg = "PS_ENTER";
+            break;
+        case WLAN_REASON_PS_EXIT:
+            msg = "PS EXIT";
             break;
         default:
-            LogDebug(("wifi event %d", event));
+            msg = "other";
     }
+    LogDebug(("wlan event: %s (%d)", msg, event));
 
     return 0;
-}
-
-void start_ap() {
-    LogInfo(("Starting access point"));
-    int res = wlan_start_network("ap");
-    if (res != WM_SUCCESS) {
-        LogInfo(("failed to start AP: %d", res));
-        return;
-    }
 }
 
 static int init_wifi_driver() {
@@ -301,7 +226,7 @@ void network_manager_task(void *params) {
     int n = 0;
     for (;;) {
         nm_msg_t cmd;
-        if (xQueueReceive(nm_queue, &cmd, pdMS_TO_TICKS(200)) == pdPASS) {
+        if (xQueueReceive(nm_queue, &cmd, pdMS_TO_TICKS(500)) == pdPASS) {
             switch (cmd.type) {
                 case NM_CMD_AP_MODE:
                     start_ap();
@@ -311,12 +236,14 @@ void network_manager_task(void *params) {
                     LogError(("unknown nm_cmd_t %d", cmd));
             }
         }
-        if (network_state == STA_CONNECTING &&
-            xTaskGetTickCount() - mark > connect_interval) {
-            connect_sta();
-        } else if (network_state == STA_CONNECT_FAILED) {
-            network_state = STA_IDLE;
+        if (network_state == STA_CONNECT_FAILED) {
             start_ap();
+            if (xTaskGetTickCount() - last_conn_attempt >
+                RECONNECT_WAIT_TICKS) {
+                LogDebug(("reconnecting to wifi"));
+                connect_sta();
+                network_state = STA_IDLE;
+            }
         }
         if (n++ % 100 == 0) {
             static HeapStats_t stats;

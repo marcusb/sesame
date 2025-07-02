@@ -19,6 +19,7 @@
 #include "fsl_aes.h"
 #include "fsl_debug_console.h"
 #include "fsl_gpio.h"
+#include "fsl_power.h"
 #include "fsl_wdt.h"
 #include "ksdk_mbedtls.h"
 #include "mflash_drv.h"
@@ -43,7 +44,6 @@
 #include "syslog.h"
 #include "time_util.h"
 
-/* Logging Task Defines. */
 #define mainLOGGING_MESSAGE_QUEUE_LENGTH (16)
 
 // the global controller event queue, all tasks write to it
@@ -63,6 +63,8 @@ static const uint8_t dns_server_addr[4] = {0};
 
 static NetworkInterface_t sta_iface;
 static NetworkInterface_t uap_iface;
+
+static SemaphoreHandle_t aes_mutex;
 
 #if 0
 static void hardfault() {
@@ -197,17 +199,30 @@ static void init_watchdog() {
     WDT_DisableInterrupt(WDT);
 }
 
-/**
- * @brief Initialize board functions that do not require FreeRTOS
- */
+static status_t aes_lock(void) {
+    if (pdTRUE == xSemaphoreTakeRecursive(aes_mutex, portMAX_DELAY)) {
+        return kStatus_Success;
+    } else {
+        return kStatus_Fail;
+    }
+}
+
+static void aes_unlock(void) { xSemaphoreGiveRecursive(aes_mutex); }
+
+static void aes_init(void) {
+    aes_mutex = xSemaphoreCreateRecursiveMutex();
+    assert(aes_mutex != NULL);
+    AES_Init(AES);
+    AES_SetLockFunc(aes_lock, aes_unlock);
+}
+
 static void board_init(void) {
     boot_init();
     report_boot_flags();
     init_gpio();
     mflash_drv_init();
     part_init();
-
-    // pm_init();
+    aes_init();
     setup_rtc();
 
     // initialize watchdog, unless debugger is connected
@@ -245,7 +260,6 @@ void reboot() {
     wifi_deinit();
     LogInfo(("rebooting"));
     NVIC_SystemReset();
-    // pm_reboot_soc();
 }
 
 static void main_task(void *param) {
@@ -258,6 +272,7 @@ static void main_task(void *param) {
     check_ota_test_image();
     psm_init();
     load_config();
+    start_rtc_save();
 
     static NetworkEndPoint_t sta_endpoint;
     mw300_new_netif_desc(BSS_TYPE_STA, &sta_iface);
@@ -353,7 +368,8 @@ int main(void) {
     init_boot_clocks();
     init_debug_console();
 
-    AES_Init(AES);
+    CLOCK_EnableXtal32K(kCLOCK_Osc32k_Internal);
+    CLOCK_AttachClk(kXTAL32K_to_RTC);
 
     uint8_t hash[32];
     uint32_t len = sizeof(hash);

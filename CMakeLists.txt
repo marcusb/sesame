@@ -12,58 +12,6 @@ set(CMAKE_BUILD_TYPE Debug)
 
 option(USE_BACKTRACE "Include facility for dumping stack traces" ON)
 
-set(exe_target sesame)
-set(exe_target_ram "${exe_target}_ram")
-set(CMAKE_EXECUTABLE_SUFFIX ".axf")
-
-add_library(board STATIC)
-target_sources(board PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/board/board.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/board/clock_config.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/board/sdmmc_config.c"
-)
-target_compile_definitions(board
-    PUBLIC
-    SDIO_ENABLED)
-target_include_directories(board
-    PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/board"
-)
-target_link_libraries(board
-    PUBLIC
-    globals
-    mw320_sdmmc_sdio
-    mw320_sdmmc_host_sdioc
-    mw320_drivers_power
-    PRIVATE
-    mw320_utility_debug_console
-)
-
-add_library(app_shared STATIC)
-target_sources(app_shared
-    PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/mqtt.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/network_manager.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ota.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ota_client.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/pic_uart.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/pin_mux.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/time_util.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
-)
-target_include_directories(app_shared
-    PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/include")
-
 add_library(globals INTERFACE)
 
 add_library(freertos_config INTERFACE)
@@ -219,6 +167,10 @@ target_link_libraries(freertos_plus_tcp_network_if
     INTERFACE
     mw320_wlcmgr)
 
+# -------------------------------------------------------------------------------------------------
+# Other libraries
+# -------------------------------------------------------------------------------------------------
+
 FetchContent_Declare(backoff_algorithm
     GIT_REPOSITORY https://github.com/FreeRTOS/backoffAlgorithm.git
     GIT_TAG        v1.4.1
@@ -265,7 +217,6 @@ target_link_libraries(coreHTTP
     freertos_plus_tcp
     freertos_kernel
     logging)
-
 
 FetchContent_Declare(coreMQTT
     GIT_REPOSITORY https://github.com/FreeRTOS/coreMQTT.git
@@ -318,6 +269,61 @@ target_link_libraries(mw320_sdk
     mw320_utility_debug_console
     mw320_boot2_psm
 )
+
+set(exe_target sesame)
+set(exe_target_ram "${exe_target}_ram")
+set(CMAKE_EXECUTABLE_SUFFIX ".axf")
+
+add_library(board STATIC)
+target_sources(board PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/board/board.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/board/clock_config.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/board/sdmmc_config.c"
+)
+target_compile_definitions(board
+    PUBLIC
+    SDIO_ENABLED)
+target_include_directories(board
+    PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/board"
+)
+target_link_libraries(board
+    PUBLIC
+    globals
+    mw320_sdmmc_sdio
+    mw320_sdmmc_host_sdioc
+    mw320_drivers_power
+    PRIVATE
+    mw320_utility_debug_console
+)
+
+# -------------------------------------------------------------------------------------------------
+# Application
+# -------------------------------------------------------------------------------------------------
+
+add_library(app_shared STATIC)
+target_sources(app_shared
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mqtt.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/network_manager.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ota.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ota_client.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/pic_uart.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/pin_mux.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/time_util.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c")
+target_include_directories(app_shared
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 target_link_libraries(app_shared
     PUBLIC

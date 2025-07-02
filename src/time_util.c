@@ -27,10 +27,7 @@ static void update_clock(TimerHandle_t timer) {
     RTC_ResetTimer(RTC);
 }
 
-void setup_rtc(void) {
-    CLOCK_EnableXtal32K(kCLOCK_Osc32k_Internal);
-    CLOCK_AttachClk(kXTAL32K_to_RTC);
-
+void setup_rtc() {
     // if RTC_SIG is found, it signifies a valid stored RTC count
     if (rtc_sig != RTC_SIG) {
         rtc_ticks = 0;
@@ -44,10 +41,12 @@ void setup_rtc(void) {
     EnableIRQ(RTC_IRQn);
     RTC_ResetTimer(RTC);
     RTC_StartTimer(RTC);
+}
 
+void start_rtc_save(void) {
     // update the stored tick count from the RTC every 10 seconds
-    TimerHandle_t tm =
-        xTimerCreate("rtc", pdMS_TO_TICKS(10000), true, NULL, update_clock);
+    static TimerHandle_t tm;
+    tm = xTimerCreate("rtc", pdMS_TO_TICKS(10000), true, NULL, update_clock);
     xTimerStart(tm, 0);
 }
 
