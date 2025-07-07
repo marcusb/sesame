@@ -1,17 +1,21 @@
 cmake_minimum_required(VERSION 3.23)
 
-# Needed for CMake's test compilation check
-set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-
 project(
   sesame
   VERSION 0.1
   LANGUAGES C ASM)
 
+set(mw320_sdk_dir "${CMAKE_CURRENT_LIST_DIR}/mw320_sdk")
+
+if(CMAKE_CROSSCOMPILING)
+# Needed for CMake's test compilation check
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
 set(CMAKE_BUILD_TYPE Debug)
 
 option(USE_BACKTRACE "Include facility for dumping stack traces" ON)
 
+add_library(app_shared STATIC)
 add_library(globals INTERFACE)
 
 add_library(freertos_config INTERFACE)
@@ -301,7 +305,6 @@ target_link_libraries(board
 # Application
 # -------------------------------------------------------------------------------------------------
 
-add_library(app_shared STATIC)
 target_sources(app_shared
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
@@ -377,12 +380,35 @@ target_link_options("${exe_target_ram}"
     "-Wl,-Map,${exe_target_ram}.map"
     "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")
 
-set(axf2firmware "${CMAKE_CURRENT_SOURCE_DIR}/marvell/WMSDK/mw320/sdk/tools/bin/Linux/axf2firmware")
 add_custom_command(
     TARGET ${exe_target} POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E remove "${exe_target}.bin"
-    COMMAND "${axf2firmware}" "${exe_target}.axf" "${exe_target}.bin"
+    COMMAND axf2firmware "${exe_target}.axf" "${exe_target}.bin"
 )
 
 set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
     "${exe_target}.bin" "${exe_target}.map" "${exe_target_ram}.bin" "${exe_target_ram}.map")
+
+find_package(axf2firmware)
+
+else()
+
+# native build
+add_executable(axf2firmware)
+target_sources(axf2firmware
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/axf2firmware/axf2firmware.c")
+target_include_directories(axf2firmware
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/axf2firmware")
+target_compile_options(axf2firmware
+    PRIVATE
+    "-Wall")
+target_compile_definitions(axf2firmware
+    PRIVATE
+    AXF_BUILT_BY_ARM_GCC)
+target_link_libraries(axf2firmware
+    PRIVATE)
+export(TARGETS axf2firmware FILE
+    "${CMAKE_BINARY_DIR}/axf2firmware-config.cmake")
+endif()

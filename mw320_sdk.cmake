@@ -1,5 +1,3 @@
-set(mw320_sdk_dir "${CMAKE_CURRENT_LIST_DIR}/mw320_sdk")
-
 macro(add_driver drv)
     add_library("mw320_drivers_${drv}" STATIC)
     target_sources("mw320_drivers_${drv}"
