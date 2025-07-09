@@ -32,6 +32,7 @@ Optional but useful:
 To install Sesame, you will use the Cortex debugger and OpenOCD
 to write the firmware image to the flash memory of the MW300 module.
 
+1. Clone this repository with the submodules (`git clone --recursive` or `git submodule update --init`)
 1. Disconnect the header cable and remove the iDCM board from the unit.
 1. Connect the push-pin connector of the 10-pin cable to header J7 on the iDCM board,
    and the other end to the Cortex debug interface on the Tigard.
@@ -43,19 +44,80 @@ to write the firmware image to the flash memory of the MW300 module.
    in your terminal of choice, eg `minicom -D /dev/ttyUSB0 -b 115200`.
    At this point you should see the console output from the factory firmware.
 
+Use this command to write all the components to flash: the partition table, boot loader, WiFi firmware,
+and Sesame.
+```sh
+./tools/OpenOCD/flashprog.py -l mw320_sdk/tools/boot2/layout.txt \
+  --boot2 mw320_sdk/mw320_matter_flash/Matter/boot2.bin \
+  --wififw mw320_sdk/mw320_matter_flash/Matter/mw32x_uapsta_W14.88.36.p172.bin \
+  --mcufw sesame.bin -r
+```
+
+After successful flash, the device should reboot and sound the buzzer. Logs from Sesame
+should appear on the serial console.
+
 Future firmware upgrades can be done over the air, so this procedure is only required the first time.
 
-## Setup
+### Setup
 
-echo 'syslog_config: { enabled: true, syslog_host: "nuc.example.org", syslog_port: 514 }' | protoc --encode=LoggingConfig proto/app_config.proto | curl --data-binary @- -H content-type:application/protobuf -v 'http://sesame2/cfg/logging'
+Upon first-time install, the device will start a WiFi access point named `sesame`
+and listen for HTTP connections at `192.168.4.1`. After connecting to the AP,
+you can configure various settings as below. The REST API uses protobuf-encoded requests
+(not JSON). Settings are stored in a flash partition in the same protobuf format, which
+keeps things simple.
 
+First, set up WiFi parameters:
+```sh
+echo 'hostname: "sesame", ssid: "MY_WIFI", security: 2, password: "seekrit"' \
+  | protoc --encode=NetworkConfig proto/app_config.proto \
+  | curl --data-binary @- -H content-type:application/protobuf -v \
+  'http://192.168.4.1/cfg/network'
+```
+The device will reboot, connect to the configured network, and obtain an IP address via DHCP.
+You will use its assigned IP address in the next steps (it is also logged on the serial console).
 
-echo 'enabled: true, broker_host: "mqtt.example.org", broker_port: 1883, client_id: "sesame-dev", username: "sesame", password: "***REMOVED***", prefix: "sesame-dev"' | protoc --encode=MqttConfig proto/app_config.proto | curl --data-binary @- -H content-type:application/protobuf -v 'http://sesame2/cfg/mqtt
+If using MQTT (replace `http://sesame` with your device's IP or hostname):
+```sh
+echo 'enabled: true, broker_host: "mqtt.example.org", broker_port: 1883, client_id: "sesame", username: "sesame", password: "seekrit", prefix: "sesame"' \
+  | protoc --encode=MqttConfig proto/app_config.proto \
+  | curl --data-binary @- -H content-type:application/protobuf -v \
+  'http://sesame/cfg/mqtt'
+```
 
-echo 'hostname: "sesame", ssid: "MY_WIFI", security: 2, password: "seekrit"' | protoc --encode=NetworkConfig proto/app_config.proto | curl --data-binary @- -H content-type:application/protobuf -v 'http://192.168.4.1/cfg/network'
+Sesame can be configured to log to a syslog server.
+```sh
+echo 'syslog_config: { enabled: true, syslog_host: "log.example.org", syslog_port: 514 }' \
+  | protoc --encode=LoggingConfig proto/app_config.proto \
+  | curl --data-binary @- -H content-type:application/protobuf -v \
+  'http://sesame/cfg/logging'
+```
 
-echo 'url: "http://example.org/sesame.bin"'  | protoc --encode=FirmwareUpgradeFetchRequest proto/api.proto | curl --data-binary @- -H content-type:application/protobuf -v 'http://sesame2/fwupgrade'
+### Firmware update (OTA)
 
+To update the firmware, the binary must be served via HTTP (not HTTPS). Sesame employs
+an active-passive partition scheme, so that the upgrade image is written to a secondary
+partition. The new image can then be safely tested before marking its partition as the
+active one.
+
+Having obtained the upgrade image, instruct Sesame to download and apply the update:
+```sh
+echo 'url: "http://example.org/sesame.bin"' \
+  | protoc --encode=FirmwareUpgradeFetchRequest proto/api.proto \
+  | curl --data-binary @- -H content-type:application/protobuf -v \
+  'http://sesame/fwupgrade'
+```
+
+Upon the next reboot, the new "testing" image will start, but unless it is
+then promoted to primary, subsequent restarts will boot from the old
+firmware. Reboot by power-cycling or by issuing the following command:
+```sh
+curl -v 'http://sesame/restart'
+```
+
+Once satisfied that the new image is working, finalize the upgrade:
+```sh
+curl -v 'http://sesame/promote'
+```
 
 ## Development
 
@@ -90,6 +152,8 @@ cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Debug -DUSE_BACKTRACE=ON \
   -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake \
   -G Ninja -Daxf2firmware_DIR=~/src/sesame/build-native ..
 ```
+
+
 
 [TC2030-PKT]: https://www.tag-connect.com/product/tc2030-pkt-6-pin-cable-with-legs-for-use-with-microchip-pickit-3
 [TC2050-IDC-050]: https://www.tag-connect.com/product/tc2050-idc-050
