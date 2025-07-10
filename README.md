@@ -1,6 +1,18 @@
 # Sesame
 
 Sesame is an after-market firmware for the Genie 1155 garage door opener.
+It also likely works with other models that utilize the same iDCM circuit
+board.
+
+This garage opener is supposed to be controllable over the network with the
+Aladdin Connect app. However it appears to no longer work, probably because
+of some breaking API change and the opener having reached end-of-life.
+Hence the need for Sesame.
+
+The Sesame firmware restores network control functionality, and can be
+conveniently integrated into your home automation system via the MQTT
+protocol. It does not communicate outside of your local network, just
+like you like it for a security-sensitive application like a garage door.
 
 ## Features
 
@@ -9,6 +21,8 @@ Sesame is an after-market firmware for the Genie 1155 garage door opener.
 * Over-the-air updates
 
 ## Installation
+
+![iDCM board](docs/idcm_board.jpg)
 
 ### Pre-requisites
 
@@ -153,7 +167,7 @@ cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Debug -DUSE_BACKTRACE=ON \
   -G Ninja -Daxf2firmware_DIR=~/src/sesame/build-native ..
 ```
 
-
+For hardware details see [this doc](docs/teardown.md).
 
 [TC2030-PKT]: https://www.tag-connect.com/product/tc2030-pkt-6-pin-cable-with-legs-for-use-with-microchip-pickit-3
 [TC2050-IDC-050]: https://www.tag-connect.com/product/tc2050-idc-050
