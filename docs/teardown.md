@@ -37,7 +37,7 @@ This module is likely identical to the [NXP 88MW320].
 It sports 512 kB SRAM, 4 MB flash (XIP capable), and 802.11b/g/n WiFi interface.
 A datasheet can be obtained from NXP, as well as a [dev board].
 
-The board is suppored by an outdated
+The board is supported by an outdated
 [AWS IoT Starter Kit](https://docs.aws.amazon.com/freertos/latest/userguide/getting_started_mw32x.html),
 as well as a newer [SDK from NXP](https://github.com/nxptest/mw320_sdk/).
 Sesame utilizes this newer SDK.
