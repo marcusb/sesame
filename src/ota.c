@@ -18,17 +18,17 @@
 #include "mflash_drv.h"
 #include "partition.h"
 
+// application
+#include "controller.h"
+#include "leds.h"
+
 #define OTA_TEST_MODE_FLAG (1UL << 31U)
 #define FW_MAGIC_STR (('M' << 0) | ('R' << 8) | ('V' << 16) | ('L' << 24))
 #define FW_MAGIC_SIG \
     ((0x7BUL << 0) | (0xF1UL << 8) | (0x9CUL << 16) | (0x2EUL << 24))
 #define FW_BLK_LOADABLE_SEGMENT 2
 
-enum ota_status_t {
-    OTA_STATUS_NONE = 0,
-    OTA_STATUS_UPLOADED,
-    OTA_STATUS_TESTING,
-} ota_status = OTA_STATUS_NONE;
+ota_status_t ota_status = OTA_STATUS_NONE;
 
 /*
  * Firmware magic signature
@@ -150,6 +150,11 @@ int ota_finish(ota_upd_state_t* ota_state) {
     ota_state->part->gen_level = OTA_TEST_MODE_FLAG;
     res = part_write_layout();
     LogInfo(("new OTA test image uploaded (%d)", res));
+    if (res == WM_SUCCESS) {
+        LogInfo(("rebooting"));
+        vTaskDelay(pdMS_TO_TICKS(250));
+        reboot();
+    }
     return res;
 }
 
@@ -176,6 +181,7 @@ int ota_promote_image() {
         LogInfo(("promoted OTA test image with new gen_level %d, result=%d",
                  part_test->gen_level, res));
         ota_status = OTA_STATUS_NONE;
+        set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);
         return res;
     }
     return -1;

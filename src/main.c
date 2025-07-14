@@ -95,70 +95,6 @@ static void setup_heap() {
     vPortDefineHeapRegions(xHeapRegions);
 }
 
-typedef struct {
-    int gpio;
-    ctrl_msg_type_t msg_type;
-} button_def_t;
-
-static const button_def_t buttons[] = {
-    {BOARD_SW_WIFI_PIN, CTRL_MSG_WIFI_BUTTON},
-    {BOARD_SW_OTA_PIN, CTRL_MSG_OTA_BUTTON},
-    {-1}};
-
-void GPIO_IRQHandler(void) {
-    int pin;
-    for (int i = 0; (pin = buttons[i].gpio) != -1; i++) {
-        uint32_t port = GPIO_PORT(pin);
-        uint32_t mask = 1UL << GPIO_PORT_PIN(pin);
-        if (GPIO_PortGetInterruptFlags(GPIO, port) & mask) {
-            GPIO_PortClearInterruptFlags(GPIO, port, mask);
-            ctrl_msg_t msg = {buttons[i].msg_type};
-            xQueueSendToBackFromISR(ctrl_queue, &msg, NULL);
-        }
-    }
-    SDK_ISR_EXIT_BARRIER;
-}
-
-static void init_gpio_input(int pin) {
-    gpio_pin_config_t sw_config = {
-        kGPIO_DigitalInput,
-        0,
-    };
-    GPIO_PinSetInterruptConfig(GPIO, pin, kGPIO_InterruptFallingEdge);
-    GPIO_PortEnableInterrupts(GPIO, GPIO_PORT(pin), 1UL << GPIO_PORT_PIN(pin));
-    GPIO_PinInit(GPIO, pin, &sw_config);
-}
-
-static void init_gpio() {
-    EnableIRQ(GPIO_IRQn);
-    // lower interrupt priority so we can call FreeRTOS syscalls from ISR
-    NVIC_SetPriority(GPIO_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-
-    gpio_set_output(0);
-    gpio_clear(0);
-
-    // set_PIC16LF15_SIGNAL_LOW
-    // GPIO46 set to RUN (0)
-    gpio_set_output(46);
-    gpio_clear(46);
-
-    gpio_set_output(48);
-    gpio_set(48);
-
-    // set_PIC16LF15_RESET_RELEASE
-    // GPIO pin 1 set to RESET (1)
-    gpio_set_output(1);
-    gpio_clear(1);
-
-    gpio_set_output(49);
-    gpio_set(49);
-
-    int pin;
-    for (int i = 0; (pin = buttons[i].gpio) != -1; i++) {
-        init_gpio_input(pin);
-    }
-}
-
 static void psm_init() {
     static flash_desc_t fl;
     int ret = part_get_desc_from_id(FC_COMP_PSM, &fl);
@@ -289,6 +225,13 @@ static void main_task(void *param) {
     configASSERT(res);
 
     create_tasks();
+
+    if (ota_status == OTA_STATUS_TESTING) {
+        set_ota_led_pattern(LED_BLUE, LED_OFF, LED_BLUE, LED_OFF);
+    } else {
+        set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);
+    }
+
     ctrl_msg_t ctrl_msg;
     for (;;) {
         WDT_Refresh(WDT);
@@ -329,13 +272,13 @@ static void main_task(void *param) {
 
                 case CTRL_MSG_OTA_BUTTON:
                     LogDebug(("OTA button pressed"));
+                    reboot();
                     break;
 
                 case CTRL_MSG_WIFI_CONFIG: {
                     app_config.network_config = ctrl_msg.msg.network_cfg;
                     app_config.has_network_config = true;
                     save_config();
-                    vTaskDelay(500);
                     reboot();
                     break;
                 }
@@ -432,6 +375,8 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
             xTaskCreate(dhcpd_task, "DHCPd", 512, &dhcp_params,
                         tskIDLE_PRIORITY, NULL);
         }
+    } else if (event == eNetworkDown &&
+               endpoint->pxNetworkInterface == &sta_iface) {
     }
 }
 

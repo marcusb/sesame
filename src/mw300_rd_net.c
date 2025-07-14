@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* FreeRTOS includes. */
+// FreeRTOS
 #include "FreeRTOS.h"
 #include "FreeRTOS_IP.h"
 #include "FreeRTOS_IP_Private.h"
@@ -15,7 +15,7 @@
 #include "list.h"
 #include "mw300_rd_net.h"
 
-/* wmsdk includes */
+// mw320
 #include "mlan_api.h"
 #include "mlan_fw.h"
 #include "wifi-sdio.h"

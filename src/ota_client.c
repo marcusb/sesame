@@ -155,7 +155,6 @@ static void do_ota_update(FirmwareUpgradeFetchRequest* upgrade_msg) {
         } while (bytes_read == READ_SIZE);
 
         ota_finish(&ota_state);
-        LogInfo(("mcufw update complete"));
         goto ret;  // not reached
 
     req_err:

@@ -121,17 +121,32 @@ echo 'url: "http://example.org/sesame.bin"' \
   'http://sesame/fwupgrade'
 ```
 
-Upon the next reboot, the new "testing" image will start, but unless it is
+Following successful update, the device will reboot into the new
+"testing" image, indicated by the OTA LED blinking blue. Unless it is
 then promoted to primary, subsequent restarts will boot from the old
-firmware. Reboot by power-cycling or by issuing the following command:
-```sh
-curl -v 'http://sesame/restart'
-```
+firmware.
 
 Once satisfied that the new image is working, finalize the upgrade:
 ```sh
 curl -v 'http://sesame/promote'
 ```
+
+### LEDs and buttons
+
+The opener has two physical buttons and corresponding LEDs:
+* WiFi button (blue). Pressing this launches access point mode.
+* OTA button (gray). Reboots the device.
+
+Diagnostic LED patterns:
+
+| Pattern    | WiFi LED     | OTA LED  |
+| --------- | -----------  | -------- |
+| Blinking green | Connecting | Main firmware image running |
+| Solid green    | Connected  | - |
+| Blinking blue  | AP enabled | Test firmware image running |
+
+Pressing teh WiFi button starts the built-in access point (SSID `Sesame`, no password).
+This is useful if you accidentally applied a bad network configuration.
 
 ## Development
 

@@ -310,6 +310,7 @@ target_sources(app_shared
     "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/gpio.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"

@@ -46,3 +46,5 @@ typedef struct {
 
 typedef struct QueueDefinition* QueueHandle_t;
 extern QueueHandle_t ctrl_queue;
+
+void reboot(void);

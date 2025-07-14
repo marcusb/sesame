@@ -26,6 +26,13 @@ typedef struct {
     uint32_t bytes_stored;
 } ota_upd_state_t;
 
+typedef enum {
+    OTA_STATUS_NONE = 0,
+    OTA_STATUS_UPLOADED,
+    OTA_STATUS_TESTING,
+} ota_status_t;
+extern ota_status_t ota_status;
+
 void ota_task(void*);
 
 int ota_init(ota_upd_state_t* ota_state);

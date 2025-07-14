@@ -55,8 +55,6 @@ typedef struct http_method_desc {
     http_method_t type;
 } http_method_desc_t;
 
-void reboot(void);
-
 static const http_method_desc_t http_methods[] = {
     {3, "GET", METHOD_GET},         {4, "HEAD", METHOD_HEAD},
     {4, "POST", METHOD_POST},       {3, "PUT", METHOD_PUT},

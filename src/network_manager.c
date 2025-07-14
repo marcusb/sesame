@@ -12,6 +12,7 @@
 #include "queue.h"
 
 // wmsdk
+#include "leds.h"
 #include "mflash_drv.h"
 #include "partition.h"
 #include "wlan.h"
@@ -37,6 +38,7 @@ static char hostname[33] = "sesame";
 const char *pcApplicationHostnameHook() { return hostname; }
 
 static void connect_attempt_failed() {
+    set_wifi_led_pattern(LED_OFF, LED_OFF, LED_OFF, LED_OFF);
     last_conn_attempt = xTaskGetTickCount();
     network_state = STA_CONNECT_FAILED;
 }
@@ -78,6 +80,7 @@ static int connect_sta(void) {
         LogError(("wlan_connect failed %d", res));
         goto fail;
     }
+    set_wifi_led_pattern(LED_GREEN, LED_OFF, LED_GREEN, LED_OFF);
     return 0;
 
 fail:
@@ -130,6 +133,7 @@ static int wlan_event_callback(enum wlan_event_reason event, void *data) {
         }
         case WLAN_REASON_SUCCESS:
             msg = "wifi connected";
+            set_wifi_led_pattern(LED_GREEN, LED_GREEN, LED_GREEN, LED_GREEN);
             break;
         case WLAN_REASON_CONNECT_FAILED:
             msg = "wifi connect failed (invalid arg)";
@@ -156,6 +160,7 @@ static int wlan_event_callback(enum wlan_event_reason event, void *data) {
             connect_attempt_failed();
             break;
         case WLAN_REASON_UAP_SUCCESS:
+            set_wifi_led_pattern(LED_BLUE, LED_OFF, LED_BLUE, LED_OFF);
             msg = "wifi AP started";
             break;
         case WLAN_REASON_UAP_STOPPED:
