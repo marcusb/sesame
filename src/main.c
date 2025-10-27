@@ -8,8 +8,8 @@
 // FreeRTOS
 #include "FreeRTOS.h"
 #include "FreeRTOS_IP.h"
+#include "FreeRTOS_ND.h"
 #include "NetworkInterface.h"
-#include "mw300_rd_net.h"
 #include "queue.h"
 #include "task.h"
 
@@ -37,6 +37,7 @@
 #include "leds.h"
 #include "logging.h"
 #include "mqtt.h"
+#include "mw300_rd_net.h"
 #include "network.h"
 #include "ota.h"
 #include "pic_uart.h"
@@ -53,9 +54,9 @@ psm_hnd_t psm_hnd;
 static QueueHandle_t ota_queue;
 static QueueHandle_t pic_queue;
 static QueueHandle_t nm_queue;
+static SemaphoreHandle_t aes_mutex;
 
 // IP configuration to use when DHCP does not succeed
-static uint8_t mac_addr[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
 static const uint8_t default_ip_addr[4] = {192, 168, 4, 1};
 static const uint8_t netmask[4] = {255, 255, 255, 0};
 static const uint8_t gateway_addr[4] = {0};
@@ -63,8 +64,6 @@ static const uint8_t dns_server_addr[4] = {0};
 
 static NetworkInterface_t sta_iface;
 static NetworkInterface_t uap_iface;
-
-static SemaphoreHandle_t aes_mutex;
 
 #if 0
 static void hardfault() {
@@ -160,6 +159,7 @@ static void board_init(void) {
     part_init();
     aes_init();
     setup_rtc();
+    assert(init_wifi_driver() == WM_SUCCESS);
 
     // initialize watchdog, unless debugger is connected
     if (CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk) {
@@ -167,6 +167,47 @@ static void board_init(void) {
     } else {
         init_watchdog();
     }
+}
+
+void configure_netif() {
+    wifi_mac_addr_t mac_addr;
+    const uint8_t *hwaddr = (const uint8_t *)mac_addr.mac;
+
+    int ret = wifi_get_device_mac_addr(&mac_addr);
+    assert(ret == WM_SUCCESS);
+
+    static NetworkEndPoint_t eps[3];
+    mw300_new_netif_desc(BSS_TYPE_STA, &sta_iface);
+    FreeRTOS_FillEndPoint(&sta_iface, &eps[0], default_ip_addr, netmask,
+                          gateway_addr, dns_server_addr, hwaddr);
+    eps[0].bits.bWantDHCP = pdTRUE;
+
+    // local IPv6 address chosen randomly
+    IPv6_Address_t local_prefix = {{0xfe, 0x80}};
+    IPv6_Address_t local_addr;
+    IPv6_Address_t gateway_addr_ip6 = {
+        {0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
+    FreeRTOS_CreateIPv6Address(&local_addr, &local_prefix, 64, pdTRUE);
+    FreeRTOS_FillEndPoint_IPv6(&sta_iface, &eps[1], &local_addr, &local_prefix,
+                               64, &gateway_addr_ip6, NULL, hwaddr);
+
+    // ULA address configured via SLAAC and RA.
+    // Form the EUI64 address from MAC for SLAAC.
+    IPv6_Address_t eui64_addr = {{0xfe, 0x80, 0, 0, 0, 0, 0, 0,
+                                  hwaddr[0] | 0x02, hwaddr[1], hwaddr[2], 0xff,
+                                  0xfe, hwaddr[3], hwaddr[4], hwaddr[5]}};
+    FreeRTOS_FillEndPoint_IPv6(&sta_iface, &eps[2], &eui64_addr, &local_prefix,
+                               64, &gateway_addr_ip6, NULL, hwaddr);
+    eps[2].bits.bWantRA = pdTRUE;
+
+    static NetworkEndPoint_t uap_endpoint;
+    mw300_new_netif_desc(BSS_TYPE_UAP, &uap_iface);
+    FreeRTOS_FillEndPoint(&uap_iface, &uap_endpoint, default_ip_addr, netmask,
+                          gateway_addr, dns_server_addr, hwaddr);
+
+    FreeRTOS_SetDNSIPPreference(xPreferenceIPv4);
+    int res = FreeRTOS_IPInit_Multi();
+    assert(res);
 }
 
 static void create_tasks() {
@@ -210,20 +251,7 @@ static void main_task(void *param) {
     load_config();
     start_rtc_save();
 
-    static NetworkEndPoint_t sta_endpoint;
-    mw300_new_netif_desc(BSS_TYPE_STA, &sta_iface);
-    FreeRTOS_FillEndPoint(&sta_iface, &sta_endpoint, default_ip_addr, netmask,
-                          gateway_addr, dns_server_addr, mac_addr);
-    sta_endpoint.bits.bWantDHCP = pdTRUE;
-
-    static NetworkEndPoint_t uap_endpoint;
-    mw300_new_netif_desc(BSS_TYPE_UAP, &uap_iface);
-    FreeRTOS_FillEndPoint(&uap_iface, &uap_endpoint, default_ip_addr, netmask,
-                          gateway_addr, dns_server_addr, mac_addr);
-
-    int res = FreeRTOS_IPInit_Multi();
-    configASSERT(res);
-
+    configure_netif();
     create_tasks();
 
     if (ota_status == OTA_STATUS_TESTING) {
@@ -331,52 +359,35 @@ int main(void) {
 
 static void print_ip_config(NetworkEndPoint_t *endpoint) {
     if (endpoint != NULL) {
-        char ip_addr_s[16];
+        char ip_addr_s[40];
         char netmask_s[16];
-        char gateway_s[16];
-        char dns_server_s[16];
-        FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulIPAddress, ip_addr_s,
-                            sizeof(ip_addr_s));
-        FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulNetMask, netmask_s,
-                            sizeof(netmask_s));
-        FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulGatewayAddress,
-                            gateway_s, sizeof(gateway_s));
-        FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulDNSServerAddresses[0],
-                            dns_server_s, sizeof(dns_server_s));
-        LogInfo(("%s: IPv4 %s/%s, gw %s, dns %s",
-                 endpoint->pxNetworkInterface->pcName, ip_addr_s, netmask_s,
-                 gateway_s, dns_server_s));
-    }
-}
-
-bool is_sta_network_up() { return sta_iface.pxEndPoint->bits.bEndPointUp; }
-
-void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
-                                          NetworkEndPoint_t *endpoint) {
-    static bool tasks_created = false;
-
-    if (event == eNetworkUp) {
-        LogInfo(("%s: interface up", endpoint->pxNetworkInterface->pcName));
-        print_ip_config(endpoint);
-
-        if (endpoint->pxNetworkInterface == &sta_iface) {
-            notify_dhcp_configured();
-            if (!tasks_created) {
-                // Create the tasks that use the TCP/IP stack if they have
-                // not already been created.
-                tasks_created = true;
-                configure_logging(&app_config.logging_config.syslog_config);
-                xTaskCreate(mqtt_task, "MQTT", 512, &app_config.mqtt_config,
-                            tskIDLE_PRIORITY, NULL);
-            }
-        } else if (endpoint->pxNetworkInterface == &uap_iface) {
-            static dhcp_task_params_t dhcp_params;
-            dhcp_params.endpoint = endpoint;
-            xTaskCreate(dhcpd_task, "DHCPd", 512, &dhcp_params,
-                        tskIDLE_PRIORITY, NULL);
+        char gateway_s[40];
+        char dns_server_s[40];
+        if (endpoint->bits.bIPv6) {
+            FreeRTOS_inet_ntop6(&endpoint->ipv6_settings.xIPAddress, ip_addr_s,
+                                sizeof(ip_addr_s));
+            FreeRTOS_inet_ntop6(&endpoint->ipv6_settings.xGatewayAddress,
+                                gateway_s, sizeof(gateway_s));
+            FreeRTOS_inet_ntop6(&endpoint->ipv6_settings.xDNSServerAddresses[0],
+                                dns_server_s, sizeof(dns_server_s));
+            LogInfo(("%s: IPv6 %s/%d, gw %s, dns %s",
+                     endpoint->pxNetworkInterface->pcName, ip_addr_s,
+                     endpoint->ipv6_settings.uxPrefixLength, gateway_s,
+                     dns_server_s));
+        } else {
+            FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulIPAddress, ip_addr_s,
+                                sizeof(ip_addr_s));
+            FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulNetMask, netmask_s,
+                                sizeof(netmask_s));
+            FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulGatewayAddress,
+                                gateway_s, sizeof(gateway_s));
+            FreeRTOS_inet_ntop4(
+                &endpoint->ipv4_settings.ulDNSServerAddresses[0], dns_server_s,
+                sizeof(dns_server_s));
+            LogInfo(("%s: IPv4 %s/%s, gw %s, dns %s",
+                     endpoint->pxNetworkInterface->pcName, ip_addr_s, netmask_s,
+                     gateway_s, dns_server_s));
         }
-    } else if (event == eNetworkDown &&
-               endpoint->pxNetworkInterface == &sta_iface) {
     }
 }
 
@@ -408,5 +419,36 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *task_name) {
     PRINTF("ERROR: stack overflow in task %s\r\n", task_name);
     portDISABLE_INTERRUPTS();
     for (;;) {
+    }
+}
+
+void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
+                                          NetworkEndPoint_t *endpoint) {
+    static bool tasks_created = false;
+
+    if (event == eNetworkUp) {
+        LogInfo(("%s: interface up", endpoint->pxNetworkInterface->pcName));
+        print_ip_config(endpoint);
+
+        if (endpoint->pxNetworkInterface == &sta_iface) {
+            if (endpoint->bits.bIPv6) {
+                notify_ipv6_addr_change();
+            } else {
+                notify_dhcp_configured();
+            }
+            if (!tasks_created) {
+                // Create the tasks that use the TCP/IP stack if they have
+                // not already been created.
+                tasks_created = true;
+                configure_logging(&app_config.logging_config.syslog_config);
+                xTaskCreate(mqtt_task, "MQTT", 512, &app_config.mqtt_config,
+                            tskIDLE_PRIORITY + 4, NULL);
+            }
+        } else if (endpoint->pxNetworkInterface == &uap_iface) {
+            static dhcp_task_params_t dhcp_params;
+            dhcp_params.endpoint = endpoint;
+            xTaskCreate(dhcpd_task, "DHCPd", 512, &dhcp_params,
+                        tskIDLE_PRIORITY, NULL);
+        }
     }
 }

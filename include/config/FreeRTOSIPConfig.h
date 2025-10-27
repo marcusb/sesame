@@ -129,6 +129,7 @@ extern void vLoggingPrintf(const char* pcFormatString, ...);
 #define ipconfigUDP_MAX_SEND_BLOCK_TIME_TICKS (5000U / portTICK_PERIOD_MS)
 
 #define ipconfigUSE_DHCP 1
+#define ipconfigUSE_DHCPv6 1
 #define ipconfigDHCP_REGISTER_HOSTNAME 1
 
 /* If ipconfigDHCP_USES_USER_HOOK is set to 1 then the application writer must

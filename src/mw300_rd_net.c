@@ -7,8 +7,6 @@
 
 // FreeRTOS
 #include "FreeRTOS.h"
-#include "FreeRTOS_IP.h"
-#include "FreeRTOS_IP_Private.h"
 #include "FreeRTOS_Sockets.h"
 #include "NetworkBufferManagement.h"
 #include "NetworkInterface.h"
@@ -57,6 +55,25 @@ int net_get_if_addr(struct wlan_ip_config* addr, void* intrfc_handle) {
     addr->ipv4.dns2 = ep->ipv4_settings.ulDNSServerAddresses[1];
     return WM_SUCCESS;
 }
+
+#ifdef CONFIG_IPV6
+int net_get_if_ipv6_addr(struct wlan_ip_config* addr, void* intrfc_handle) {
+    NetworkInterface_t* netif = (NetworkInterface_t*)intrfc_handle;
+    int i = 0;
+    for (NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(netif);
+         ep != NULL && i < MAX_IPV6_ADDRESSES; i++) {
+        struct ipv6_config* ipv6 = &addr->ipv6[i];
+        memcpy(ipv6->address, ep->ipv6_settings.xIPAddress.ucBytes, 16);
+        IPv6_Type_t addr_type = xIPv6_GetIPType(&ep->ipv6_settings.xIPAddress);
+        if (addr_type != eIPv6_LinkLocal && addr_type != eIPv6_Loopback) {
+            ipv6->addr_state = IP6_ADDR_PREFERRED;
+        } else {
+            ipv6->addr_state = IP6_ADDR_OTHER;
+        }
+    }
+    return 0;
+}
+#endif /* CONFIG_IPV6 */
 
 static void deliver_packet_above(uint8_t iface, const uint8_t* data,
                                  const uint16_t len) {
@@ -161,6 +178,28 @@ void notify_dhcp_configured() {
                          NULL);
 }
 
+void notify_ipv6_addr_change() {
+    wlan_wlcmgr_send_msg(WIFI_EVENT_NET_IPV6_CONFIG, WIFI_EVENT_REASON_SUCCESS,
+                         NULL);
+}
+
+#ifdef CONFIG_IPV6
+/**
+ * Set up hardware MAC filter for multicast packets for an IPv6 address
+ *
+ * @param ip6_addr the IP address to listen to multicast packets for
+ */
+static void add_mcast_filter(const IPv6_Address_t* ip6_addr) {
+    MACAddress_t mac;
+    vSetMultiCastIPv6MacAddress(ip6_addr, &mac);
+    wifi_add_mcast_filter(mac.ucBytes);
+}
+#endif
+
+void add_allowed_mac(struct xNetworkInterface* netif, const uint8_t* mac_addr) {
+    wifi_add_mcast_filter((uint8_t*)mac_addr);
+}
+
 void vNetworkInterfaceAllocateRAMToBuffers(
     NetworkBufferDescriptor_t
         pxNetworkBuffers[ipconfigNUM_NETWORK_BUFFER_DESCRIPTORS]) {}
@@ -176,11 +215,18 @@ static BaseType_t netif_init(NetworkInterface_t* netif) {
         net_d("Failed to get mac address");
         return pdFALSE;
     }
-    NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(netif);
-    if (ep != NULL) {
+    for (NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(netif); ep != NULL;
+         ep = FreeRTOS_NextEndPoint(netif, ep)) {
         memcpy(ep->xMACAddress.ucBytes, mac_addr.mac,
                sizeof(ep->xMACAddress.ucBytes));
     }
+
+#ifdef CONFIG_IPV6
+    // set up hardware MAC filter for multicast packets
+    IPv6_Address_t ip6_allnodes = {
+        {0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
+    add_mcast_filter(&ip6_allnodes);
+#endif
 
     enum wlan_connection_state state;
     switch (if_index) {
@@ -257,6 +303,7 @@ NetworkInterface_t* mw300_new_netif_desc(uint8_t if_type,
     netif->pfInitialise = netif_init;
     netif->pfOutput = low_level_output;
     netif->pfGetPhyLinkStatus = get_phy_link_status;
+    netif->pfAddAllowedMAC = add_allowed_mac;
 
     FreeRTOS_AddNetworkInterface(netif);
 

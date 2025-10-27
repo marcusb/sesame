@@ -21,6 +21,7 @@
 #include "config_manager.h"
 #include "network.h"
 #include "string_util.h"
+#include "syslog.h"
 #include "time_util.h"
 
 #define RECONNECT_WAIT_TICKS pdMS_TO_TICKS(10000)
@@ -180,7 +181,7 @@ static int wlan_event_callback(enum wlan_event_reason event, void *data) {
     return 0;
 }
 
-static int init_wifi_driver() {
+int init_wifi_driver() {
     short history = 0;
     struct partition_entry *p1 =
         part_get_layout_by_id(FC_COMP_WLAN_FW, &history);
@@ -215,13 +216,7 @@ static int init_wifi_driver() {
 void network_manager_task(void *params) {
     nm_queue = (QueueHandle_t)params;
 
-    int res = init_wifi_driver();
-    if (res != WM_SUCCESS) {
-        LogError(("wifi init failed %d", res));
-        goto err;
-    }
-
-    res = wlan_start(wlan_event_callback);
+    int res = wlan_start(wlan_event_callback);
     if (res != WM_SUCCESS) {
         LogError(("wlan_start failed %d", res));
         goto err;

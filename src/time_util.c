@@ -68,6 +68,8 @@ long get_epoch_millis() {
     return 1000 * tv.tv_sec + tv.tv_usec / 1000;
 }
 
+uint32_t ulApplicationTimeHook(void) { return get_epoch_millis() / 1000; }
+
 int hwrtc_time_set(time_t time) {
     RTC_ResetTimer(RTC);
     /// RTC runs at 1024 Hz

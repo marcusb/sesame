@@ -12,6 +12,8 @@
 #define CONFIG_5GHz_SUPPORT 1
 #endif
 
+#define CONFIG_IPV6 1
+
 /* Logs */
 #define CONFIG_ENABLE_ERROR_LOGS   1
 #define CONFIG_ENABLE_WARNING_LOGS 1

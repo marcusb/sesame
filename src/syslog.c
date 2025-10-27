@@ -14,7 +14,7 @@
 #define LOG_FACILITY_LOCAL0 16
 
 static struct freertos_sockaddr udp_log_addr;
-static Socket_t syslog_sock;
+static Socket_t syslog_sock = FREERTOS_INVALID_SOCKET;
 
 static void do_configure(void *p1, uint32_t p2) {
     const SyslogConfig *cfg = (const SyslogConfig *)p1;
@@ -74,8 +74,8 @@ void log_syslog(const log_msg_t *log) {
     //     p += n;
     //     remaining -= n;
     // } else {
-        *p++ = '-';
-        remaining--;
+    *p++ = '-';
+    remaining--;
     // }
 
     n = snprintf(p, remaining, " %s sesame %s %lu - %s",
