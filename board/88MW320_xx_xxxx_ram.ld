@@ -147,8 +147,6 @@ SECTIONS
     PROVIDE_HIDDEN (__fini_array_end = .);
   } > m_text
 
-  __etext = .;    /* define a global symbol at end of code */
-
   /* heap in SRAM0 - unused space between end of code and keystore */
   . = ALIGN(4);
   __HeapBase_sram0 = .;
@@ -171,7 +169,9 @@ SECTIONS
     __data_end__ = .;        /* define a global symbol at data end */
   } > m_data
 
-  /* RAM build: LMA == VMA, no ROM-to-RAM copy needed at startup */
+  /* RAM build: startup copies from __etext to __data_start__; make them equal
+   * so that copy is a self-copy (no-op), preserving ELF-loaded data. */
+  __etext = __data_start__;
   __DATA_ROM = __data_start__;
   __DATA_END = __data_start__;
 
