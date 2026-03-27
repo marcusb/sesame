@@ -164,7 +164,8 @@ SECTIONS
   __VECTOR_RAM = ORIGIN(m_interrupts);
   __RAM_VECTOR_TABLE_SIZE_BYTES = 0x0;
 
-  .data : AT(__DATA_ROM)
+  /* RAM build: load data directly into m_data (LMA = VMA), no ROM copy needed */
+  .data :
   {
     . = ALIGN(4);
     __DATA_RAM = .;
@@ -176,9 +177,9 @@ SECTIONS
     __data_end__ = .;        /* define a global symbol at data end */
   } > m_data
 
-  __DATA_END = __DATA_ROM + (__data_end__ - __data_start__);
+  __DATA_ROM = __data_start__;
+  __DATA_END = __data_start__;
   text_end = ORIGIN(m_text) + LENGTH(m_text);
-  ASSERT(__DATA_END <= text_end, "region m_text overflowed with text and data")
 
   /* Uninitialized data section */
   .bss :
