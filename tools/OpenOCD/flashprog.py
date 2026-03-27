@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # Copyright (C) 2018 Marvell International Ltd.
 # All Rights Reserved.
 
@@ -58,7 +58,7 @@ def get_openocd():
     elif _platform == "win32" or _platform == "win64" or _platform == "cygwin":
         OPENOCD = which(SCRIPT_DIR + "/Windows/openocd")
     if not len(OPENOCD):
-        print "Error: Please install OpenOCD for your platform"
+        print("Error: Please install OpenOCD for your platform")
         sys.exit()
 
 def file_path(file_name):
@@ -86,54 +86,54 @@ def exit():
     sys.exit()
 
 def print_usage():
-    print ""
-    print "Usage:"
-    print sys.argv[0] + " [options]"
-    print "Optional Usage:"
-    print " [<-i | --interface> <JTAG hardware interface name>]"
-    print "          Supported ones are ftdi, jlink, amontec, malink and stlink. Default is ftdi."
-    print " [<-l | --new-layout> </path/to/layout_file>]"
-    print "          Flash partition using layout file <layout.txt>"
-    print " [<--comp_name> </path/to/comp_file>]"
-    print "          Write any component <comp_name> file <comp_file> to flash"
-    print " [-d | --debug]"
-    print "          Debug mode, dump current flash contents"
-    print " [<-b | --batch> </path/to/config_file>]"
-    print "          Batch processing mode config file <config.txt>"
-    print " [--read <flash_id>,<start_address>,<length>,<path/to/output_file>]"
-    print "          Read flash <flash_id> (0: Internal QSPI, 1: External QSPI, 2: External SPI)"
-    print "          starting from <start_address> of length <length> into output file <output_file>"
-    print " [--write <flash_id>,<start_address>,<path/to/input_file>]"
-    print "          Write to flash <flash_id> (0: Internal QSPI, 1: External QSPI, 2: External SPI)"
-    print "          starting from <start_address> from input file <input_file>"
-    print "          Note: '-w | --write' option does not erase the flash before writing."
-    print "          If required, explicitly erase the flash before."
-    print " [--erase <flash_id>,<start_address>,<length>]"
-    print "          Erase flash <flash_id> (0: Internal QSPI, 1: External QSPI, 2: External SPI)"
-    print "          starting from <start_address> and length <length>"
-    print " [--erase-all <flash_id>]"
-    print "          Erase entire flash <flash_id> (0: Internal QSPI, 1: External QSPI, 2: External SPI)"
-    print " [<-p | --prod> </path/to/mfg_file>]"
-    print "          Batch processing mode mfg file <mfg.txt>"
-    print " [-r | --reset]"
-    print "          Reset board"
-    print " [--interactive]"
-    print "          Run flashprog in interactive mode (Default: non-interactive)"
-    print " [-h | --help]"
-    print "          Display usage"
+    print("")
+    print("Usage:")
+    print(sys.argv[0] + " [options]")
+    print("Optional Usage:")
+    print(" [<-i | --interface> <JTAG hardware interface name>]")
+    print("          Supported ones are ftdi, jlink, amontec, malink and stlink. Default is ftdi.")
+    print(" [<-l | --new-layout> </path/to/layout_file>]")
+    print("          Flash partition using layout file <layout.txt>")
+    print(" [<--comp_name> </path/to/comp_file>]")
+    print("          Write any component <comp_name> file <comp_file> to flash")
+    print(" [-d | --debug]")
+    print("          Debug mode, dump current flash contents")
+    print(" [<-b | --batch> </path/to/config_file>]")
+    print("          Batch processing mode config file <config.txt>")
+    print(" [--read <flash_id>,<start_address>,<length>,<path/to/output_file>]")
+    print("          Read flash <flash_id> (0: Internal QSPI, 1: External QSPI, 2: External SPI)")
+    print("          starting from <start_address> of length <length> into output file <output_file>")
+    print(" [--write <flash_id>,<start_address>,<path/to/input_file>]")
+    print("          Write to flash <flash_id> (0: Internal QSPI, 1: External QSPI, 2: External SPI)")
+    print("          starting from <start_address> from input file <input_file>")
+    print("          Note: '-w | --write' option does not erase the flash before writing.")
+    print("          If required, explicitly erase the flash before.")
+    print(" [--erase <flash_id>,<start_address>,<length>]")
+    print("          Erase flash <flash_id> (0: Internal QSPI, 1: External QSPI, 2: External SPI)")
+    print("          starting from <start_address> and length <length>")
+    print(" [--erase-all <flash_id>]")
+    print("          Erase entire flash <flash_id> (0: Internal QSPI, 1: External QSPI, 2: External SPI)")
+    print(" [<-p | --prod> </path/to/mfg_file>]")
+    print("          Batch processing mode mfg file <mfg.txt>")
+    print(" [-r | --reset]")
+    print("          Reset board")
+    print(" [--interactive]")
+    print("          Run flashprog in interactive mode (Default: non-interactive)")
+    print(" [-h | --help]")
+    print("          Display usage")
     sys.stdout.flush()
 
 def copy_file(src, dest):
     try:
         shutil.copy2(file_path(src), dest)
     except (shutil.Error, IOError) as e:
-        print e
+        print(e)
         cleanup()
         sys.exit()
 
 def copy_config_option(comp_name, comp_file):
     if (comp_name != 'debug') and (os.path.exists(file_path(comp_file)) == False):
-        print "File " + comp_file + " does not exist"
+        print("File " + comp_file + " does not exist")
         cleanup()
         sys.exit()
     with open (CONFIG_FILE, 'a') as cfile:
@@ -161,7 +161,7 @@ def copy_mfg_option(mfg_cmd, arg, no_subargs):
                 if (os.path.exists(file_path(subargs[2])) == False):
                     raise WrongArgs("File " + subargs[2] + " does not exist")
         except ValueError as e:
-            print "Invalid number as argument"
+            print("Invalid number as argument")
             cleanup()
             sys.exit()
 
@@ -177,22 +177,22 @@ def copy_mfg_option(mfg_cmd, arg, no_subargs):
         with open (MFG_FILE, 'a') as mfile:
             mfile.write(line + '\n')
     except WrongArgs as e:
-        print e
+        print(e)
         cleanup()
         sys.exit()
 
 def get_chip_id():
-    print "Using OpenOCD interface file", IFC_FILE
+    print("Using OpenOCD interface file", IFC_FILE)
     sys.stdout.flush()
     p = subprocess.Popen([OPENOCD, '-s', SCRIPT_DIR + '/interface', '-f', IFC_FILE, '-s', SCRIPT_DIR, '-f', 'openocd.cfg', '-c', ' init', '-c', 'chip_id', '-c', 'shutdown'], stdout=subprocess.PIPE)
-    id = p.communicate()[0]
+    id = p.communicate()[0].decode()
     sys.stderr.flush()
     if p.returncode:
-        print "OpenOCD failed! Aborting..."
+        print("OpenOCD failed! Aborting...")
         cleanup()
         sys.exit()
     if (id == "unknown"):
-        print "Unsupported Board! Aborting..."
+        print("Unsupported Board! Aborting...")
         cleanup()
         sys.exit()
     return id
@@ -203,13 +203,13 @@ def run_flashprog(chip_id, interactive):
     if not len(READELF):
         READELF = which('readelf')
         if not len(READELF):
-            print "Error: readelf utility not found, please install binutils or appropriate package"
+            print("Error: readelf utility not found, please install binutils or appropriate package")
             cleanup()
             sys.exit()
 
     flashprog_axf = SCRIPT_DIR + '/' + chip_id + '/flashprog.axf'
     readelf_output = subprocess.Popen([READELF, flashprog_axf, '-h'], stdout=subprocess.PIPE)
-    readelf_output = readelf_output.stdout.read()
+    readelf_output = readelf_output.stdout.read().decode()
 
     if ('Entry point' in readelf_output) is False:
         cleanup()
@@ -221,31 +221,31 @@ def run_flashprog(chip_id, interactive):
             i = entry_point.index(':')
             entry_point = entry_point[i+1:].strip()
 
-    print "Using OpenOCD interface file", IFC_FILE
+    print("Using OpenOCD interface file", IFC_FILE)
     sys.stdout.flush()
     if (interactive):
         p = subprocess.Popen([OPENOCD, '-s', SCRIPT_DIR + '/interface', '-f', IFC_FILE, '-s', SCRIPT_DIR, '-f', 'openocd.cfg', '-c', 'init', '-c', 'sh_load ' + flashprog_axf + ' ' + entry_point])
         p.communicate()
     else:
         p = subprocess.Popen([OPENOCD, '-s', SCRIPT_DIR + '/interface', '-f', IFC_FILE, '-s', SCRIPT_DIR, '-f', 'openocd.cfg', '-c', 'init', '-c', 'sh_load ' + flashprog_axf + ' ' + entry_point], stdin=subprocess.PIPE)
-        p.communicate(input = 'q')
+        p.communicate(input = b'q')
     sys.stderr.flush()
     if p.returncode:
-        print "OpenOCD failed! Aborting..."
+        print("OpenOCD failed! Aborting...")
     sys.stdout.flush()
 
 def reset_board():
     msg = "Resetting board"
-    print msg + "..."
+    print(msg + "...")
 
-    print "Using OpenOCD interface file", IFC_FILE
+    print("Using OpenOCD interface file", IFC_FILE)
     sys.stdout.flush()
     p = subprocess.call([OPENOCD, '-s', SCRIPT_DIR + '/interface', '-f', IFC_FILE, '-s', SCRIPT_DIR, '-f', 'openocd.cfg', '-c', 'init', '-c', 'reset', '-c', 'shutdown'])
     sys.stderr.flush()
     if (p==0):
-        print msg + " done..."
+        print(msg + " done...")
     else:
-        print msg + " failed..."
+        print(msg + " failed...")
     sys.stdout.flush()
 
 def get_comp_longopts(args, non_comp_longopts):
@@ -275,7 +275,7 @@ def main():
         if len(args):
             exit()
     except getopt.GetoptError as e:
-        print e
+        print(e)
         exit()
 
     for opt, arg in opts:

@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # Copyright (C) 2018 Marvell International Ltd.
 # All Rights Reserved.
 
@@ -45,7 +45,7 @@ def get_openocd():
     elif _platform == "win32" or _platform == "win64" or _platform == "cygwin":
         OPENOCD = which(SCRIPT_DIR + "/Windows/openocd")
     if not len(OPENOCD):
-        print "Error: Please install OpenOCD for your platform"
+        print("Error: Please install OpenOCD for your platform")
         sys.exit()
 
 def file_path(file_name):
@@ -60,16 +60,16 @@ def file_path(file_name):
         return file_name
 
 def print_usage():
-    print ""
-    print "Usage:"
-    print sys.argv[0]
-    print "Optional Usage:"
-    print " [<-i | --interface> <JTAG hardware interface name>]"
-    print "          Supported ones are ftdi, jlink, amontec, malink and stlink. Default is ftdi."
-    print " [-t | --tcp]"
-    print "          Start in TCP/IP mode. Default is pipe mode."
-    print " [-h | --help]"
-    print "          Display usage"
+    print("")
+    print("Usage:")
+    print(sys.argv[0])
+    print("Optional Usage:")
+    print(" [<-i | --interface> <JTAG hardware interface name>]")
+    print("          Supported ones are ftdi, jlink, amontec, malink and stlink. Default is ftdi.")
+    print(" [-t | --tcp]")
+    print("          Start in TCP/IP mode. Default is pipe mode.")
+    print(" [-h | --help]")
+    print("          Display usage")
     sys.stdout.flush()
 
 def main():
@@ -84,7 +84,7 @@ def main():
             print_usage()
             sys.exit()
     except getopt.GetoptError as e:
-        print e
+        print(e)
         print_usage()
         sys.exit()
 
@@ -97,7 +97,7 @@ def main():
             print_usage()
             sys.exit()
 
-    print "Using OpenOCD interface file", IFC_FILE
+    print("Using OpenOCD interface file", IFC_FILE)
     sys.stdout.flush()
     if (TCPIP_MODE == 1):
         subprocess.call ([OPENOCD, '-s', SCRIPT_DIR + '/interface', '-f', IFC_FILE, '-s', SCRIPT_DIR, '-f','openocd.cfg'])

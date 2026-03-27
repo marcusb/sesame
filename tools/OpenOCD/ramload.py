@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # Copyright (C) 2018 Marvell International Ltd.
 # All Rights Reserved.
 
@@ -45,7 +45,7 @@ def get_openocd():
     elif _platform == "win32" or _platform == "win64" or _platform == "cygwin":
         OPENOCD = which(SCRIPT_DIR + "/Windows/openocd")
     if not len(OPENOCD):
-        print "Error: Please install OpenOCD for your platform"
+        print("Error: Please install OpenOCD for your platform")
         sys.exit()
 
 def file_path(file_name):
@@ -60,16 +60,16 @@ def file_path(file_name):
         return file_name
 
 def print_usage():
-    print ""
-    print "Usage:"
-    print sys.argv[0] + " <app.axf> [options]"
-    print "Optional Usage:"
-    print " [<-i | --interface> <JTAG hardware interface name>]"
-    print "          Supported ones are ftdi, jlink, amontec, malink and stlink. Default is ftdi."
-    print " [-s | --semihosting]"
-    print "          Enable semihosting based console output"
-    print " [-h | --help]"
-    print "          Display usage"
+    print("")
+    print("Usage:")
+    print(sys.argv[0] + " <app.axf> [options]")
+    print("Optional Usage:")
+    print(" [<-i | --interface> <JTAG hardware interface name>]")
+    print("          Supported ones are ftdi, jlink, amontec, malink and stlink. Default is ftdi.")
+    print(" [-s | --semihosting]")
+    print("          Enable semihosting based console output")
+    print(" [-h | --help]")
+    print("          Display usage")
     sys.stdout.flush()
 
 def main():
@@ -89,7 +89,7 @@ def main():
             print_usage()
             sys.exit()
     except getopt.GetoptError as e:
-        print e
+        print(e)
         print_usage()
         sys.exit()
 
@@ -105,7 +105,7 @@ def main():
     FILE = file_path(args[0])
 
     if (os.path.isfile(FILE) == False):
-        print "Error: Could not find file", FILE
+        print("Error: Could not find file", FILE)
         print_usage()
         sys.exit()
 
@@ -114,11 +114,11 @@ def main():
     if not len(READELF):
         READELF = which('readelf')
         if not len(READELF):
-            print "Error: readelf utility not found, please install binutils or appropriate package"
+            print("Error: readelf utility not found, please install binutils or appropriate package")
             sys.exit()
 
     readelf_output = subprocess.Popen([READELF, FILE, '-h'], stdout=subprocess.PIPE)
-    readelf_output = readelf_output.stdout.read()
+    readelf_output = readelf_output.stdout.read().decode()
 
     if ('Entry point' in readelf_output) is False:
         sys.exit("Error: Not an ELF file")
@@ -130,7 +130,7 @@ def main():
             entry_point = entry_point[i+1:].strip()
 
     if ((int(entry_point, 16) & 0x1f000000) == 0x1f000000):
-        print "Error: Provided firmware image (.axf) is XIP enabled and hence ramload is not possible, please use flashprog to flash the image (.bin)"
+        print("Error: Provided firmware image (.axf) is XIP enabled and hence ramload is not possible, please use flashprog to flash the image (.bin)")
         sys.exit()
 
     NM = which('arm-none-eabi-nm')
@@ -138,18 +138,18 @@ def main():
     if not len(NM):
         NM = which('nm')
         if not len(NM):
-            print "Error: nm utility not found, please install binutils or appropriate package"
+            print("Error: nm utility not found, please install binutils or appropriate package")
             sys.exit()
 
     nm_output = subprocess.Popen([NM, FILE], stdout=subprocess.PIPE)
-    nm_output = nm_output.stdout.read()
+    nm_output = nm_output.stdout.read().decode()
 
     for item in nm_output.split('\n'):
         if '_ol_ovl' in item:
-            print "Error: Provided firmware image (.axf) is overlays enabled and hence ramload is not possible, please use flashprog to flash the image."
+            print("Error: Provided firmware image (.axf) is overlays enabled and hence ramload is not possible, please use flashprog to flash the image.")
             sys.exit()
 
-    print "Using OpenOCD interface file", IFC_FILE
+    print("Using OpenOCD interface file", IFC_FILE)
     sys.stdout.flush()
 
     if SEMIHOST is False:
