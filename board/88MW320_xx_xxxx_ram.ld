@@ -26,7 +26,6 @@
 /* Entry Point */
 ENTRY(Reset_Handler)
 
-HEAP_SIZE  = DEFINED(__heap_size__)  ? __heap_size__  : 0x0400;
 STACK_SIZE = DEFINED(__stack_size__) ? __stack_size__ : 0x0400;
 FAULT_STACK_SIZE = 0x0400;
 _nvram_start = 0x480C0000;
@@ -54,7 +53,6 @@ _keystore_start = ORIGIN(m_text) + LENGTH(m_text) - _keystore_size;
 /* Define output sections */
 SECTIONS
 {
-  /* The startup code goes first into internal flash */
   .interrupts :
   {
     . = ALIGN(4);
@@ -64,7 +62,6 @@ SECTIONS
     . = ALIGN(4);
   } > m_interrupts
 
-  /* The program code and other data goes into internal flash */
   .text :
   {
     . = ALIGN(4);
@@ -151,11 +148,8 @@ SECTIONS
   } > m_text
 
   __etext = .;    /* define a global symbol at end of code */
-  __DATA_ROM = .; /* Symbol is used by startup for data initialization */
 
-  /* heap in SRAM0 - after the data has been copied to m_data, we can use
-   * this space for heap
-   */
+  /* heap in SRAM0 - unused space between end of code and keystore */
   . = ALIGN(4);
   __HeapBase_sram0 = .;
   . = _keystore_start;
@@ -177,9 +171,9 @@ SECTIONS
     __data_end__ = .;        /* define a global symbol at data end */
   } > m_data
 
+  /* RAM build: LMA == VMA, no ROM-to-RAM copy needed at startup */
   __DATA_ROM = __data_start__;
   __DATA_END = __data_start__;
-  text_end = ORIGIN(m_text) + LENGTH(m_text);
 
   /* Uninitialized data section */
   .bss :
