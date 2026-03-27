@@ -160,7 +160,8 @@ The firmware can be built on Linux.
 
 On Debian:
 ```sh
-apt install cmake ninja gcc-arm-none-eabi libnewlib-arm-none-eabi binutils-arm-none-eabi
+apt install cmake ninja-build gcc-arm-none-eabi libnewlib-arm-none-eabi \
+    binutils-arm-none-eabi python3-protobuf
 ```
 
 The cross-compiler is specified in the `toolchain.cmake` file.
@@ -174,12 +175,14 @@ and a cross-compile of the firmware.
 mkdir build-native
 cd build-native
 cmake -G Ninja ..
+ninja
 cd ..
 mkdir build
 cd build
 cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Debug -DUSE_BACKTRACE=ON \
   -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake \
   -G Ninja -Daxf2firmware_DIR=~/src/sesame/build-native ..
+ninja
 ```
 
 For hardware details see [this doc](docs/teardown.md).
