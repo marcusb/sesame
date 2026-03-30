@@ -16,7 +16,7 @@ typedef enum {
     DCM_MSG_DOOR_STATUS_UPDATE = 0x16,
     DCM_MSG_OPS_EVENT = 0x17,
     // DCM_MSG_FACTORY_TEST = 0x18,
-    DCM_MSG_DOOR_RESPONSE = 0x90,
+    DCM_MSG_DOOR_ACK = 0x90,
     DCM_MSG_ALERT_ACK = 0x91,
     DCM_MSG_AUDIO_ACK = 0x92,
     DCM_MSG_SENSOR_VERSION = 0x95,
@@ -55,24 +55,28 @@ _Static_assert(sizeof(dcm_cmd_0x04_msg_t) == 9, "msg size");
 _Static_assert(sizeof(dcm_cmd_0x04_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
-    uint8_t val;
-    char unk;
+    uint8_t val;       // 1 = open, 0 = close
+    uint8_t reserved;  // always 0
 } __attribute__((packed)) dcm_door_cmd_msg_t;
 _Static_assert(sizeof(dcm_door_cmd_msg_t) == 2, "msg size");
 _Static_assert(sizeof(dcm_door_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint8_t val;
-    uint8_t unk1;
-    uint8_t unk2;
+    // Duration of the alert in seconds. 0 = immediate/silent (used for
+    // self-test), 5 = 5-second warning before door moves.
+    uint8_t duration_s;
+    uint8_t reserved;  // always 0
 } __attribute__((packed)) dcm_alert_cmd_msg_t;
 _Static_assert(sizeof(dcm_alert_cmd_msg_t) == 3, "msg size");
 _Static_assert(sizeof(dcm_alert_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint8_t val;
-    uint8_t unk1;
-    uint8_t unk2;
+    // Duration of the tone in seconds. 0 during self-test (PIC ACKs without
+    // audible output), 5 for normal operation.
+    uint8_t duration_s;
+    uint8_t reserved;  // always 0
 } __attribute__((packed)) dcm_audio_cmd_msg_t;
 _Static_assert(sizeof(dcm_audio_cmd_msg_t) == 3, "msg size");
 _Static_assert(sizeof(dcm_audio_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
@@ -96,21 +100,27 @@ typedef struct {
     uint16_t pos;
     uint16_t up_limit;
     uint16_t down_limit;
-    uint16_t unk;
+    // Motor load reading, likely an ADC value from the motor driver.
+    // Zero when the motor is stopped; non-zero while moving. Consistently
+    // higher when going UP (~36000–38000) than DOWN (~25000–33000), reflecting
+    // the motor working against gravity when lifting. Zero on the first update
+    // of each movement; settles by the second sample.
+    uint16_t motor_current;
 } __attribute__((packed)) dcm_door_status_update_msg_t;
 _Static_assert(sizeof(dcm_door_status_update_msg_t) == 14, "msg size");
 _Static_assert(sizeof(dcm_door_status_update_msg_t) < MAX_DCM_MSG_SIZE,
                "msg size");
 
 typedef struct {
-    char unk;
+    uint8_t reserved;            // always 0
     door_open_state_t state;
     door_direction_t direction;
-    char unk2[3];
+    uint8_t model_code;          // always 0x04; identifies DCM hardware variant
+    uint8_t reserved2[2];        // always 0
     uint16_t pos;
     uint32_t time;
-    uint8_t unk3;
-    uint8_t unk4;
+    uint8_t hw_caps;             // always 0x08; hardware capability bitfield
+    uint8_t reserved3;           // always 0
     uint8_t sensor_restart_reason;
     uint8_t major;
     uint8_t minor;
@@ -123,7 +133,7 @@ _Static_assert(sizeof(dcm_sensor_version_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 typedef struct {
     uint32_t time;
     ops_event_t event;
-    char unk;
+    uint8_t reserved;  // always 0
     int16_t up_limit;
     int16_t down_limit;
 } __attribute__((packed)) dcm_ops_event_msg_t;
