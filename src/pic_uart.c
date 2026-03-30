@@ -51,7 +51,7 @@ static uint8_t next_token() {
     return seq;
 }
 
-static uint8_t calc_chk_sum(uint8_t *p, int n) {
+static uint8_t calc_chk_sum(uint8_t* p, int n) {
     if (n < 2) {
         return 0;
     }
@@ -89,10 +89,10 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
     }
 }
 
-static void handle_msg(const dcm_msg_t *msg) {
+static void handle_msg(const dcm_msg_t* msg) {
     switch (msg->type) {
         case DCM_MSG_DOOR_STATUS_UPDATE: {
-            const dcm_door_status_update_msg_t *p = &msg->payload.door_status;
+            const dcm_door_status_update_msg_t* p = &msg->payload.door_status;
             down_limit = p->down_limit;
             up_limit = p->up_limit;
             door_state_update(p->state, p->direction, p->pos);
@@ -104,7 +104,7 @@ static void handle_msg(const dcm_msg_t *msg) {
             break;
 
         case DCM_MSG_SENSOR_VERSION: {
-            const dcm_sensor_version_msg_t *p = &msg->payload.sensor_version;
+            const dcm_sensor_version_msg_t* p = &msg->payload.sensor_version;
             door_state_update(p->state, p->direction, p->pos);
             // LogDebug(("DCM sensor fw version %d.%d.%d%c", p->major, p->minor,
             //           p->patch, p->suffix));
@@ -112,7 +112,7 @@ static void handle_msg(const dcm_msg_t *msg) {
         }
 
         case DCM_MSG_OPS_EVENT: {
-            const dcm_ops_event_msg_t *p = &msg->payload.ops_event;
+            const dcm_ops_event_msg_t* p = &msg->payload.ops_event;
             LogDebug(("ops event %d", p->event));
             break;
         }
@@ -122,11 +122,11 @@ static void handle_msg(const dcm_msg_t *msg) {
     }
 }
 
-static pic_cmd_t cmd = PIC_SERIAL_DATA;
-static BaseType_t task_to_wake = pdFALSE;
+static void uart_cb(UART_Type* base, uart_handle_t* handle, status_t status,
+                    void* user_data) {
+    static pic_cmd_t cmd = PIC_SERIAL_DATA;
+    static BaseType_t task_to_wake = pdFALSE;
 
-static void uart_cb(UART_Type *base, uart_handle_t *handle, status_t status,
-                    void *user_data) {
     if (status == kStatus_UART_RxIdle) {
         xQueueSendToBackFromISR(pic_queue, &cmd, &task_to_wake);
         portYIELD_FROM_ISR(task_to_wake);
@@ -143,7 +143,7 @@ static void start_uart_read() {
 }
 
 static void process_serial_data() {
-    const dcm_msg_t *msg = (const dcm_msg_t *)rx_buf;
+    const dcm_msg_t* msg = (const dcm_msg_t*)rx_buf;
     if (read_state == READ_HEADER) {
         last_read_tick = xTaskGetTickCount();
         // we have the first 4 bytes
@@ -200,10 +200,10 @@ static int init_uart(void) {
     return 0;
 }
 
-static void send_msg(dcm_msg_t *msg) {
+static void send_msg(dcm_msg_t* msg) {
     // 4 bytes header, 1 byte checksum
     int frame_len = msg->len + 5;
-    uint8_t *p = (uint8_t *)msg;
+    uint8_t* p = (uint8_t*)msg;
     msg->payload.buf[msg->len] = calc_chk_sum(p, frame_len);
     debug_hexdump('T', p, frame_len);
     status_t res = UART_WriteBlocking(UART1, p, frame_len);
@@ -217,7 +217,7 @@ static void alert_cmd(uint8_t val) {
                      sizeof(dcm_alert_cmd_msg_t),
                      next_token(),
                      DCM_MSG_ALERT_CMD,
-                     {.alert_cmd = {val, 5}}};
+                     {.alert_cmd = {val, 5, 0}}};
     send_msg(&msg);
 }
 
@@ -265,7 +265,7 @@ static void cmd_0x04() {
     send_msg(&msg);
 }
 
-void pic_uart_task(void *const params) {
+void pic_uart_task(void* const params) {
     LogInfo(("PIC comm task running"));
     pic_queue = (QueueHandle_t)params;
 

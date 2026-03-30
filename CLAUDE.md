@@ -203,6 +203,38 @@ arm-none-eabi-gdb build/sesame.axf
 (gdb) target remote :3333  # OpenOCD listening on 3333
 ```
 
+### Unit Tests
+
+On-device unit tests use the [Unity](https://github.com/ThrowTheSwitch/Unity) framework.
+Tests run on the ARM Cortex-M4 target via JTAG RAM load (no flash write required).
+
+**Build:**
+```sh
+ninja -C build test/sesame_tests.axf
+```
+
+**Run:**
+```sh
+./tools/OpenOCD/ramload.py build/test/sesame_tests.axf
+```
+
+**Monitor output:**
+```sh
+python3 -m serial.tools.miniterm /dev/ttyUSB0 115200
+```
+
+Each test prints immediately as it executes:
+```
+test/test_string_util.c:14:test_strtcpy_zero_dsize:PASS
+test/test_string_util.c:27:test_strtcpy_normal:PASS
+...
+25 Tests 0 Failures 0 Ignored
+OK
+TEST_RESULT:0
+```
+
+`TEST_RESULT:0` = all passed. The test sources are in `test/`.
+
 ### Integration Testing
 
 **Test boot sequence** – Verify device starts and connects:

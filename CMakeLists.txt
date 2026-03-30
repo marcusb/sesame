@@ -381,6 +381,8 @@ target_link_options("${exe_target_ram}"
     "-Wl,-Map,${exe_target_ram}.map"
     "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")
 
+add_subdirectory(test)
+
 add_custom_command(
     TARGET ${exe_target} POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E remove "${exe_target}.bin"

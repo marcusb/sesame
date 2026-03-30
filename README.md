@@ -148,6 +148,35 @@ Diagnostic LED patterns:
 Pressing teh WiFi button starts the built-in access point (SSID `Sesame`, no password).
 This is useful if you accidentally applied a bad network configuration.
 
+## Unit Tests
+
+The test binary runs on-device using the [Unity](https://github.com/ThrowTheSwitch/Unity) framework.
+Tests cover `string_util`, `util`, `logging`, `config_manager`, and `pic_uart`.
+
+**Build:**
+```sh
+ninja -C build test/sesame_tests.axf
+```
+
+**Run** (loads to RAM via JTAG, no flash write):
+```sh
+./tools/OpenOCD/ramload.py build/test/sesame_tests.axf
+```
+
+**Monitor output** on serial:
+```sh
+python3 -m serial.tools.miniterm /dev/ttyUSB0 115200
+```
+
+Expected output ends with:
+```
+25 Tests 0 Failures 0 Ignored
+OK
+TEST_RESULT:0
+```
+
+`TEST_RESULT:0` means all tests passed. Any non-zero value indicates failures.
+
 ## Development
 
 The firmware can be built on Linux.
