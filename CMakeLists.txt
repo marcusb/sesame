@@ -8,9 +8,6 @@ project(
 set(mw320_sdk_dir "${CMAKE_CURRENT_LIST_DIR}/mw320_sdk")
 
 if(CMAKE_CROSSCOMPILING)
-# Needed for CMake's test compilation check
-set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-
 set(CMAKE_BUILD_TYPE Debug)
 
 option(USE_BACKTRACE "Include facility for dumping stack traces" ON)
