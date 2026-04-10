@@ -93,7 +93,7 @@ if (USE_BACKTRACE)
         "${CMAKE_CURRENT_SOURCE_DIR}/libraries/backtrace/include")
     target_link_libraries(backtrace
         PRIVATE globals)
-    target_link_libraries(app_shared PRIVATE backtrace)
+    target_link_libraries(app_shared PUBLIC backtrace)
     target_compile_options(globals
         INTERFACE
         "-funwind-tables"
@@ -311,8 +311,6 @@ target_sources(app_shared
     "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/gpio.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
@@ -364,6 +362,8 @@ target_link_options(app_shared
 add_executable("${exe_target}")
 target_sources("${exe_target}"
     PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/newlib_wrappers.c")
 target_link_libraries("${exe_target}" PRIVATE app_shared)
 target_link_options("${exe_target}"
@@ -374,6 +374,8 @@ target_link_options("${exe_target}"
 add_executable("${exe_target_ram}")
 target_sources("${exe_target_ram}"
     PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/newlib_wrappers.c")
 target_link_libraries("${exe_target_ram}" PRIVATE app_shared)
 target_link_options("${exe_target_ram}"
