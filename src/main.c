@@ -442,7 +442,7 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                 tasks_created = true;
                 configure_logging(&app_config.logging_config.syslog_config);
                 xTaskCreate(mqtt_task, "MQTT", 512, &app_config.mqtt_config,
-                            tskIDLE_PRIORITY + 4, NULL);
+                            tskIDLE_PRIORITY, NULL);
             }
         } else if (endpoint->pxNetworkInterface == &uap_iface) {
             static dhcp_task_params_t dhcp_params;
