@@ -112,7 +112,8 @@ static void handle_promote_update() {
 static void send_status(const http_request_t* req, int status) {
     int len = snprintf(req->buf, BUF_SIZE,
                        "HTTP/1.1 %d %s\r\n"
-                       "Connection: close\r\n",
+                       "Connection: close\r\n"
+                       "\r\n",
                        status, status_desc(status));
     FreeRTOS_send(req->socket, req->buf, len, 0);
 }
@@ -293,7 +294,7 @@ static void request_task(void* params) {
                         goto close_conn;
                     }
             }
-        } else if (res < 0) {
+        } else if (res <= 0) {
             goto err;
         }
     }

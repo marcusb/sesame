@@ -6,6 +6,7 @@
 .vscode/
 # Ignore build results
 /build/
+/build-host/
 /build-native/
 [Dd]ebug/
 [Dd]ebugPublic/
@@ -30,3 +31,5 @@ CWSettingsWindows.stg
 *.rom
 
 .claude
+
+*.pyc

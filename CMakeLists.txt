@@ -7,6 +7,8 @@ project(
 
 set(mw320_sdk_dir "${CMAKE_CURRENT_LIST_DIR}/mw320_sdk")
 
+option(BUILD_HOST_TESTS "Build host-based module tests (native build)" ON)
+
 if(CMAKE_CROSSCOMPILING)
 set(CMAKE_BUILD_TYPE Debug)
 
@@ -136,6 +138,17 @@ FetchContent_Declare(freertos_plus_tcp
     GIT_TAG        V4.3.1
 )
 FetchContent_MakeAvailable(freertos_plus_tcp freertos_kernel)
+
+# TCP checksum fix: https://github.com/FreeRTOS/FreeRTOS-Plus-TCP/pull/1332
+execute_process(
+    COMMAND patch -p1 -N
+        -i "${CMAKE_SOURCE_DIR}/patches/freertos_plus_tcp_ipv4_checksum.patch"
+    WORKING_DIRECTORY "${freertos_plus_tcp_SOURCE_DIR}"
+    RESULT_VARIABLE _patch_result
+    OUTPUT_QUIET ERROR_QUIET)
+if(_patch_result GREATER 1)
+    message(FATAL_ERROR "Failed to apply FreeRTOS-Plus-TCP checksum patch (exit ${_patch_result})")
+endif()
 
 target_sources(freertos_kernel
     PRIVATE
@@ -382,6 +395,19 @@ target_link_options("${exe_target_ram}"
 
 add_subdirectory(test)
 
+include(ExternalProject)
+ExternalProject_Add(host_tests
+    SOURCE_DIR      "${CMAKE_SOURCE_DIR}"
+    BINARY_DIR      "${CMAKE_BINARY_DIR}/host-tests"
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND
+        "${CMAKE_COMMAND}" -G Ninja -DBUILD_HOST_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+            -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/host-tests"
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/host-tests" --target host_tests
+    INSTALL_COMMAND ""
+    BUILD_ALWAYS    TRUE
+)
+
 add_custom_command(
     TARGET ${exe_target} POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E remove "${exe_target}.bin"
@@ -396,21 +422,26 @@ find_package(axf2firmware)
 else()
 
 # native build
-add_executable(axf2firmware)
-target_sources(axf2firmware
-    PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/tools/axf2firmware/axf2firmware.c")
-target_include_directories(axf2firmware
-    PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/tools/axf2firmware")
-target_compile_options(axf2firmware
-    PRIVATE
-    "-Wall")
-target_compile_definitions(axf2firmware
-    PRIVATE
-    AXF_BUILT_BY_ARM_GCC)
-target_link_libraries(axf2firmware
-    PRIVATE)
-export(TARGETS axf2firmware FILE
-    "${CMAKE_BINARY_DIR}/axf2firmware-config.cmake")
+if(BUILD_HOST_TESTS)
+    enable_testing()
+    add_subdirectory(test/host)
+else()
+    add_executable(axf2firmware)
+    target_sources(axf2firmware
+        PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/axf2firmware/axf2firmware.c")
+    target_include_directories(axf2firmware
+        PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/axf2firmware")
+    target_compile_options(axf2firmware
+        PRIVATE
+        "-Wall")
+    target_compile_definitions(axf2firmware
+        PRIVATE
+        AXF_BUILT_BY_ARM_GCC)
+    target_link_libraries(axf2firmware
+        PRIVATE)
+    export(TARGETS axf2firmware FILE
+        "${CMAKE_BINARY_DIR}/axf2firmware-config.cmake")
+endif()
 endif()

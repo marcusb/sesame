@@ -235,6 +235,37 @@ TEST_RESULT:0
 
 `TEST_RESULT:0` = all passed. The test sources are in `test/`.
 
+### Host Tests
+
+Board-independent modules can be tested on the host without hardware.
+Tests run FreeRTOS + FreeRTOS-Plus-TCP via the POSIX kernel port and libslirp user-mode NIC,
+driven by pytest from outside the process over real TCP/UDP.
+
+**Prerequisites (Debian/Ubuntu):**
+```sh
+apt install libslirp-dev python3-uv
+```
+
+Host tests build automatically as part of the normal ARM build — `ninja -C build` builds them alongside the firmware via `ExternalProject_Add` into `build/host-tests/`.
+
+To run the tests:
+```sh
+cd test/host && uv run pytest
+```
+
+Or via CTest:
+```sh
+ctest --test-dir build/host-tests --output-on-failure
+```
+
+To configure the host tests standalone (without the ARM toolchain):
+```sh
+cmake -B build-host -G Ninja
+ninja -C build-host host_tests
+```
+
+The test sources are in `test/host/`. Each binary boots a minimal FreeRTOS+TCP stack, starts the module under test, and exposes a real TCP/UDP endpoint via libslirp port forwarding.
+
 ### Integration Testing
 
 **Test boot sequence** – Verify device starts and connects:

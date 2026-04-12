@@ -212,7 +212,7 @@ static bool agent_release_cmd(MQTTAgentCommand_t* cmd) {
     return true;
 }
 
-static unsigned long current_time_ms() { return tick_ms(); }
+static uint32_t current_time_ms() { return tick_ms(); }
 
 /**
  * @brief Initializes an MQTT context, including transport interface and
@@ -396,7 +396,6 @@ static BaseType_t socket_connect(const char* host, uint16_t port,
     BaseType_t xConnected = pdFAIL;
     BackoffAlgorithmStatus_t backoff_status = BackoffAlgorithmSuccess;
     BackoffAlgorithmContext_t reconnect_params = {0};
-    const TickType_t xTransportTimeout = 0UL;
 
     PlaintextTransportStatus_t xNetworkStatus =
         PLAINTEXT_TRANSPORT_CONNECT_FAILURE;
@@ -442,8 +441,9 @@ static BaseType_t socket_connect(const char* host, uint16_t port,
                                   (void*)prvMQTTClientSocketWakeupCallback,
                                   sizeof(&(prvMQTTClientSocketWakeupCallback)));
 
+        const TickType_t xRcvTimeout = pdMS_TO_TICKS(1);
         (void)FreeRTOS_setsockopt(pxNetworkContext->pParams->tcpSocket, 0,
-                                  FREERTOS_SO_RCVTIMEO, &xTransportTimeout,
+                                  FREERTOS_SO_RCVTIMEO, &xRcvTimeout,
                                   sizeof(TickType_t));
     }
 
@@ -539,13 +539,22 @@ static void publish(const char* topic, const char* payload, bool retain) {
         LogInfo(("MQTT not initialized, skipping pub"));
         return;
     }
-    MQTTAgentCommandInfo_t command_params = {NULL, NULL,
+
+    MQTTAgentCommandContext_t ctx = {0, xTaskGetCurrentTaskHandle(), 0};
+    MQTTAgentCommandInfo_t command_params = {subscribe_cb, (void*)&ctx,
                                              MAX_COMMAND_SEND_BLOCK_TIME_MS};
     MQTTPublishInfo_t publish_info = {MQTTQoS0,       retain,        false,
                                       topic,          strlen(topic), payload,
                                       strlen(payload)};
 
-    MQTTAgent_Publish(&mqtt_agent_context, &publish_info, &command_params);
+    xTaskNotifyStateClear(NULL);
+    MQTTStatus_t res =
+        MQTTAgent_Publish(&mqtt_agent_context, &publish_info, &command_params);
+    if (res == MQTTSuccess) {
+        xTaskNotifyWait(0, 0, NULL, pdMS_TO_TICKS(NOTIFICATION_WAIT_MS));
+    } else {
+        LogError(("MQTTAgent_Publish failed with status %d", res));
+    }
 }
 
 void publish_state(const door_state_msg_t* msg) {

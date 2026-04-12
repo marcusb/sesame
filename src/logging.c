@@ -83,7 +83,10 @@ static void log_prepare(uint8_t log_level, const char *filename,
     }
     strtcpy(log.task_name, task_name, sizeof(log.task_name));
 
-    int n = vsnprintf(NULL, 0, fmt, args);
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int n = vsnprintf(NULL, 0, fmt, args_copy);
+    va_end(args_copy);
     if (n < 0) {
         return;
     }

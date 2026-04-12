@@ -57,6 +57,10 @@ target_link_libraries(sesame_tests
     mw320_utility_assert
     test_stubs)
 
+if(USE_BACKTRACE)
+    target_link_libraries(sesame_tests PRIVATE backtrace)
+endif()
+
 target_link_options(sesame_tests
     PRIVATE
     "-Wl,-Map,sesame_tests.map"

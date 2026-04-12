@@ -3,7 +3,10 @@
 // FreeRTOS
 #include "FreeRTOS.h"
 #include "FreeRTOS_IP.h"
+#include "FreeRTOS_IP_Utils.h"
 #include "FreeRTOS_Sockets.h"
+
+extern const char* pcApplicationHostnameHook(void);
 
 // Application
 
@@ -16,8 +19,8 @@
 static struct freertos_sockaddr udp_log_addr;
 static Socket_t syslog_sock = FREERTOS_INVALID_SOCKET;
 
-static void do_configure(void *p1, uint32_t p2) {
-    const SyslogConfig *cfg = (const SyslogConfig *)p1;
+static void do_configure(void* p1, uint32_t p2) {
+    const SyslogConfig* cfg = (const SyslogConfig*)p1;
 
     uint32_t host_ip = FreeRTOS_gethostbyname(cfg->syslog_host);
     if (!host_ip) {
@@ -40,17 +43,17 @@ static void do_configure(void *p1, uint32_t p2) {
     }
 }
 
-void configure_logging(const SyslogConfig *cfg) {
+void configure_logging(const SyslogConfig* cfg) {
     if (!cfg->enabled) {
         return;
     }
 
     // Schedule socket creation because this function is called from the IP task
     // and the IP task cannot itself wait for a socket to bind.
-    xTimerPendFunctionCall(do_configure, (void *)cfg, 0, 100);
+    xTimerPendFunctionCall(do_configure, (void*)cfg, 0, 100);
 }
 
-void log_syslog(const log_msg_t *log) {
+void log_syslog(const log_msg_t* log) {
     // allocate some extra space for metadata
     char buf[strlen(log->msg) + 64];
     static const int severities[] = {7, 3, 4, 6, 7};
@@ -58,7 +61,7 @@ void log_syslog(const log_msg_t *log) {
     int severity = severities[log->level];
     int pri = (LOG_FACILITY_LOCAL0 << 3) + severity;
 
-    char *p = buf;
+    char* p = buf;
     int remaining = sizeof(buf);
     int n = snprintf(p, remaining, "<%03d>1 ", pri);
     if (n < 0 || n >= remaining) {

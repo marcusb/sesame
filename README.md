@@ -148,10 +148,27 @@ Diagnostic LED patterns:
 Pressing teh WiFi button starts the built-in access point (SSID `Sesame`, no password).
 This is useful if you accidentally applied a bad network configuration.
 
-## Unit Tests
+## Tests
 
-The test binary runs on-device using the [Unity](https://github.com/ThrowTheSwitch/Unity) framework.
-Tests cover `string_util`, `util`, `logging`, `config_manager`, and `pic_uart`.
+### Host tests
+
+Board-independent modules are tested on the host without hardware.
+Tests run FreeRTOS+TCP natively via the POSIX port and libslirp, driven by pytest over real TCP/UDP.
+
+Prerequisites:
+```sh
+apt install libslirp-dev python3-uv
+```
+
+Host tests build automatically with `ninja`. To run them:
+```sh
+cd test/host && uv run pytest
+```
+
+### On-device unit tests
+
+The on-device test binary uses the [Unity](https://github.com/ThrowTheSwitch/Unity) framework and
+covers `string_util`, `util`, `logging`, `config_manager`, and `pic_uart`.
 
 **Build:**
 ```sh
@@ -175,7 +192,7 @@ OK
 TEST_RESULT:0
 ```
 
-`TEST_RESULT:0` means all tests passed. Any non-zero value indicates failures.
+`TEST_RESULT:0` means all tests passed.
 
 ## Development
 
