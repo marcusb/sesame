@@ -78,6 +78,11 @@ static TransportInterface_t transport = {
 static uint32_t next_msg_id;
 static bool mqtt_initialized;
 
+typedef struct {
+    MQTTPublishInfo_t publish_info;
+    char data[]; // Flexible array member for topic and payload strings
+} AsyncPublishContext_t;
+
 /**
  * @brief Dimensions the buffer used to serialize and deserialize MQTT packets.
  * @note Specified in bytes.  Must be large enough to hold the maximum
@@ -534,26 +539,54 @@ static void agent_task(void* params) {
     } while (status != MQTTSuccess);
 }
 
+static void async_publish_cb(MQTTAgentCommandContext_t* ctx,
+                             MQTTAgentReturnInfo_t* return_info) {
+    if (return_info->returnCode != MQTTSuccess) {
+        LogError(("Async publish failed with status %d", return_info->returnCode));
+    }
+    vPortFree(ctx);
+}
+
 static void publish(const char* topic, const char* payload, bool retain) {
     if (!mqtt_initialized) {
         LogInfo(("MQTT not initialized, skipping pub"));
         return;
     }
 
-    MQTTAgentCommandContext_t ctx = {0, xTaskGetCurrentTaskHandle(), 0};
-    MQTTAgentCommandInfo_t command_params = {subscribe_cb, (void*)&ctx,
-                                             MAX_COMMAND_SEND_BLOCK_TIME_MS};
-    MQTTPublishInfo_t publish_info = {MQTTQoS0,       retain,        false,
-                                      topic,          strlen(topic), payload,
-                                      strlen(payload)};
+    size_t topic_len = strlen(topic);
+    size_t payload_len = strlen(payload);
+    size_t alloc_size =
+        sizeof(AsyncPublishContext_t) + topic_len + 1 + payload_len + 1;
 
-    xTaskNotifyStateClear(NULL);
-    MQTTStatus_t res =
-        MQTTAgent_Publish(&mqtt_agent_context, &publish_info, &command_params);
-    if (res == MQTTSuccess) {
-        xTaskNotifyWait(0, 0, NULL, pdMS_TO_TICKS(NOTIFICATION_WAIT_MS));
-    } else {
-        LogError(("MQTTAgent_Publish failed with status %d", res));
+    AsyncPublishContext_t* ctx = pvPortMalloc(alloc_size);
+    if (ctx == NULL) {
+        LogError(("Failed to allocate memory for async publish"));
+        return;
+    }
+
+    char* topic_ptr = ctx->data;
+    char* payload_ptr = ctx->data + topic_len + 1;
+    strcpy(topic_ptr, topic);
+    strcpy(payload_ptr, payload);
+
+    ctx->publish_info.qos = MQTTQoS0;
+    ctx->publish_info.retain = retain;
+    ctx->publish_info.dup = false;
+    ctx->publish_info.pTopicName = topic_ptr;
+    ctx->publish_info.topicNameLength = (uint16_t)topic_len;
+    ctx->publish_info.pPayload = payload_ptr;
+    ctx->publish_info.payloadLength = payload_len;
+
+    MQTTAgentCommandInfo_t command_params = {
+        .cmdCompleteCallback = async_publish_cb,
+        .pCmdCompleteCallbackContext = (MQTTAgentCommandContext_t*)ctx,
+        .blockTimeMs = MAX_COMMAND_SEND_BLOCK_TIME_MS};
+
+    MQTTStatus_t res = MQTTAgent_Publish(&mqtt_agent_context,
+                                         &(ctx->publish_info), &command_params);
+    if (res != MQTTSuccess) {
+        LogError(("MQTTAgent_Publish failed to enqueue: %d", res));
+        vPortFree(ctx);
     }
 }
 

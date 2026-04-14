@@ -95,13 +95,10 @@ class _Conn:
                 pass
 
     async def _loop(self):
-        print(f"[BROKER] started loop for {self.writer.get_extra_info('peername')}")
         while True:
             try:
                 ptype, body = await _read_packet(self.reader)
-                print(f"[BROKER] read packet type {ptype >> 4} body len {len(body)}")
             except asyncio.IncompleteReadError:
-                print(f"[BROKER] connection closed by peer")
                 return
             cmd = ptype >> 4
             if cmd == 1:
