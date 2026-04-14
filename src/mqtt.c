@@ -60,6 +60,8 @@ static char cmd_topic[64];
 static const char* LWT_ONLINE = "Online";
 static const char* LWT_OFFLINE = "Offline";
 
+static void publish(const char* topic, const char* payload, bool retain);
+
 struct NetworkContext {
     PlaintextTransportParams_t* pParams;
 };
@@ -116,14 +118,15 @@ typedef struct {
 
 /**
  * @brief The maximum number of retries for network operation with server.
+ * Set to a large value to effectively retry forever.
  */
-#define RETRY_MAX_ATTEMPTS (5U)
+#define RETRY_MAX_ATTEMPTS (BACKOFF_ALGORITHM_RETRY_FOREVER)
 
 /**
  * @brief The maximum back-off delay (in milliseconds) for retrying failed
  * operation with server.
  */
-#define RETRY_MAX_BACKOFF_DELAY_MS (5000U)
+#define RETRY_MAX_BACKOFF_DELAY_MS (30000U)
 
 /**
  * @brief The base back-off delay (in milliseconds) to use for network
@@ -237,9 +240,11 @@ static MQTTStatus_t mqtt_init(void) {
         .getCommand = agent_get_cmd,
         .releaseCommand = agent_release_cmd};
 
-    xCommandQueue.queue = xQueueCreate(MQTT_AGENT_COMMAND_QUEUE_LENGTH,
-                                       sizeof(MQTTAgentCommand_t*));
-    configASSERT(xCommandQueue.queue);
+    if (xCommandQueue.queue == NULL) {
+        xCommandQueue.queue = xQueueCreate(MQTT_AGENT_COMMAND_QUEUE_LENGTH,
+                                           sizeof(MQTTAgentCommand_t*));
+        configASSERT(xCommandQueue.queue);
+    }
     messageInterface.pMsgCtx = &xCommandQueue;
 
     /* Initialize MQTT library. */
@@ -399,7 +404,6 @@ static void prvMQTTClientSocketWakeupCallback(Socket_t pxSocket) {
 static BaseType_t socket_connect(const char* host, uint16_t port,
                                  NetworkContext_t* pxNetworkContext) {
     BaseType_t xConnected = pdFAIL;
-    BackoffAlgorithmStatus_t backoff_status = BackoffAlgorithmSuccess;
     BackoffAlgorithmContext_t reconnect_params = {0};
 
     PlaintextTransportStatus_t xNetworkStatus =
@@ -419,24 +423,15 @@ static BaseType_t socket_connect(const char* host, uint16_t port,
 
         if (!xConnected) {
             uint16_t backoff;
-            backoff_status = BackoffAlgorithm_GetNextBackoff(&reconnect_params,
-                                                             rand(), &backoff);
+            (void)BackoffAlgorithm_GetNextBackoff(&reconnect_params, rand(),
+                                                  &backoff);
 
-            if (backoff_status == BackoffAlgorithmSuccess) {
-                LogWarn(
-                    ("Connection to the broker failed. "
+            LogWarn(("Connection to the broker failed. "
                      "Retrying connection in %hu ms.",
                      backoff));
-                vTaskDelay(pdMS_TO_TICKS(backoff));
-            }
+            vTaskDelay(pdMS_TO_TICKS(backoff));
         }
-
-        if (backoff_status == BackoffAlgorithmRetriesExhausted) {
-            LogError(
-                ("Connection to the broker failed, all attempts exhausted."));
-        }
-    } while ((xConnected != pdPASS) &&
-             (backoff_status == BackoffAlgorithmSuccess));
+    } while (xConnected != pdPASS);
 
     /* Set the socket wakeup callback and ensure the read block time. */
     if (xConnected) {
@@ -484,22 +479,26 @@ static BaseType_t socket_disconnect(NetworkContext_t* pxNetworkContext) {
  * connection to the same.
  */
 static void connect_broker(const MqttConfig* cfg) {
-    BaseType_t xNetworkStatus = pdFAIL;
-    MQTTStatus_t xMQTTStatus;
-
-    /* Connect a TCP socket to the broker. */
-    xNetworkStatus =
-        socket_connect(cfg->broker_host, cfg->broker_port, &network_context);
-    configASSERT(xNetworkStatus == pdPASS);
-
     /* Initialize the MQTT context with the buffer and transport interface.
      */
-    xMQTTStatus = mqtt_init();
+    MQTTStatus_t xMQTTStatus = mqtt_init();
     configASSERT(xMQTTStatus == MQTTSuccess);
 
-    /* Form an MQTT connection without a persistent session. */
-    xMQTTStatus = mqtt_connect(cfg, true);
-    configASSERT(xMQTTStatus == MQTTSuccess);
+    while (true) {
+        /* Connect a TCP socket to the broker. socket_connect will block until
+         * success. */
+        (void)socket_connect(cfg->broker_host, cfg->broker_port,
+                             &network_context);
+
+        /* Form an MQTT connection without a persistent session. */
+        if (mqtt_connect(cfg, true) == MQTTSuccess) {
+            break;
+        }
+
+        LogWarn(("MQTT connection failed, retrying..."));
+        (void)socket_disconnect(&network_context);
+        vTaskDelay(pdMS_TO_TICKS(RETRY_BACKOFF_BASE_MS));
+    }
 }
 
 static void agent_task(void* params) {
@@ -510,33 +509,39 @@ static void agent_task(void* params) {
     do {
         /* MQTTAgent_CommandLoop() is effectively the agent implementation.
          * It will manage the MQTT protocol until such time that an error
-         * occurs, which could be a disconnect.  If an error occurs the MQTT
-         * context on which the error happened is returned so there can be
-         * an attempt to clean up and reconnect however the application
-         * writer prefers. */
+         * occurs, which could be a disconnect. */
         status = MQTTAgent_CommandLoop(&mqtt_agent_context);
-        BaseType_t res = pdFAIL;
 
-        /* Success is returned for disconnect or termination. The socket
-         * should be disconnected. */
-        if (status == MQTTSuccess) {
-            /* MQTT Disconnect. Disconnect the socket. */
-            res = socket_disconnect(&network_context);
-        }
-        /* Error. */
-        else {
-            /* Reconnect TCP. */
-            res = socket_disconnect(&network_context);
-            configASSERT(res == pdPASS);
-            res = socket_connect(cfg->broker_host, cfg->broker_port,
-                                 &network_context);
-            configASSERT(res == pdPASS);
-            pMqttContext->connectStatus = MQTTNotConnected;
-            /* MQTT Connect with a persistent session. */
-            MQTTStatus_t xConnectStatus = mqtt_connect(cfg, false);
-            configASSERT(xConnectStatus == MQTTSuccess);
+        /* Reconnect if there was an error. Success is returned for graceful
+         * disconnect or termination. */
+        if (status != MQTTSuccess) {
+            LogWarn(("MQTT agent disconnected, reconnecting..."));
+            (void)socket_disconnect(&network_context);
+
+            /* MQTTAgent_CancelAll() will drain the queue and any pending ACKs,
+             * and invoke the completion callbacks with MQTTRecvFailed.
+             * This ensures that our heap-allocated async contexts are freed. */
+            (void)MQTTAgent_CancelAll(&mqtt_agent_context);
+
+            while (true) {
+                /* socket_connect will block until success. */
+                (void)socket_connect(cfg->broker_host, cfg->broker_port,
+                                     &network_context);
+                pMqttContext->connectStatus = MQTTNotConnected;
+
+                /* MQTT Connect with a persistent session. */
+                if (mqtt_connect(cfg, false) == MQTTSuccess) {
+                    LogInfo(("MQTT reconnected"));
+                    publish(lwt_topic, LWT_ONLINE, true);
+                    break;
+                }
+                LogWarn(("MQTT reconnection failed, retrying..."));
+                (void)socket_disconnect(&network_context);
+                vTaskDelay(pdMS_TO_TICKS(RETRY_BACKOFF_BASE_MS));
+            }
         }
     } while (status != MQTTSuccess);
+    (void)socket_disconnect(&network_context);
 }
 
 static void async_publish_cb(MQTTAgentCommandContext_t* ctx,
@@ -647,7 +652,7 @@ void mqtt_task(void* params) {
     snprintf(cmd_topic, sizeof(cmd_topic), "%s/cmd", prefix);
 
     connect_broker(cfg);
-    xTaskCreate(agent_task, "MQTT-Agent", 512, NULL, tskIDLE_PRIORITY + 4,
+    xTaskCreate(agent_task, "MQTT-Agent", 1024, NULL, tskIDLE_PRIORITY + 4,
                 NULL);
     mqtt_initialized = true;
     publish(lwt_topic, LWT_ONLINE, true);

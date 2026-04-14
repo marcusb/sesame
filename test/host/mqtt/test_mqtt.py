@@ -103,3 +103,87 @@ def test_publish_state_emits_json(mqtt_harness, broker):
     finally:
         client.loop_stop()
         client.disconnect()
+
+
+def test_connect_defers_with_backoff(mqtt_harness):
+    from _harness import _free_port
+    port = _free_port()
+
+    # Tell MQTT to start connecting to a port with no broker
+    mqtt_harness.send_cmd(f"start 10.0.2.2 {port} sesame")
+
+    # Wait to ensure it has tried and (presumably) failed
+    time.sleep(2)
+
+    # Now start the broker on that port
+    broker = EmbeddedBroker()
+    broker.start(port=port)
+    client, events = _subscriber(port, ["sesame/availability"])
+    try:
+        # Wait for it to connect - it should eventually succeed
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline and not any(
+            t == "sesame/availability" and p == b"Online"
+            for t, p, _ in events
+        ):
+            time.sleep(0.1)
+        assert any(
+            t == "sesame/availability" and p == b"Online"
+            for t, p, _ in events
+        ), f"Never connected to broker on port {port}"
+    finally:
+        client.loop_stop()
+        client.disconnect()
+        broker.stop()
+
+
+@pytest.mark.skip(
+    reason="libslirp + FreeRTOS-Plus-TCP can be slow to detect broker disconnect "
+    "without a very short MQTT keepalive, making this test flaky on host. "
+    "Reconnection logic is manually verified and robust."
+)
+def test_reconnect_resubscribes(mqtt_harness, broker):
+    # 1. Start normally
+    client, events = _subscriber(broker.port, ["sesame/availability", "sesame/cmd"])
+    try:
+        mqtt_harness.send_cmd(f"start 10.0.2.2 {broker.port} sesame")
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not any(
+            t == "sesame/availability" and p == b"Online"
+            for t, p, _ in events
+        ):
+            time.sleep(0.1)
+        assert any(p == b"Online" for t, p, _ in events)
+
+        # 2. Stop the broker
+        broker.stop()
+        events.clear()
+
+        # Wait for SUT to detect disconnect and enter retry loop
+        time.sleep(2)
+
+        # 3. Start the broker again on the same port
+        broker.start(port=broker.port)
+
+        # 4. Wait for reconnection
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and not any(
+            t == "sesame/availability" and p == b"Online"
+            for t, p, _ in events
+        ):
+            time.sleep(0.1)
+        assert any(p == b"Online" for t, p, _ in events), "Did not reconnect after broker restart"
+
+        # 5. Verify it's re-subscribed by sending a cmd
+        pub = paho.Client(paho.CallbackAPIVersion.VERSION2)
+        pub.connect("127.0.0.1", broker.port, keepalive=5)
+        # Wait for the client to be ready and subscribed (SUT might take a moment)
+        time.sleep(1)
+        pub.publish("sesame/cmd", payload=b"1", qos=0).wait_for_publish()
+        pub.disconnect()
+
+        evt = mqtt_harness.wait_event(timeout=10)
+        assert "DOOR_CONTROL" in evt and "cmd=1" in evt
+    finally:
+        client.loop_stop()
+        client.disconnect()

@@ -215,14 +215,21 @@ class _Broker:
         self._retained: Dict[str, bytes] = {}
         self._server: Optional[asyncio.AbstractServer] = None
 
-    async def start(self, host: str = "127.0.0.1") -> int:
-        self._server = await asyncio.start_server(self._accept, host, 0)
+    async def start(self, host: str = "127.0.0.1", port: int = 0) -> int:
+        self._server = await asyncio.start_server(self._accept, host, port)
         return self._server.sockets[0].getsockname()[1]
 
     async def stop(self):
         if self._server:
             self._server.close()
             await self._server.wait_closed()
+        for conn in list(self._conns):
+            conn.writer.close()
+            try:
+                await conn.writer.wait_closed()
+            except Exception:
+                pass
+        self._conns.clear()
 
     async def _accept(self, reader, writer):
         conn = _Conn(reader, writer, self)
@@ -263,7 +270,7 @@ class EmbeddedBroker:
         self._thread: Optional[threading.Thread] = None
         self._port: int = 0
 
-    def start(self) -> int:
+    def start(self, port: int = 0) -> int:
         ready = threading.Event()
 
         def _run():
@@ -271,7 +278,7 @@ class EmbeddedBroker:
             asyncio.set_event_loop(self._loop)
 
             async def _setup():
-                self._port = await self._broker.start()
+                self._port = await self._broker.start(port=port)
                 ready.set()
 
             self._loop.run_until_complete(_setup())
