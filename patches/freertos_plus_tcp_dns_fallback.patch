@@ -1,0 +1,52 @@
+--- a/source/FreeRTOS_DNS.c
++++ b/source/FreeRTOS_DNS.c
+@@ -1050,6 +1050,49 @@
+                     break;
+                 }
+             }
++
++            /* If no end-point was found with the preferred family,
++             * then look for any end-point that has a DNS server. */
++            if( pxEndPoint == NULL )
++            {
++                for( pxEndPoint = FreeRTOS_FirstEndPoint( NULL );
++                     pxEndPoint != NULL;
++                     pxEndPoint = FreeRTOS_NextEndPoint( NULL, pxEndPoint ) )
++                {
++#if ( ipconfigUSE_IPv4 != 0 )
++                    if( pxEndPoint->bits.bIPv6 == 0U )
++                    {
++                        uint32_t ulIPAddress;
++                        uint8_t ucIndex = pxEndPoint->ipv4_settings.ucDNSIndex;
++                        ulIPAddress = pxEndPoint->ipv4_settings.ulDNSServerAddresses[ ucIndex ];
++
++                        if( ( ulIPAddress != 0U ) && ( ulIPAddress != ipBROADCAST_IP_ADDRESS ) )
++                        {
++                            pxAddress->sin_family = FREERTOS_AF_INET;
++                            pxAddress->sin_len = ( uint8_t ) sizeof( struct freertos_sockaddr );
++                            pxAddress->sin_address.ulIP_IPv4 = ulIPAddress;
++                            break;
++                        }
++                    }
++#endif
++#if ( ipconfigUSE_IPv6 != 0 )
++                    if( pxEndPoint->bits.bIPv6 != 0U )
++                    {
++                        const uint8_t * ucBytes;
++                        uint8_t ucIndex = pxEndPoint->ipv6_settings.ucDNSIndex;
++                        ucBytes = pxEndPoint->ipv6_settings.xDNSServerAddresses[ ucIndex ].ucBytes;
++
++                        if( ( ucBytes[ 0 ] != 0U ) && ( ucBytes[ 1 ] != 0U ) )
++                        {
++                            pxAddress->sin_family = FREERTOS_AF_INET6;
++                            pxAddress->sin_len = ( uint8_t ) sizeof( struct freertos_sockaddr );
++                            ( void ) memcpy( pxAddress->sin_address.xIP_IPv6.ucBytes, ucBytes, ipSIZE_OF_IPv6_ADDRESS );
++                            break;
++                        }
++                    }
++#endif
++                }
++            }
+         }
+ 
+         return pxEndPoint;

@@ -72,7 +72,7 @@ static void hardfault() {
 }
 #endif
 
-static void log_console(const log_msg_t *log) {
+static void log_console(const log_msg_t* log) {
     static const char levels[] = "-EWID";
     uint8_t level = log->level;
     if (level > LOG_LEVEL_LAST || level < 0) {
@@ -85,10 +85,9 @@ static void log_console(const log_msg_t *log) {
 extern unsigned __HeapBase, __HeapLimit, __HeapBase_sram0, __HeapLimit_sram0;
 static void setup_heap() {
     HeapRegion_t xHeapRegions[] = {
-        {(uint8_t *)&__HeapBase_sram0,
+        {(uint8_t*)&__HeapBase_sram0,
          (unsigned)&__HeapLimit_sram0 - (unsigned)&__HeapBase_sram0},
-        {(uint8_t *)&__HeapBase,
-         (unsigned)&__HeapLimit - (unsigned)&__HeapBase},
+        {(uint8_t*)&__HeapBase, (unsigned)&__HeapLimit - (unsigned)&__HeapBase},
         {NULL, 0}};
 
     vPortDefineHeapRegions(xHeapRegions);
@@ -171,7 +170,7 @@ static void board_init(void) {
 
 void configure_netif() {
     wifi_mac_addr_t mac_addr;
-    const uint8_t *hwaddr = (const uint8_t *)mac_addr.mac;
+    const uint8_t* hwaddr = (const uint8_t*)mac_addr.mac;
 
     int ret = wifi_get_device_mac_addr(&mac_addr);
     assert(ret == WM_SUCCESS);
@@ -243,7 +242,7 @@ void reboot() {
     NVIC_SystemReset();
 }
 
-static void main_task(void *param) {
+static void main_task(void* param) {
     board_init();
 
     register_log_backend(log_console);
@@ -361,7 +360,7 @@ int main(void) {
     return 0;
 }
 
-static void print_ip_config(NetworkEndPoint_t *endpoint) {
+static void print_ip_config(NetworkEndPoint_t* endpoint) {
     if (endpoint != NULL) {
         char ip_addr_s[40];
         char netmask_s[16];
@@ -422,15 +421,37 @@ void vApplicationMallocFailedHook() {
  * has occurred.
  *
  */
-void vApplicationStackOverflowHook(TaskHandle_t xTask, char *task_name) {
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char* task_name) {
     PRINTF("ERROR: stack overflow in task %s\r\n", task_name);
     portDISABLE_INTERRUPTS();
     for (;;) {
     }
 }
 
+static bool has_dns_server() {
+    for (NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(&sta_iface); ep != NULL;
+         ep = FreeRTOS_NextEndPoint(&sta_iface, ep)) {
+#if ipconfigUSE_IPv4
+        if (!ep->bits.bIPv6) {
+            if (ep->ipv4_settings.ulDNSServerAddresses[0] != 0) {
+                return true;
+            }
+        }
+#endif
+#if ipconfigUSE_IPv6
+        if (ep->bits.bIPv6) {
+            if (ep->ipv6_settings.xDNSServerAddresses[0].ucBytes[0] != 0 ||
+                ep->ipv6_settings.xDNSServerAddresses[0].ucBytes[1] != 0) {
+                return true;
+            }
+        }
+#endif
+    }
+    return false;
+}
+
 void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
-                                          NetworkEndPoint_t *endpoint) {
+                                          NetworkEndPoint_t* endpoint) {
     static bool tasks_created = false;
 
     if (event == eNetworkUp) {
@@ -443,7 +464,7 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
             } else {
                 notify_dhcp_configured();
             }
-            if (!tasks_created) {
+            if (!tasks_created && has_dns_server()) {
                 // Create the tasks that use the TCP/IP stack if they have
                 // not already been created.
                 tasks_created = true;
