@@ -6,17 +6,15 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
-#else
-#include MBEDTLS_CONFIG_FILE
-#endif
+#include "mbedtls/build_info.h"
 
 #include "fsl_common.h"
 #include "common.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/entropy_poll.h"
 #include "mbedtls/ctr_drbg.h"
+#include "fsl_debug_console.h"
+
 #include "ksdk_mbedtls.h"
 
 #define SHA256_HASH_SIZE (32U)

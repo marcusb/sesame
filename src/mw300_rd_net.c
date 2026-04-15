@@ -56,8 +56,8 @@ int net_get_if_addr(struct wlan_ip_config* addr, void* intrfc_handle) {
     return WM_SUCCESS;
 }
 
-#ifdef CONFIG_IPV6
 int net_get_if_ipv6_addr(struct wlan_ip_config* addr, void* intrfc_handle) {
+#if ipconfigUSE_IPv6
     NetworkInterface_t* netif = (NetworkInterface_t*)intrfc_handle;
     int i = 0;
     for (NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(netif);
@@ -71,9 +71,9 @@ int net_get_if_ipv6_addr(struct wlan_ip_config* addr, void* intrfc_handle) {
             ipv6->addr_state = IP6_ADDR_OTHER;
         }
     }
+#endif
     return 0;
 }
-#endif /* CONFIG_IPV6 */
 
 static void deliver_packet_above(uint8_t iface, const uint8_t* data,
                                  const uint16_t len) {
@@ -128,8 +128,11 @@ static void handle_deliver_packet_above(uint8_t interface, void* lwip_pbuf) {
 
 static inline bool wrapper_net_is_ip_or_ipv6(const uint8_t* buffer) {
     const EthernetHeader_t* eth = (const EthernetHeader_t*)buffer;
-    return eth->usFrameType == ipIPv4_FRAME_TYPE ||
-           eth->usFrameType == ipIPv6_FRAME_TYPE;
+    return eth->usFrameType == ipIPv4_FRAME_TYPE
+#if ipconfigUSE_IPv6
+           || eth->usFrameType == ipIPv6_FRAME_TYPE
+#endif
+           ;
 }
 
 void net_wlan_init(void) {
@@ -183,7 +186,7 @@ void notify_ipv6_addr_change() {
                          NULL);
 }
 
-#ifdef CONFIG_IPV6
+#if ipconfigUSE_IPv6
 /**
  * Set up hardware MAC filter for multicast packets for an IPv6 address
  *
@@ -221,7 +224,7 @@ static BaseType_t netif_init(NetworkInterface_t* netif) {
                sizeof(ep->xMACAddress.ucBytes));
     }
 
-#ifdef CONFIG_IPV6
+#if ipconfigUSE_IPv6
     // set up hardware MAC filter for multicast packets
     IPv6_Address_t ip6_allnodes = {
         {0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};

@@ -210,9 +210,9 @@ FetchContent_Declare(mbedtls
     GIT_TAG        v3.6.3
 )
 FetchContent_MakeAvailable(mbedtls)
-target_compile_definitions(mbedcrypto
+target_link_libraries(mbedcrypto
     PUBLIC
-    "MBEDTLS_CONFIG_FILE=\"mbedtls_app_config.h\""
+    mw320_mbedtls_port
 )
 
 FetchContent_Declare(coreHTTP

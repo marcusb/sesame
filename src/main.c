@@ -182,6 +182,7 @@ void configure_netif() {
                           gateway_addr, dns_server_addr, hwaddr);
     eps[0].bits.bWantDHCP = pdTRUE;
 
+#if ipconfigUSE_IPv6
     // local IPv6 address chosen randomly
     IPv6_Address_t local_prefix = {{0xfe, 0x80}};
     IPv6_Address_t local_addr;
@@ -198,7 +199,10 @@ void configure_netif() {
                                   0xfe, hwaddr[3], hwaddr[4], hwaddr[5]}};
     FreeRTOS_FillEndPoint_IPv6(&sta_iface, &eps[2], &eui64_addr, &local_prefix,
                                64, &gateway_addr_ip6, NULL, hwaddr);
+#endif
+#if ipconfigUSE_IPv6
     eps[2].bits.bWantRA = pdTRUE;
+#endif
 
     static NetworkEndPoint_t uap_endpoint;
     mw300_new_netif_desc(BSS_TYPE_UAP, &uap_iface);
@@ -363,6 +367,7 @@ static void print_ip_config(NetworkEndPoint_t *endpoint) {
         char netmask_s[16];
         char gateway_s[40];
         char dns_server_s[40];
+#if ipconfigUSE_IPv6
         if (endpoint->bits.bIPv6) {
             FreeRTOS_inet_ntop6(&endpoint->ipv6_settings.xIPAddress, ip_addr_s,
                                 sizeof(ip_addr_s));
@@ -374,7 +379,9 @@ static void print_ip_config(NetworkEndPoint_t *endpoint) {
                      endpoint->pxNetworkInterface->pcName, ip_addr_s,
                      endpoint->ipv6_settings.uxPrefixLength, gateway_s,
                      dns_server_s));
-        } else {
+        } else
+#endif
+        {
             FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulIPAddress, ip_addr_s,
                                 sizeof(ip_addr_s));
             FreeRTOS_inet_ntop4(&endpoint->ipv4_settings.ulNetMask, netmask_s,

@@ -1214,7 +1214,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * Requires: MBEDTLS_BIGNUM_C
  */
-#define MBEDTLS_GENPRIME
+//#define MBEDTLS_GENPRIME
 
 /**
  * \def MBEDTLS_FS_IO
@@ -1921,7 +1921,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * Comment this macro to disable support for ALPN.
  */
-#define MBEDTLS_SSL_ALPN
+//#define MBEDTLS_SSL_ALPN
 
 /**
  * \def MBEDTLS_SSL_DTLS_ANTI_REPLAY
@@ -2026,7 +2026,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * Comment this macro to disable support for server name indication in SSL
  */
-#define MBEDTLS_SSL_SERVER_NAME_INDICATION
+//#define MBEDTLS_SSL_SERVER_NAME_INDICATION
 
 /**
  * \def MBEDTLS_SSL_VARIABLE_BUFFER_LENGTH
@@ -3383,7 +3383,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * This module adds support for SHA-512.
  */
-#define MBEDTLS_SHA512_C
+//#define MBEDTLS_SHA512_C
 
 /**
  * \def MBEDTLS_SHA3_C
@@ -4160,5 +4160,7 @@ void *pvPortCalloc(size_t num, size_t size);
 /* MBEDTLS_ERR_CCM_HW_ACCEL_FAILED is deprecated and should not be used. */
 #define MBEDTLS_ERR_CCM_HW_ACCEL_FAILED -0x0011 /**< CCM hardware accelerator failed. */
 
+#undef MBEDTLS_INTERNAL_VALIDATE_RET
 #define MBEDTLS_INTERNAL_VALIDATE_RET(cond, ret)  do { } while (0)
+#undef MBEDTLS_INTERNAL_VALIDATE
 #define MBEDTLS_INTERNAL_VALIDATE(cond)           do { } while (0)

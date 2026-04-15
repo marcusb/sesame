@@ -415,22 +415,34 @@ target_compile_definitions(freertos_kernel
     SDK_OS_FREE_RTOS
 )
 
-target_include_directories(mbedcrypto
-    PRIVATE
-    "${mw320_sdk_dir}/middleware/mbedtls/include"
+add_library(mw320_mbedtls_port STATIC)
+target_include_directories(mw320_mbedtls_port
     PUBLIC
+    "${mbedtls_SOURCE_DIR}/library"
+    "${mbedtls_SOURCE_DIR}/include"
     "${mw320_sdk_dir}/middleware/mbedtls/port/mw"
 )
-target_sources(mbedcrypto
+target_sources(mw320_mbedtls_port
     PRIVATE
     "${mw320_sdk_dir}/middleware/mbedtls/port/mw/aes_alt.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ccm_alt.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ksdk_mbedtls.c"
 )
-target_link_libraries(mbedcrypto
+# Add SDK mbedtls includes ONLY for the port files that need them
+set_source_files_properties(
+    "${mw320_sdk_dir}/middleware/mbedtls/port/mw/aes_alt.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ccm_alt.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ksdk_mbedtls.c"
+    PROPERTIES COMPILE_FLAGS "-I${mw320_sdk_dir}/middleware/mbedtls/include"
+)
+target_link_libraries(mw320_mbedtls_port
     PUBLIC
     freertos_config
     mw320_drivers_aes
     mw320_utility_debug_console
     freertos_kernel
+)
+target_compile_definitions(mw320_mbedtls_port
+    PUBLIC
+    "MBEDTLS_CONFIG_FILE=\"mbedtls_app_config.h\""
 )
