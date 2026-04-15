@@ -140,7 +140,17 @@ ninja -C build sesame_ram.axf && ./tools/OpenOCD/ramload.py build/sesame_ram.axf
 
 **Terminal 2** – Monitor serial output:
 ```sh
-python3 -m serial.tools.miniterm /dev/ttyUSB0 115200
+# Method 1: Quick monitor (stty + cat)
+stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0
+
+# Method 2: Robust monitor (pyserial script)
+python3 -c "
+import serial, sys
+ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=1)
+while True:
+    if ser.in_waiting:
+        print(ser.read(ser.in_waiting).decode('utf-8', errors='replace'), end='', flush=True)
+"
 ```
 
 Typical feature development cycle:
@@ -175,7 +185,7 @@ Build, flash, and test through full reboot cycle:
 ```bash
 ninja -C build sesame.axf && \
 ./tools/OpenOCD/flashprog.py --mcufw build/sesame.bin -r && \
-python3 -m serial.tools.miniterm /dev/ttyUSB0 115200
+stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0
 ```
 
 - Builds full flash binary
@@ -190,9 +200,9 @@ python3 -m serial.tools.miniterm /dev/ttyUSB0 115200
 - Sent to console, circular buffer, and optional syslog
 - Includes task name and timestamp
 
-**Capture logs to file** – Via miniterm.py:
+**Capture logs to file** – Via tee:
 ```sh
-python3 -m serial.tools.miniterm /dev/ttyUSB0 115200 --file output.log
+stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0 | tee output.log
 ```
 
 **Stack traces** – Compiled with `USE_BACKTRACE=ON` by default; on crash, backtrace printed to console.
@@ -220,7 +230,7 @@ ninja -C build test/sesame_tests.axf
 
 **Monitor output:**
 ```sh
-python3 -m serial.tools.miniterm /dev/ttyUSB0 115200
+stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0
 ```
 
 Each test prints immediately as it executes:
@@ -417,16 +427,26 @@ sesame/
 pip install pyserial
 ```
 
-**Monitor firmware output** – `miniterm.py` is the primary serial tool for development:
+**Monitor firmware output** – Use `stty` + `cat` for quick checks or `pyserial` for robust monitoring:
 ```sh
-python3 -m serial.tools.miniterm /dev/ttyUSB0 115200
+# Method 1: Quick monitor
+stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0
+
+# Method 2: Robust monitor (pyserial script)
+python3 -c "
+import serial, sys
+ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=1)
+while True:
+    if ser.in_waiting:
+        print(ser.read(ser.in_waiting).decode('utf-8', errors='replace'), end='', flush=True)
+"
 ```
 
 **Features:**
-- `Ctrl+]` to exit
-- `--file output.log` to capture logs
+- `Ctrl+C` to exit
+- `| tee output.log` to capture logs
 - Works well in scripts and CI/CD pipelines
-
+...
 **Programmatic testing** – Use pyserial directly in Python test scripts (see Integration Testing section). Claude can help write test automation that verifies device behavior, OTA updates, MQTT messages, etc.
 
 **Quick test after build:**
