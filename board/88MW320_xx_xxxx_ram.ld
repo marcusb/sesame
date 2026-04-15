@@ -45,8 +45,10 @@ MEMORY
 /* Set stack limit to end of m_data region, reserving 1kB for the fault stack */
 _main_stack_start = ORIGIN(m_data) + LENGTH(m_data) - STACK_SIZE - FAULT_STACK_SIZE;
 
-/* Keystore size in RAM, SB_KEYSTORE_SIZE from secure_boot.h  */
-_keystore_size = 0x1000;
+/* Keystore size in RAM, SB_KEYSTORE_SIZE from secure_boot.h.
+ * Override via --defsym=_keystore_size=0 for builds (e.g. on-device tests)
+ * that do not use secure boot. */
+PROVIDE(_keystore_size = 0x1000);
 /* Start of keystore */
 _keystore_start = ORIGIN(m_text) + LENGTH(m_text) - _keystore_size;
 
@@ -189,6 +191,9 @@ SECTIONS
     __bss_end__ = .;
     __END_BSS = .;
   } > m_data
+
+  ASSERT(__HeapBase_sram0 <= __HeapLimit_sram0,
+         "SRAM0 heap region invalid: .text overflowed past keystore.")
 
   ASSERT(__END_BSS < _main_stack_start, "Insufficient space for main stack.")
 

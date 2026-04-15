@@ -335,6 +335,14 @@ void pic_uart_task(void* const params) {
                     }
                     break;
 
+                case PIC_CMD_STOP:
+                    if (direction != DCM_DOOR_DIR_STOPPED) {
+                        send_door_cmd(
+                            1);  // Same as button press, should stop movement
+                    }
+                    queued_cmd = 0;
+                    break;
+
                 case PIC_SERIAL_DATA:
                     process_serial_data();
                     break;

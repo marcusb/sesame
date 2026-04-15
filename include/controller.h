@@ -19,7 +19,7 @@ typedef enum {
     CTRL_MSG_LOGGING_CONFIG,
 } ctrl_msg_type_t;
 
-typedef enum { DOOR_CMD_UNKNOWN, DOOR_CMD_OPEN, DOOR_CMD_CLOSE } door_cmd_t;
+typedef enum { DOOR_CMD_UNKNOWN, DOOR_CMD_OPEN, DOOR_CMD_CLOSE, DOOR_CMD_STOP } door_cmd_t;
 
 typedef struct {
     door_cmd_t command;

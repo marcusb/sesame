@@ -16,6 +16,9 @@ pkg_check_modules(SLIRP REQUIRED IMPORTED_TARGET slirp)
 add_library(slirp INTERFACE)
 target_link_libraries(slirp INTERFACE PkgConfig::SLIRP)
 
+add_library(globals INTERFACE)
+target_compile_definitions(globals INTERFACE _DEFAULT_SOURCE _GNU_SOURCE)
+
 # -------------------------------------------------------------------------------------------------
 # nanopb
 # -------------------------------------------------------------------------------------------------
@@ -188,11 +191,24 @@ target_link_libraries(freertos_plus_transport
 # Harness + SUT sources
 # -------------------------------------------------------------------------------------------------
 
+FetchContent_Declare(mbedtls
+    GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
+    GIT_TAG        v3.6.3
+)
+# do not build mbedtls programs and tests
+set(ENABLE_PROGRAMS OFF CACHE BOOL INTERNAL)
+set(ENABLE_TESTING OFF CACHE BOOL INTERNAL)
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-error=unterminated-string-initialization -Wno-error=logical-op -Wno-error=format-overflow")
+
+FetchContent_MakeAvailable(mbedtls)
+
 add_subdirectory(harness)
 add_subdirectory(httpd)
 add_subdirectory(mqtt)
 add_subdirectory(ota)
 add_subdirectory(syslog)
+add_subdirectory(matter)
 
 add_custom_target(host_tests
-    DEPENDS host_test_httpd host_test_mqtt host_test_ota host_test_syslog proto_py)
+    DEPENDS host_test_httpd host_test_mqtt host_test_ota host_test_syslog host_test_matter proto_py)

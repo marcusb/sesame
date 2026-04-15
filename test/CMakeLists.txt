@@ -43,6 +43,7 @@ target_include_directories(sesame_tests
     "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_SOURCE_DIR}/src"
     "${CMAKE_SOURCE_DIR}/board"
+    "${CMAKE_SOURCE_DIR}/third_party/berry/src"
     "${mw320_sdk_dir}/components/boot2_utils"
     "${mw320_sdk_dir}/middleware/wifi/incl")
 
@@ -56,6 +57,77 @@ target_link_libraries(sesame_tests
     mw320_device_startup
     mw320_utility_assert
     test_stubs)
+
+# ---------------------------------------------------------------------------
+# matter_tests – dedicated on-device Matter test binary
+# ---------------------------------------------------------------------------
+add_executable(matter_tests)
+
+target_sources(matter_tests
+    PRIVATE
+    test_runner.c
+    test_matter.c
+    stubs/stub_os.c
+    "${CMAKE_SOURCE_DIR}/src/newlib_wrappers.c"
+    "${CMAKE_SOURCE_DIR}/src/pin_mux.c"
+    "${CMAKE_SOURCE_DIR}/src/util.c"
+    "${CMAKE_SOURCE_DIR}/src/config_manager.c"
+    "${CMAKE_SOURCE_DIR}/src/idle_task.c")
+
+target_include_directories(matter_tests
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_SOURCE_DIR}/src"
+    "${CMAKE_SOURCE_DIR}/board"
+    "${CMAKE_SOURCE_DIR}/third_party/berry/src"
+    "${mw320_sdk_dir}/components/boot2_utils"
+    "${mw320_sdk_dir}/middleware/wifi/incl")
+
+target_link_libraries(matter_tests
+    PRIVATE
+    unity
+    logging
+    proto
+    freertos_kernel
+    board
+    mw320_device_startup
+    mw320_utility_assert
+    "LINKER:--start-group"
+    sesame_matter
+    berry_matter
+    berry
+    "LINKER:--end-group"
+    m)
+
+target_compile_definitions(matter_tests
+    PRIVATE
+    TEST_MATTER_ONLY)
+
+target_link_options(matter_tests
+    PRIVATE
+    "-Wl,-Map,matter_tests.map"
+    "-Wl,-T,${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
+    "-Wl,--defsym=_keystore_size=0"
+    "-mcpu=cortex-m4"
+    "-mthumb"
+    "-mfloat-abi=softfp"
+    "-mfpu=fpv4-sp-d16"
+    "-specs=nano.specs"
+    "-specs=nosys.specs"
+    "-Wl,--wrap,malloc"
+    "-Wl,--wrap,free"
+    "-Wl,--wrap,calloc"
+    "-Wl,--wrap,realloc"
+    "-Wl,--wrap,printf"
+    "-Wl,--wrap,fprintf"
+    "-Wl,--undefined,uxTopUsedPriority"
+    "-Wl,--gc-sections"
+    "-Wl,--nmagic")
+
+if(USE_BACKTRACE)
+    target_link_libraries(matter_tests PRIVATE backtrace)
+endif()
 
 if(USE_BACKTRACE)
     target_link_libraries(sesame_tests PRIVATE backtrace)

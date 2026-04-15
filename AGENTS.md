@@ -8,9 +8,7 @@ Sesame is custom firmware for the Genie 1155 garage door opener (MW300 SoC). It 
 - Provides HTTP API and MQTT agent for remote control
 - Supports over-the-air (OTA) firmware updates with A/B partition scheme
 
-## Board Hardware
-
-See @docs/teardown.md for hardware information.
+See docs/teardown.md for hardware information.
 
 ## Build System
 
@@ -426,6 +424,31 @@ sesame/
 ```sh
 pip install pyserial
 ```
+
+**Rebooting and Serial Capture:**
+
+To reboot the device and capture the initial boot sequence (critical for debugging boot crashes):
+
+**Method 1: Manual one-liner (Recommended)**
+```bash
+python3 -c "
+import serial, time, sys
+try:
+    ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=1)
+    end_time = time.time() + 15
+    while time.time() < end_time:
+        if ser.in_waiting:
+            sys.stdout.write(ser.read(ser.in_waiting).decode('utf-8', errors='replace'))
+            sys.stdout.flush()
+    ser.close()
+except Exception as e: print(f'Error: {e}')
+" & sleep 2 && ./tools/OpenOCD/flashprog.py -r && wait
+```
+This script starts a background listener, waits 2 seconds, triggers a hardware reset via JTAG, and then waits for the capture to finish.
+
+**Method 2: Separate terminals**
+1. In Terminal A, start monitoring: `stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0`
+2. In Terminal B, trigger reset: `./tools/OpenOCD/flashprog.py -r`
 
 **Monitor firmware output** – Use `stty` + `cat` for quick checks or `pyserial` for robust monitoring:
 ```sh

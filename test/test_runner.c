@@ -29,17 +29,15 @@ psm_hnd_t psm_hnd = NULL;
 
 /* ---- Unity output ---- */
 
-void unity_putchar(char c) {
-    PRINTF("%c", c);
-}
+void unity_putchar(char c) { PRINTF("%c", c); }
 
 /* ---- capture backend ---- */
 
-char    capture_msgs[CAPTURE_MAX_MSGS][CAPTURE_BUF_LEN];
+char capture_msgs[CAPTURE_MAX_MSGS][CAPTURE_BUF_LEN];
 uint8_t capture_levels[CAPTURE_MAX_MSGS];
-int     capture_count = 0;
+int capture_count = 0;
 
-void capture_backend(const log_msg_t *log) {
+void capture_backend(const log_msg_t* log) {
     if (!log->msg || capture_count >= CAPTURE_MAX_MSGS) return;
     strtcpy(capture_msgs[capture_count], log->msg, CAPTURE_BUF_LEN);
     capture_levels[capture_count] = log->level;
@@ -61,11 +59,9 @@ void capture_drain_and_reset(void) {
 
 void vApplicationIdleHook(void) {}
 
-void vApplicationMallocFailedHook(void) {
-    configASSERT(0);
-}
+void vApplicationMallocFailedHook(void) { configASSERT(0); }
 
-void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char* pcTaskName) {
     (void)xTask;
     (void)pcTaskName;
     configASSERT(0);
@@ -83,10 +79,11 @@ void run_test_util(void);
 void run_test_logging(void);
 void run_test_config_manager(void);
 void run_test_pic_uart(void);
+void run_test_matter(void);
 
 /* ---- Test runner task ---- */
 
-static void run_tests_task(void *params) {
+static void run_tests_task(void* params) {
     (void)params;
 
     register_log_backend(capture_backend);
@@ -94,11 +91,15 @@ static void run_tests_task(void *params) {
     vTaskDelay(pdMS_TO_TICKS(50));
 
     UNITY_BEGIN();
+#ifdef TEST_MATTER_ONLY
+    run_test_matter();
+#else
     run_test_string_util();
     run_test_util();
     run_test_logging();
     run_test_config_manager();
     run_test_pic_uart();
+#endif
     int result = UNITY_END();
 
     PRINTF("\r\nTEST_RESULT:%d\r\n", result);
@@ -110,12 +111,19 @@ static void run_tests_task(void *params) {
 extern unsigned __HeapBase, __HeapLimit, __HeapBase_sram0, __HeapLimit_sram0;
 
 static void setup_heap(void) {
-    HeapRegion_t xHeapRegions[] = {
-        {(uint8_t *)&__HeapBase_sram0,
-         (unsigned)&__HeapLimit_sram0 - (unsigned)&__HeapBase_sram0},
-        {(uint8_t *)&__HeapBase,
-         (unsigned)&__HeapLimit - (unsigned)&__HeapBase},
-        {NULL, 0}};
+    /* Large test binaries can push SRAM0 code past the keystore, making the
+     * SRAM0 heap region invalid. Skip it rather than feeding a wrapped size
+     * to FreeRTOS. */
+    HeapRegion_t xHeapRegions[3];
+    size_t i = 0;
+    if ((unsigned)&__HeapLimit_sram0 > (unsigned)&__HeapBase_sram0) {
+        xHeapRegions[i++] = (HeapRegion_t){
+            (uint8_t*)&__HeapBase_sram0,
+            (unsigned)&__HeapLimit_sram0 - (unsigned)&__HeapBase_sram0};
+    }
+    xHeapRegions[i++] = (HeapRegion_t){
+        (uint8_t*)&__HeapBase, (unsigned)&__HeapLimit - (unsigned)&__HeapBase};
+    xHeapRegions[i] = (HeapRegion_t){NULL, 0};
     vPortDefineHeapRegions(xHeapRegions);
 }
 

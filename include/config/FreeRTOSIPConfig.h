@@ -229,6 +229,7 @@ extern void vLoggingPrintf(const char* pcFormatString, ...);
 /* Set ipconfigUSE_DNS to 1 to include a basic DNS client/resolver.  DNS is used
  * through the FreeRTOS_gethostbyname() API function. */
 #define ipconfigUSE_DNS 1
+#define ipconfigUSE_MDNS 1
 
 /* If ipconfigREPLY_TO_INCOMING_PINGS is set to 1 then the IP stack will
  * generate replies to incoming ICMP echo (ping) requests. */

@@ -1,3 +1,21 @@
+/*
+ * Sesame - Custom firmware for Genie 1155 garage door opener
+ * Copyright (C) 2024-2026  Marcus
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -158,7 +176,9 @@ static void board_init(void) {
     part_init();
     aes_init();
     setup_rtc();
-    assert(init_wifi_driver() == WM_SUCCESS);
+    int wifi_res = init_wifi_driver();
+    assert(wifi_res == WM_SUCCESS);
+    (void)wifi_res;
 
     // initialize watchdog, unless debugger is connected
     if (CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk) {
@@ -242,6 +262,9 @@ void reboot() {
     NVIC_SystemReset();
 }
 
+extern void matter_init(void);
+static bool matter_started = false;
+
 static void main_task(void* param) {
     board_init();
 
@@ -266,6 +289,24 @@ static void main_task(void* param) {
     ctrl_msg_t ctrl_msg;
     for (;;) {
         WDT_Refresh(WDT);
+
+        if (!matter_started) {
+            NetworkEndPoint_t* pxEP = FreeRTOS_FirstEndPoint(NULL);
+            bool any_up = false;
+            while (pxEP != NULL) {
+                if (pxEP->bits.bEndPointUp) {
+                    any_up = true;
+                    break;
+                }
+                pxEP = FreeRTOS_NextEndPoint(NULL, pxEP);
+            }
+
+            if (any_up) {
+                matter_init();
+                matter_started = true;
+            }
+        }
+
         if (xQueueReceive(ctrl_queue, &ctrl_msg, 1000) == pdPASS) {
             switch (ctrl_msg.type) {
                 case CTRL_MSG_OTA_UPGRADE: {
@@ -282,11 +323,23 @@ static void main_task(void* param) {
                 }
 
                 case CTRL_MSG_DOOR_CONTROL: {
-                    pic_cmd_t cmd =
-                        ctrl_msg.msg.door_control.command == DOOR_CMD_OPEN
-                            ? PIC_CMD_OPEN
-                            : PIC_CMD_CLOSE;
-                    xQueueSendToBack(pic_queue, &cmd, 0);
+                    pic_cmd_t cmd = PIC_CMD_UNKNOWN;
+                    switch (ctrl_msg.msg.door_control.command) {
+                        case DOOR_CMD_OPEN:
+                            cmd = PIC_CMD_OPEN;
+                            break;
+                        case DOOR_CMD_CLOSE:
+                            cmd = PIC_CMD_CLOSE;
+                            break;
+                        case DOOR_CMD_STOP:
+                            cmd = PIC_CMD_STOP;
+                            break;
+                        default:
+                            break;
+                    }
+                    if (cmd != PIC_CMD_UNKNOWN) {
+                        xQueueSendToBack(pic_queue, &cmd, 0);
+                    }
                     break;
                 }
 
@@ -448,6 +501,13 @@ static bool has_dns_server() {
 #endif
     }
     return false;
+}
+
+BaseType_t xApplicationDNSQueryHook_Multi(struct xNetworkEndPoint* pxEndPoint,
+                                          const char* pcName) {
+    (void)pxEndPoint;
+    (void)pcName;
+    return pdFALSE;
 }
 
 void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,

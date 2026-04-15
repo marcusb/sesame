@@ -419,6 +419,8 @@ void *pvPortCalloc(size_t num, size_t size);
 //#define MBEDTLS_CAMELLIA_ALT
 #define MBEDTLS_CCM_ALT
 #define MBEDTLS_CCM_CRYPT_ALT
+#define MBEDTLS_AES_CRYPT_ALT
+
 //#define MBEDTLS_CHACHA20_ALT
 //#define MBEDTLS_CHACHAPOLY_ALT
 //#define MBEDTLS_CMAC_ALT
@@ -597,7 +599,8 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * This option is independent of \c MBEDTLS_AES_FEWER_TABLES.
  */
-//#define MBEDTLS_AES_ROM_TABLES
+#define MBEDTLS_AES_ROM_TABLES
+#define MBEDTLS_AES_FEWER_TABLES
 
 /**
  * \def MBEDTLS_AES_FEWER_TABLES
@@ -618,7 +621,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * This option is independent of \c MBEDTLS_AES_ROM_TABLES.
  */
-//#define MBEDTLS_AES_FEWER_TABLES
+#define MBEDTLS_AES_FEWER_TABLES
 
 /**
  * \def MBEDTLS_AES_ONLY_128_BIT_KEY_LENGTH
@@ -635,7 +638,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * Requires: MBEDTLS_AES_C
  */
-//#define MBEDTLS_AES_ONLY_128_BIT_KEY_LENGTH
+#define MBEDTLS_AES_ONLY_128_BIT_KEY_LENGTH
 
 /*
  * Disable plain C implementation for AES.
@@ -688,35 +691,35 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * Enable Cipher Block Chaining mode (CBC) for symmetric ciphers.
  */
-#define MBEDTLS_CIPHER_MODE_CBC
+//#define MBEDTLS_CIPHER_MODE_CBC
 
 /**
  * \def MBEDTLS_CIPHER_MODE_CFB
  *
  * Enable Cipher Feedback mode (CFB) for symmetric ciphers.
  */
-#define MBEDTLS_CIPHER_MODE_CFB
+//#define MBEDTLS_CIPHER_MODE_CFB
 
 /**
  * \def MBEDTLS_CIPHER_MODE_CTR
  *
  * Enable Counter Block Cipher mode (CTR) for symmetric ciphers.
  */
-#define MBEDTLS_CIPHER_MODE_CTR
+//#define MBEDTLS_CIPHER_MODE_CTR
 
 /**
  * \def MBEDTLS_CIPHER_MODE_OFB
  *
  * Enable Output Feedback mode (OFB) for symmetric ciphers.
  */
-#define MBEDTLS_CIPHER_MODE_OFB
+//#define MBEDTLS_CIPHER_MODE_OFB
 
 /**
  * \def MBEDTLS_CIPHER_MODE_XTS
  *
  * Enable Xor-encrypt-xor with ciphertext stealing mode (XTS) for AES.
  */
-#define MBEDTLS_CIPHER_MODE_XTS
+//#define MBEDTLS_CIPHER_MODE_XTS
 
 /**
  * \def MBEDTLS_CIPHER_NULL_CIPHER
@@ -762,9 +765,9 @@ void *pvPortCalloc(size_t num, size_t size);
  * Enable padding modes in the cipher layer.
  */
 #define MBEDTLS_CIPHER_PADDING_PKCS7
-#define MBEDTLS_CIPHER_PADDING_ONE_AND_ZEROS
-#define MBEDTLS_CIPHER_PADDING_ZEROS_AND_LEN
-#define MBEDTLS_CIPHER_PADDING_ZEROS
+//#define MBEDTLS_CIPHER_PADDING_ONE_AND_ZEROS
+//#define MBEDTLS_CIPHER_PADDING_ZEROS_AND_LEN
+//#define MBEDTLS_CIPHER_PADDING_ZEROS
 
 /** \def MBEDTLS_CTR_DRBG_USE_128_BIT_KEY
  *
@@ -772,7 +775,7 @@ void *pvPortCalloc(size_t num, size_t size);
  * Without this, CTR_DRBG uses a 256-bit key
  * unless \c MBEDTLS_AES_ONLY_128_BIT_KEY_LENGTH is set.
  */
-//#define MBEDTLS_CTR_DRBG_USE_128_BIT_KEY
+#define MBEDTLS_CTR_DRBG_USE_128_BIT_KEY
 
 /**
  * Enable the verified implementations of ECDH primitives from Project Everest
@@ -916,7 +919,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *      MBEDTLS_TLS_PSK_WITH_CAMELLIA_128_GCM_SHA256
  *      MBEDTLS_TLS_PSK_WITH_CAMELLIA_128_CBC_SHA256
  */
-//#define MBEDTLS_KEY_EXCHANGE_PSK_ENABLED
+#define MBEDTLS_KEY_EXCHANGE_PSK_ENABLED
 
 /**
  * \def MBEDTLS_KEY_EXCHANGE_DHE_PSK_ENABLED
@@ -963,7 +966,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *      MBEDTLS_TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA
  *      MBEDTLS_TLS_ECDHE_PSK_WITH_CAMELLIA_128_CBC_SHA256
  */
-//#define MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED
+#define MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED
 
 /**
  * \def MBEDTLS_KEY_EXCHANGE_RSA_PSK_ENABLED
@@ -1068,7 +1071,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *      MBEDTLS_TLS_ECDHE_RSA_WITH_CAMELLIA_128_GCM_SHA256
  *      MBEDTLS_TLS_ECDHE_RSA_WITH_CAMELLIA_128_CBC_SHA256
  */
-#define MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED
+//#define MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED
 
 /**
  * \def MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
@@ -1092,7 +1095,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *      MBEDTLS_TLS_ECDHE_ECDSA_WITH_CAMELLIA_128_GCM_SHA256
  *      MBEDTLS_TLS_ECDHE_ECDSA_WITH_CAMELLIA_128_CBC_SHA256
  */
-#define MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
+//#define MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
 
 /**
  * \def MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED
@@ -1345,7 +1348,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * This enables support for PKCS#1 v1.5 operations.
  */
-#define MBEDTLS_PKCS1_V15
+//#define MBEDTLS_PKCS1_V15
 
 /**
  * \def MBEDTLS_PKCS1_V21
@@ -1666,7 +1669,7 @@ void *pvPortCalloc(size_t num, size_t size);
  * a timing side-channel.
  *
  */
-#define MBEDTLS_SSL_DEBUG_ALL
+//#define MBEDTLS_SSL_DEBUG_ALL
 
 /** \def MBEDTLS_SSL_ENCRYPT_THEN_MAC
  *
@@ -2612,7 +2615,7 @@ void *pvPortCalloc(size_t num, size_t size);
  * Requires: MBEDTLS_CIPHER_C, MBEDTLS_AES_C or MBEDTLS_DES_C
  *
  */
-#define MBEDTLS_CMAC_C
+//#define MBEDTLS_CMAC_C
 
 /**
  * \def MBEDTLS_CTR_DRBG_C
@@ -2649,7 +2652,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * This module provides debugging functions.
  */
-#define MBEDTLS_DEBUG_C
+//#define MBEDTLS_DEBUG_C
 
 /**
  * \def MBEDTLS_DES_C
@@ -2722,7 +2725,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *           and at least one MBEDTLS_ECP_DP_XXX_ENABLED for a
  *           short Weierstrass curve.
  */
-#define MBEDTLS_ECDSA_C
+//#define MBEDTLS_ECDSA_C
 
 /**
  * \def MBEDTLS_ECJPAKE_C
@@ -2814,7 +2817,7 @@ void *pvPortCalloc(size_t num, size_t size);
  * This module adds support for the Hashed Message Authentication Code
  * (HMAC)-based key derivation function (HKDF).
  */
-//#define MBEDTLS_HKDF_C
+#define MBEDTLS_HKDF_C
 
 /**
  * \def MBEDTLS_HMAC_DRBG_C
@@ -3095,7 +3098,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * This module adds support for the PKCS#5 functions.
  */
-//#define MBEDTLS_PKCS5_C
+#define MBEDTLS_PKCS5_C
 
 /**
  * \def MBEDTLS_PKCS7_C
@@ -3247,7 +3250,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * Requires: MBEDTLS_BIGNUM_C, MBEDTLS_OID_C
  */
-#define MBEDTLS_RSA_C
+//#define MBEDTLS_RSA_C
 
 /**
  * \def MBEDTLS_SHA1_C
@@ -3266,7 +3269,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *            on it, and considering stronger message digests instead.
  *
  */
-#define MBEDTLS_SHA1_C
+//#define MBEDTLS_SHA1_C
 
 /**
  * \def MBEDTLS_SHA224_C
@@ -3279,7 +3282,9 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * This module adds support for SHA-224.
  */
-//#define MBEDTLS_SHA224_C
+////#define MBEDTLS_SHA512_C
+//#define MBEDTLS_SHA384_C
+////#define MBEDTLS_SHA224_C
 
 /**
  * \def MBEDTLS_SHA256_C
@@ -3606,7 +3611,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * This module is required for the X.509 parsing modules.
  */
-#define MBEDTLS_X509_USE_C
+//#define MBEDTLS_X509_USE_C
 
 /**
  * \def MBEDTLS_X509_CRT_PARSE_C
@@ -3622,7 +3627,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * This module is required for X.509 certificate parsing.
  */
-#define MBEDTLS_X509_CRT_PARSE_C
+//#define MBEDTLS_X509_CRT_PARSE_C
 
 /**
  * \def MBEDTLS_X509_CRL_PARSE_C

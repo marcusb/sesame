@@ -82,7 +82,7 @@ static bool mqtt_initialized;
 
 typedef struct {
     MQTTPublishInfo_t publish_info;
-    char data[]; // Flexible array member for topic and payload strings
+    char data[];  // Flexible array member for topic and payload strings
 } AsyncPublishContext_t;
 
 /**
@@ -426,9 +426,10 @@ static BaseType_t socket_connect(const char* host, uint16_t port,
             (void)BackoffAlgorithm_GetNextBackoff(&reconnect_params, rand(),
                                                   &backoff);
 
-            LogWarn(("Connection to the broker failed. "
-                     "Retrying connection in %hu ms.",
-                     backoff));
+            LogWarn(
+                ("Connection to the broker failed. "
+                 "Retrying connection in %hu ms.",
+                 backoff));
             vTaskDelay(pdMS_TO_TICKS(backoff));
         }
     } while (xConnected != pdPASS);
@@ -547,7 +548,8 @@ static void agent_task(void* params) {
 static void async_publish_cb(MQTTAgentCommandContext_t* ctx,
                              MQTTAgentReturnInfo_t* return_info) {
     if (return_info->returnCode != MQTTSuccess) {
-        LogError(("Async publish failed with status %d", return_info->returnCode));
+        LogError(
+            ("Async publish failed with status %d", return_info->returnCode));
     }
     vPortFree(ctx);
 }
@@ -630,9 +632,9 @@ void publish_state(const door_state_msg_t* msg) {
     time_t time_ms = uptime_s % SECONDS_PER_DAY;
     char tm_hms[9] = {0};
     struct tm tm;
-    if (gmtime_r(&time_ms, &tm) &&
-        strftime(tm_hms, sizeof(tm_hms), "%H:%M:%S", &tm) == 0) {
-        *tm_hms = '\0';
+    if (gmtime_r(&time_ms, &tm)) {
+        snprintf(tm_hms, sizeof(tm_hms), "%02d:%02d:%02d", tm.tm_hour,
+                 tm.tm_min, tm.tm_sec);
     }
     static char payload[128];
     snprintf(payload, sizeof(payload), fmt, state, dir, msg->pos, days, tm_hms,

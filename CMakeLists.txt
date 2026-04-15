@@ -10,7 +10,9 @@ set(mw320_sdk_dir "${CMAKE_CURRENT_LIST_DIR}/mw320_sdk")
 option(BUILD_HOST_TESTS "Build host-based module tests (native build)" ON)
 
 if(CMAKE_CROSSCOMPILING)
-set(CMAKE_BUILD_TYPE Debug)
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Debug)
+endif()
 
 option(USE_BACKTRACE "Include facility for dumping stack traces" ON)
 
@@ -337,6 +339,9 @@ target_link_libraries(board
 # Application
 # -------------------------------------------------------------------------------------------------
 
+add_subdirectory(third_party)
+add_subdirectory(src/matter)
+
 target_sources(app_shared
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
@@ -371,7 +376,20 @@ target_link_libraries(app_shared
     board
     logging
     backoff_algorithm
-    proto)
+    proto
+    berry_matter
+    sesame_matter)
+
+# Resolve circular deps between berry and sesame_matter/berry_matter port code.
+target_link_options(app_shared INTERFACE
+    "LINKER:--start-group"
+    "$<TARGET_FILE:berry>"
+    "$<TARGET_FILE:berry_matter>"
+    "LINKER:--whole-archive"
+    "$<TARGET_FILE:sesame_matter>"
+    "LINKER:--no-whole-archive"
+    "LINKER:--end-group"
+)
 target_link_options(app_shared
     PUBLIC
     "-mcpu=cortex-m4"
@@ -389,7 +407,8 @@ target_link_options(app_shared
     "-Wl,--undefined,uxTopUsedPriority"
     "-Wl,--cref"
     "-Wl,--gc-sections"
-    "-Wl,--nmagic")
+    "-Wl,--nmagic"
+    "-lm")
 
 add_executable("${exe_target}")
 target_sources("${exe_target}"
@@ -446,24 +465,27 @@ else()
 # native build
 if(BUILD_HOST_TESTS)
     enable_testing()
+    add_subdirectory(third_party)
     add_subdirectory(test/host)
-else()
-    add_executable(axf2firmware)
-    target_sources(axf2firmware
-        PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/axf2firmware/axf2firmware.c")
-    target_include_directories(axf2firmware
-        PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/axf2firmware")
-    target_compile_options(axf2firmware
-        PRIVATE
-        "-Wall")
-    target_compile_definitions(axf2firmware
-        PRIVATE
-        AXF_BUILT_BY_ARM_GCC)
-    target_link_libraries(axf2firmware
-        PRIVATE)
-    export(TARGETS axf2firmware FILE
-        "${CMAKE_BINARY_DIR}/axf2firmware-config.cmake")
 endif()
+
+# Build host tools
+add_executable(axf2firmware)
+target_sources(axf2firmware
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/axf2firmware/axf2firmware.c")
+target_include_directories(axf2firmware
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/axf2firmware")
+target_compile_options(axf2firmware
+    PRIVATE
+    "-Wall")
+target_compile_definitions(axf2firmware
+    PRIVATE
+    AXF_BUILT_BY_ARM_GCC)
+target_link_libraries(axf2firmware
+    PRIVATE)
+export(TARGETS axf2firmware FILE
+    "${CMAKE_BINARY_DIR}/axf2firmware-config.cmake")
+
 endif()
