@@ -150,6 +150,17 @@ if(_patch_result GREATER 1)
     message(FATAL_ERROR "Failed to apply FreeRTOS-Plus-TCP checksum patch (exit ${_patch_result})")
 endif()
 
+# IPv6 ULA support: https://github.com/FreeRTOS/FreeRTOS-Plus-TCP/pull/1294
+execute_process(
+    COMMAND patch -p1 -N
+        -i "${CMAKE_SOURCE_DIR}/patches/freertos_plus_tcp_ipv6_ula.patch"
+    WORKING_DIRECTORY "${freertos_plus_tcp_SOURCE_DIR}"
+    RESULT_VARIABLE _patch_result
+    OUTPUT_QUIET ERROR_QUIET)
+if(_patch_result GREATER 1)
+    message(FATAL_ERROR "Failed to apply FreeRTOS-Plus-TCP ULA patch (exit ${_patch_result})")
+endif()
+
 target_sources(freertos_kernel
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/idle_task.c")

@@ -1,0 +1,175 @@
+commit 9d6d579f4482a9de792e125ce56f2f741c542079
+Author: Marcus Better <marcus@better.se>
+Date:   Thu Oct 9 20:39:39 2025 -0400
+
+    Support IPv6 Unique Local Addresses
+    
+    This change correctly identifies ULAs with the fc00::/7 prefix, so
+    that they can be assigned to endpoints and correctly matched to
+    received packets.
+
+diff --git a/source/FreeRTOS_IPv6_Utils.c b/source/FreeRTOS_IPv6_Utils.c
+index 105bd592..bcfed459 100644
+--- a/source/FreeRTOS_IPv6_Utils.c
++++ b/source/FreeRTOS_IPv6_Utils.c
+@@ -327,7 +327,7 @@ void vManageSolicitedNodeAddress( const struct xNetworkEndPoint * pxEndPoint,
+         /* Solicited-node multicast addresses only apply to normal unicast non-loopback addresses. */
+         xAddressType = xIPv6_GetIPType( &( pxEndPoint->ipv6_settings.xIPAddress ) );
+ 
+-        if( ( xAddressType != eIPv6_LinkLocal ) && ( xAddressType != eIPv6_SiteLocal ) && ( xAddressType != eIPv6_Global ) )
++        if( ( xAddressType != eIPv6_LinkLocal ) && ( xAddressType != eIPv6_SiteLocal ) && ( xAddressType != eIPv6_UniqueLocal ) && ( xAddressType != eIPv6_Global ) )
+         {
+             /* The address of this end-point is something other than a normal unicast address... Maybe it's the
+              * loopback address or maybe this is an error scenario. In any case, there is no corresponding
+diff --git a/source/FreeRTOS_Routing.c b/source/FreeRTOS_Routing.c
+index 09a8d7d3..505e83d7 100644
+--- a/source/FreeRTOS_Routing.c
++++ b/source/FreeRTOS_Routing.c
+@@ -1411,12 +1411,13 @@ struct xIPv6_Couple
+         BaseType_t xIndex;
+         static const struct xIPv6_Couple xIPCouples[] =
+         {
+-            /*    IP-type          Mask     Value */
+-            { eIPv6_Global,    0xE000U, 0x2000U }, /* 001 */
+-            { eIPv6_LinkLocal, 0xFFC0U, 0xFE80U }, /* 1111 1110 10 */
+-            { eIPv6_SiteLocal, 0xFFC0U, 0xFEC0U }, /* 1111 1110 11 */
+-            { eIPv6_Multicast, 0xFF00U, 0xFF00U }, /* 1111 1111 */
+-            { eIPv6_Loopback,  0xFFFFU, 0x0000U }, /* 0000 0000 ::1 */
++            /*    IP-type         Mask     Value */
++            { eIPv6_Global,      0xE000U, 0x2000U }, /* 001 */
++            { eIPv6_LinkLocal,   0xFFC0U, 0xFE80U }, /* 1111 1110 10 */
++            { eIPv6_SiteLocal,   0xFFC0U, 0xFEC0U }, /* 1111 1110 11 */
++            { eIPv6_UniqueLocal, 0xFE00U, 0xFC00U }, /* 1111 110 */
++            { eIPv6_Multicast,   0xFF00U, 0xFF00U }, /* 1111 1111 */
++            { eIPv6_Loopback,    0xFFFFU, 0x0000U }, /* 0000 0000 ::1 */
+         };
+ 
+         if( pxAddress != NULL )
+diff --git a/source/include/FreeRTOS_Routing.h b/source/include/FreeRTOS_Routing.h
+index 0fa9fab8..43b69667 100644
+--- a/source/include/FreeRTOS_Routing.h
++++ b/source/include/FreeRTOS_Routing.h
+@@ -352,12 +352,13 @@
+ 
+     typedef enum
+     {
+-        eIPv6_Global,    /* 001           */
+-        eIPv6_LinkLocal, /* 1111 1110 10  */
+-        eIPv6_SiteLocal, /* 1111 1110 11  */
+-        eIPv6_Multicast, /* 1111 1111     */
+-        eIPv6_Loopback,  /* 1111 (::1)    */
+-        eIPv6_Unknown    /* Not implemented. */
++        eIPv6_Global,      /* 001           */
++        eIPv6_LinkLocal,   /* 1111 1110 10  */
++        eIPv6_SiteLocal,   /* 1111 1110 11  */
++        eIPv6_UniqueLocal, /* 1111 110      */
++        eIPv6_Multicast,   /* 1111 1111     */
++        eIPv6_Loopback,    /* 1111 (::1)    */
++        eIPv6_Unknown      /* Not implemented. */
+     }
+     IPv6_Type_t;
+ 
+diff --git a/test/unit-test/FreeRTOS_IP/FreeRTOS_IP_utest.c b/test/unit-test/FreeRTOS_IP/FreeRTOS_IP_utest.c
+index aaac1d29..66df3645 100644
+--- a/test/unit-test/FreeRTOS_IP/FreeRTOS_IP_utest.c
++++ b/test/unit-test/FreeRTOS_IP/FreeRTOS_IP_utest.c
+@@ -4419,6 +4419,26 @@ void test_prvIPNetworkUpCalls_SiteLocal()
+     prvIPNetworkUpCalls_Generic( ucAddress, eIPv6_SiteLocal, ipHAS_IPV6 | ipHAS_METHOD );
+ }
+ 
++void test_prvIPNetworkUpCalls_UniqueLocal()
++{
++    /* Use the unique local address fd12:3456:789a:1::1 */
++    static const uint8_t ucAddress[ 16 ] =
++    {
++        0xFDU, 0x12U,
++        0x34U, 0x56U,
++        0x78U, 0x9AU,
++        0x00U, 0x01U,
++        0x00U, 0x00U,
++        0x00U, 0x00U,
++        0x00U, 0x00U,
++        0x00U, 0x01U
++    };
++
++    prvIPNetworkUpCalls_Generic( ucAddress, eIPv6_UniqueLocal, ipHAS_IPV6 | ipHAS_METHOD | ipHAS_INTERFACE );
++    prvIPNetworkUpCalls_Generic( ucAddress, eIPv6_UniqueLocal, ipHAS_IPV6 | ipHAS_INTERFACE );
++    prvIPNetworkUpCalls_Generic( ucAddress, eIPv6_UniqueLocal, ipHAS_IPV6 | ipHAS_METHOD );
++}
++
+ void test_prvIPNetworkUpCalls_Multicast()
+ {
+     /* Use the multicast address "ff02::fb",
+diff --git a/test/unit-test/FreeRTOS_IPv6_Utils/FreeRTOS_IPv6_Utils_utest.c b/test/unit-test/FreeRTOS_IPv6_Utils/FreeRTOS_IPv6_Utils_utest.c
+index 74065646..759a0534 100644
+--- a/test/unit-test/FreeRTOS_IPv6_Utils/FreeRTOS_IPv6_Utils_utest.c
++++ b/test/unit-test/FreeRTOS_IPv6_Utils/FreeRTOS_IPv6_Utils_utest.c
+@@ -789,6 +789,19 @@ void test_vManageSolicitedNodeAddress_NetworkGoingUp( void )
+ 
+     TEST_ASSERT_EQUAL( pdTRUE, xMACAddFunctionCalled );
+ 
++    /* Happy path eIPv6_UniqueLocal */
++    xInterface.pfAddAllowedMAC = &pfAddAllowedMAC;
++    xInterface.pfRemoveAllowedMAC = &pfRemoveAllowedMAC;
++    xInterface.pxEndPoint = &xEndPoint;
++
++    xMACAddFunctionCalled = pdFALSE;
++
++    xIPv6_GetIPType_ExpectAndReturn( &xEndPoint.ipv6_settings.xIPAddress, eIPv6_UniqueLocal );
++
++    vManageSolicitedNodeAddress( &xEndPoint, pdTRUE );
++
++    TEST_ASSERT_EQUAL( pdTRUE, xMACAddFunctionCalled );
++
+     /* Happy path eIPv6_Global */
+     xInterface.pfAddAllowedMAC = &pfAddAllowedMAC;
+     xInterface.pfRemoveAllowedMAC = &pfRemoveAllowedMAC;
+@@ -884,6 +897,19 @@ void test_vManageSolicitedNodeAddress_NetworkGoingDown( void )
+ 
+     TEST_ASSERT_EQUAL( pdTRUE, xMACRemoveFunctionCalled );
+ 
++    /* Happy path eIPv6_UniqueLocal */
++    xInterface.pfAddAllowedMAC = &pfAddAllowedMAC;
++    xInterface.pfRemoveAllowedMAC = &pfRemoveAllowedMAC;
++    xInterface.pxEndPoint = &xEndPoint;
++
++    xMACRemoveFunctionCalled = pdFALSE;
++
++    xIPv6_GetIPType_ExpectAndReturn( &xEndPoint.ipv6_settings.xIPAddress, eIPv6_UniqueLocal );
++
++    vManageSolicitedNodeAddress( &xEndPoint, pdFALSE );
++
++    TEST_ASSERT_EQUAL( pdTRUE, xMACRemoveFunctionCalled );
++
+     /* Happy path eIPv6_Global */
+     xInterface.pfAddAllowedMAC = &pfAddAllowedMAC;
+     xInterface.pfRemoveAllowedMAC = &pfRemoveAllowedMAC;
+diff --git a/test/unit-test/FreeRTOS_Routing/FreeRTOS_Routing_utest.c b/test/unit-test/FreeRTOS_Routing/FreeRTOS_Routing_utest.c
+index 21064804..e2f5551d 100644
+--- a/test/unit-test/FreeRTOS_Routing/FreeRTOS_Routing_utest.c
++++ b/test/unit-test/FreeRTOS_Routing/FreeRTOS_Routing_utest.c
+@@ -2645,6 +2645,24 @@ void test_xIPv6_GetIPType_SiteLocal()
+     TEST_ASSERT_EQUAL( eIPv6_SiteLocal, xReturn );
+ }
+ 
++/**
++ * @brief xIPv6_GetIPType returns eIPv6_UniqueLocal if input address matches FC00::/7.
++ *
++ * Test step:
++ *  - Create 1 IPv6 address.
++ *     - Set the IP address to FD12:3456:789A:1::1.
++ *  - Call xIPv6_GetIPType to check IP type.
++ *  - Check if it returns eIPv6_UniqueLocal.
++ */
++void test_xIPv6_GetIPType_UniqueLocal()
++{
++    const IPv6_Address_t xIPv6Address = { 0xFD, 0x12, 0x34, 0x56, 0x78, 0x9A, 0, 0x01, 0, 0, 0, 0, 0, 0, 0, 0x01 };
++    IPv6_Type_t xReturn;
++
++    xReturn = xIPv6_GetIPType( &xIPv6Address );
++    TEST_ASSERT_EQUAL( eIPv6_UniqueLocal, xReturn );
++}
++
+ /**
+  * @brief xIPv6_GetIPType returns eIPv6_Multicast if input address matches FF00::/8.
+  *
