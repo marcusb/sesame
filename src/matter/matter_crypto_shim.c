@@ -1,7 +1,8 @@
 /*
  * Matter Crypto Shims for Berry
  *
- * This module provides SHA256, HMAC-SHA256, Random, and NIST P-256 EC support.
+ * This module provides SHA256, HMAC-SHA256, HKDF, PBKDF2, Random, and NIST
+ * P-256 EC support.
  *
  * NOTE ON DYNAMIC LOADING:
  * The 'crypto' module and 'EC_P256' class are registered at runtime via
@@ -27,54 +28,76 @@
 #define MATTER_LOG(fmt, ...) printf("[MATTER] " fmt "\r\n", ##__VA_ARGS__)
 #include "be_mapping.h"
 #include "berry.h"
-#include "mbedtls/ctr_drbg.h"
 #include "mbedtls/ecp.h"
-#include "mbedtls/entropy.h"
+#include "mbedtls/hkdf.h"
 #include "mbedtls/md.h"
+#include "mbedtls/pkcs5.h"
 #include "mbedtls/sha256.h"
 
-static mbedtls_entropy_context entropy;
-static mbedtls_ctr_drbg_context ctr_drbg;
-static int drbg_initialized = 0;
-
-static int ensure_drbg_init(void) {
-    if (drbg_initialized) return 0;
-    mbedtls_entropy_init(&entropy);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
-    int ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-                                    NULL, 0);
-    if (ret == 0) drbg_initialized = 1;
-    return ret;
-}
+extern int get_drbg_random(void* p_rng, unsigned char* output, size_t len);
 
 /* SHA256(data:bytes) -> bytes(32) */
 static int crypto_sha256(bvm* vm) {
     size_t len;
     const unsigned char* data = (const unsigned char*)be_tobytes(vm, 1, &len);
-    unsigned char hash[32];
-    mbedtls_sha256(data, len, hash, 0);
-    be_pushbytes(vm, hash, 32);
+    if (!data) be_return_nil(vm);
+
+    unsigned char* output = (unsigned char*)be_pushbytes(vm, NULL, 32);
+    mbedtls_sha256(data, len, output, 0);
     be_return(vm);
 }
 
-/* HMAC_SHA256(key:bytes, data:bytes) -> bytes(32) */
+/* HMAC_SHA256(key:bytes, msg:bytes) -> bytes(32) */
 static int crypto_hmac_sha256(bvm* vm) {
-    size_t key_len, data_len;
+    size_t key_len, msg_len;
     const unsigned char* key =
         (const unsigned char*)be_tobytes(vm, 1, &key_len);
-    const unsigned char* data =
-        (const unsigned char*)be_tobytes(vm, 2, &data_len);
-    unsigned char hmac[32];
+    const unsigned char* msg =
+        (const unsigned char*)be_tobytes(vm, 2, &msg_len);
+    if (!key || !msg) be_return_nil(vm);
 
-    mbedtls_md_context_t ctx;
-    mbedtls_md_init(&ctx);
-    mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1);
-    mbedtls_md_hmac_starts(&ctx, key, key_len);
-    mbedtls_md_hmac_update(&ctx, data, data_len);
-    mbedtls_md_hmac_finish(&ctx, hmac);
-    mbedtls_md_free(&ctx);
+    unsigned char* output = (unsigned char*)be_pushbytes(vm, NULL, 32);
+    mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), key, key_len,
+                    msg, msg_len, output);
+    be_return(vm);
+}
 
-    be_pushbytes(vm, hmac, 32);
+/* HKDF_SHA256(secret:bytes, salt:bytes, info:bytes, out_len:int) ->
+ * bytes(out_len) */
+static int crypto_hkdf_sha256(bvm* vm) {
+    size_t secret_len, salt_len, info_len;
+    const unsigned char* secret =
+        (const unsigned char*)be_tobytes(vm, 1, &secret_len);
+    const unsigned char* salt =
+        (const unsigned char*)be_tobytes(vm, 2, &salt_len);
+    const unsigned char* info =
+        (const unsigned char*)be_tobytes(vm, 3, &info_len);
+    int out_len = be_toint(vm, 4);
+
+    if (!secret || out_len <= 0) be_return_nil(vm);
+
+    unsigned char* output = (unsigned char*)be_pushbytes(vm, NULL, out_len);
+    mbedtls_hkdf(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), salt, salt_len,
+                 secret, secret_len, info, info_len, output, out_len);
+    be_return(vm);
+}
+
+/* PBKDF2_HMAC_SHA256(pass:bytes, salt:bytes, iter:int, out_len:int) ->
+ * bytes(out_len) */
+static int crypto_pbkdf2_hmac_sha256(bvm* vm) {
+    size_t pass_len, salt_len;
+    const unsigned char* pass =
+        (const unsigned char*)be_tobytes(vm, 1, &pass_len);
+    const unsigned char* salt =
+        (const unsigned char*)be_tobytes(vm, 2, &salt_len);
+    int iter = be_toint(vm, 3);
+    int out_len = be_toint(vm, 4);
+
+    if (!pass || !salt || out_len <= 0) be_return_nil(vm);
+
+    unsigned char* output = (unsigned char*)be_pushbytes(vm, NULL, out_len);
+    mbedtls_pkcs5_pbkdf2_hmac_ext(MBEDTLS_MD_SHA256, pass, pass_len, salt,
+                                  salt_len, iter, out_len, output);
     be_return(vm);
 }
 
@@ -82,10 +105,9 @@ static int crypto_hmac_sha256(bvm* vm) {
 static int crypto_random(bvm* vm) {
     int size = be_toint(vm, 1);
     if (size <= 0) be_return_nil(vm);
-    if (ensure_drbg_init() != 0) be_return_nil(vm);
 
     unsigned char* buf = (unsigned char*)be_pushbytes(vm, NULL, size);
-    if (mbedtls_ctr_drbg_random(&ctr_drbg, buf, size) != 0) {
+    if (get_drbg_random(NULL, buf, size) != 0) {
         be_pop(vm, 1);
         be_return_nil(vm);
     }
@@ -128,35 +150,27 @@ static int crypto_ec_p256_deinit(bvm* vm) {
 static int crypto_ec_p256_mul(bvm* vm) {
     be_getmember(vm, 1, ".p");
     crypto_ec_p256_t* ec = (crypto_ec_p256_t*)be_tocomptr(vm, -1);
+    be_pop(vm, 1);
+
     size_t scalar_len;
     const unsigned char* scalar_buf =
         (const unsigned char*)be_tobytes(vm, 2, &scalar_len);
+    if (!ec || !scalar_buf) be_return_nil(vm);
 
     mbedtls_mpi d;
     mbedtls_ecp_point Q;
     mbedtls_mpi_init(&d);
     mbedtls_ecp_point_init(&Q);
 
-    mbedtls_mpi_read_binary(&d, scalar_buf, scalar_len);
-
-    if (ensure_drbg_init() != 0) {
+    if (mbedtls_mpi_read_binary(&d, scalar_buf, scalar_len) != 0) {
         mbedtls_mpi_free(&d);
         mbedtls_ecp_point_free(&Q);
         be_return_nil(vm);
     }
 
-    if (!drbg_initialized) {
-        if (ensure_drbg_init() != 0) {
-            MATTER_LOG("FAILED to initialize DRBG");
-            mbedtls_mpi_free(&d);
-            mbedtls_ecp_point_free(&Q);
-            be_return_nil(vm);
-        }
-    }
-
     MATTER_LOG("Starting NIST P-256 scalar multiplication...");
-    int ret = mbedtls_ecp_mul(&ec->grp, &Q, &d, &ec->grp.G,
-                              mbedtls_ctr_drbg_random, &ctr_drbg);
+    int ret =
+        mbedtls_ecp_mul(&ec->grp, &Q, &d, &ec->grp.G, get_drbg_random, NULL);
     MATTER_LOG("mbedtls_ecp_mul finished: %d", ret);
 
     unsigned char out[65];
@@ -198,6 +212,14 @@ int be_load_crypto_module(bvm* vm) {
 
     be_pushntvfunction(vm, crypto_hmac_sha256);
     be_setmember(vm, -2, "HMAC_SHA256");
+    be_pop(vm, 1);
+
+    be_pushntvfunction(vm, crypto_hkdf_sha256);
+    be_setmember(vm, -2, "HKDF_SHA256");
+    be_pop(vm, 1);
+
+    be_pushntvfunction(vm, crypto_pbkdf2_hmac_sha256);
+    be_setmember(vm, -2, "PBKDF2_HMAC_SHA256");
     be_pop(vm, 1);
 
     be_pushntvfunction(vm, crypto_random);
