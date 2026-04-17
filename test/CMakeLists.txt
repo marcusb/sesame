@@ -25,115 +25,60 @@ target_link_libraries(test_stubs PRIVATE globals)
 # Specialized Matter Shim Tests
 # ---------------------------------------------------------------------------
 
-set(MATTER_TEST_LINK_OPTIONS
-    "-Wl,-T,${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
-    "-Wl,--defsym=_keystore_size=0"
-    "-mcpu=cortex-m4"
-    "-mthumb"
-    "-mfloat-abi=softfp"
-    "-mfpu=fpv4-sp-d16"
-    "-specs=nano.specs"
-    "-specs=nosys.specs"
-    "-Wl,--wrap,malloc"
-    "-Wl,--wrap,free"
-    "-Wl,--wrap,calloc"
-    "-Wl,--wrap,realloc"
-    "-Wl,--wrap,printf"
-    "-Wl,--wrap,fprintf"
-    "-Wl,--undefined,uxTopUsedPriority"
-    "-Wl,--gc-sections"
-    "-Wl,--nmagic")
+# Object library ensures all shared test code is available to linkers without dropping symbols
+add_library(matter_test_support OBJECT
+    matter/matter_test_utils.c
+    matter/board_support.c
+    "${CMAKE_SOURCE_DIR}/src/newlib_wrappers.c"
+    "${CMAKE_SOURCE_DIR}/src/pin_mux.c"
+    "${CMAKE_SOURCE_DIR}/src/util.c"
+    "${CMAKE_SOURCE_DIR}/src/idle_task.c")
 
-macro(add_matter_test_binary name source)
-    add_executable(${name} 
-        "matter/${source}"
-        matter/matter_test_utils.c
-        matter/board_support.c
-        "${CMAKE_SOURCE_DIR}/src/newlib_wrappers.c"
-        "${CMAKE_SOURCE_DIR}/src/pin_mux.c"
-        "${CMAKE_SOURCE_DIR}/src/util.c"
-        "${CMAKE_SOURCE_DIR}/src/idle_task.c")
-    
-    target_include_directories(${name} PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/matter"
-        "${CMAKE_SOURCE_DIR}/include"
-        "${CMAKE_SOURCE_DIR}/src"
-        "${CMAKE_SOURCE_DIR}/board"
-        "${CMAKE_SOURCE_DIR}/third_party/berry/src")
-    
-    target_link_libraries(${name} PRIVATE
-        globals
-        unity logging board mw320_device_startup mw320_utility_assert
-        mw320_mbedtls_port mw320_drivers_aes
-        freertos_kernel
-        "LINKER:--start-group" sesame_matter berry_matter berry "LINKER:--end-group"
-        m)
-    
-    target_link_options(${name} PRIVATE ${MATTER_TEST_LINK_OPTIONS} "-Wl,-Map,${name}.map")
+target_include_directories(matter_test_support PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/matter"
+    "${CMAKE_SOURCE_DIR}/third_party/berry/src")
+
+target_link_libraries(matter_test_support PUBLIC
+    globals unity logging board mw320_device_startup mw320_utility_assert
+    mw320_mbedtls_port mw320_drivers_aes mw320_drivers_crc
+    freertos_kernel
+    "LINKER:--start-group" sesame_matter berry_matter berry "LINKER:--end-group"
+    m)
+
+macro(add_matter_test_binary name source linker_script)
+    add_executable(${name} "matter/${source}" $<TARGET_OBJECTS:matter_test_support>)
+    target_link_libraries(${name} PRIVATE globals matter_test_support)
+    target_link_options(${name} PRIVATE
+        "-mcpu=cortex-m4"
+        "-mthumb"
+        "-mfloat-abi=softfp"
+        "-mfpu=fpv4-sp-d16"
+        "-specs=nano.specs"
+        "-specs=nosys.specs"
+        "-Wl,--wrap,malloc"
+        "-Wl,--wrap,free"
+        "-Wl,--wrap,calloc"
+        "-Wl,--wrap,realloc"
+        "-Wl,--wrap,printf"
+        "-Wl,--wrap,fprintf"
+        "-Wl,--undefined,uxTopUsedPriority"
+        "-Wl,--gc-sections"
+        "-Wl,--nmagic"
+        "-Wl,-T,${CMAKE_SOURCE_DIR}/board/${linker_script}"
+        "-Wl,-Map,${name}.map"
+        "-Wl,--defsym=_keystore_size=0")
 endmacro()
 
-set(MATTER_FLASH_TEST_LINK_OPTIONS
-    "-Wl,-T,${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_flash.ld"
-    "-Wl,--defsym=_keystore_size=0"
-    "-mcpu=cortex-m4"
-    "-mthumb"
-    "-mfloat-abi=softfp"
-    "-mfpu=fpv4-sp-d16"
-    "-specs=nano.specs"
-    "-specs=nosys.specs"
-    "-Wl,--wrap,malloc"
-    "-Wl,--wrap,free"
-    "-Wl,--wrap,calloc"
-    "-Wl,--wrap,realloc"
-    "-Wl,--wrap,printf"
-    "-Wl,--wrap,fprintf"
-    "-Wl,--undefined,uxTopUsedPriority"
-    "-Wl,--gc-sections"
-    "-Wl,--nmagic")
-
-macro(add_matter_flash_test_binary name source)
-    add_executable(${name} 
-        "matter/${source}"
-        matter/matter_test_utils.c
-        matter/board_support_flash.c
-        "${CMAKE_SOURCE_DIR}/src/newlib_wrappers.c"
-        "${CMAKE_SOURCE_DIR}/src/pin_mux.c"
-        "${CMAKE_SOURCE_DIR}/src/util.c"
-        "${CMAKE_SOURCE_DIR}/src/idle_task.c")
-    
-    target_include_directories(${name} PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/matter"
-        "${CMAKE_SOURCE_DIR}/include"
-        "${CMAKE_SOURCE_DIR}/src"
-        "${CMAKE_SOURCE_DIR}/board"
-        "${CMAKE_SOURCE_DIR}/third_party/berry/src")
-    
-    target_link_libraries(${name} PRIVATE
-        globals
-        unity logging board mw320_device_startup mw320_utility_assert
-        mw320_mbedtls_port mw320_drivers_aes mw320_drivers_crc
-        freertos_kernel
-        "LINKER:--start-group" sesame_matter berry_matter berry "LINKER:--end-group"
-        m)
-    
-    target_link_options(${name} PRIVATE ${MATTER_FLASH_TEST_LINK_OPTIONS} "-Wl,-Map,${name}.map")
-endmacro()
-
-add_matter_test_binary(matter_crypto_tests test_matter_crypto.c)
-add_matter_test_binary(matter_ec_raw_tests test_ec_raw.c)
-add_matter_flash_test_binary(matter_crypto_flash_tests test_matter_crypto.c)
-add_matter_test_binary(matter_sesame_tests test_matter_sesame.c)
-add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c)
+add_matter_test_binary(matter_crypto_tests test_matter_crypto.c 88MW320_xx_xxxx_ram.ld)
+add_matter_test_binary(matter_ec_raw_tests test_ec_raw.c 88MW320_xx_xxxx_ram.ld)
+add_matter_test_binary(matter_crypto_flash_tests test_matter_crypto.c 88MW320_xx_xxxx_flash.ld)
+add_matter_test_binary(matter_sesame_tests test_matter_sesame.c 88MW320_xx_xxxx_ram.ld)
+add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c 88MW320_xx_xxxx_ram.ld)
 
 # ---------------------------------------------------------------------------
 # sesame_tests – main unit test runner
 # ---------------------------------------------------------------------------
-add_executable(sesame_tests)
-
-target_sources(sesame_tests
-    PRIVATE
+add_executable(sesame_tests
     test_runner.c
     test_config_manager.c
     test_string_util.c
@@ -159,6 +104,7 @@ target_include_directories(sesame_tests
 
 target_link_libraries(sesame_tests
     PRIVATE
+    globals
     unity
     test_stubs
     logging
@@ -174,9 +120,6 @@ endif()
 
 target_link_options(sesame_tests
     PRIVATE
-    "-Wl,-Map,sesame_tests.map"
-    "-Wl,-T,${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
-    "-Wl,--defsym=_keystore_size=0"
     "-mcpu=cortex-m4"
     "-mthumb"
     "-mfloat-abi=softfp"
@@ -191,4 +134,7 @@ target_link_options(sesame_tests
     "-Wl,--wrap,fprintf"
     "-Wl,--undefined,uxTopUsedPriority"
     "-Wl,--gc-sections"
-    "-Wl,--nmagic")
+    "-Wl,--nmagic"
+    "-Wl,-Map,sesame_tests.map"
+    "-Wl,-T,${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
+    "-Wl,--defsym=_keystore_size=0")

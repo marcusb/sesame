@@ -19,18 +19,12 @@
  *    requested by the VM.
  */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "app_logging.h"
-#undef LOG_INFO
-#undef LOG_ERROR
-#undef LOG_WARN
-#undef LOG_DEBUG
-#define LOG_INFO(fmt, ...) LogInfo((fmt, ##__VA_ARGS__))
-#define LOG_ERROR(fmt, ...) LogError((fmt, ##__VA_ARGS__))
-#define LOG_WARN(fmt, ...) LogWarn((fmt, ##__VA_ARGS__))
-#define LOG_DEBUG(fmt, ...) LogDebug((fmt, ##__VA_ARGS__))
+#define MATTER_LOG(fmt, ...) printf("[MATTER] " fmt "\r\n", ##__VA_ARGS__)
 #include "be_mapping.h"
 #include "berry.h"
 #include "mbedtls/ctr_drbg.h"
@@ -106,7 +100,10 @@ typedef struct {
 static int crypto_ec_p256_init(bvm* vm) {
     crypto_ec_p256_t* ec = (crypto_ec_p256_t*)malloc(sizeof(crypto_ec_p256_t));
     mbedtls_ecp_group_init(&ec->grp);
-    mbedtls_ecp_group_load(&ec->grp, MBEDTLS_ECP_DP_SECP256R1);
+    int ret = mbedtls_ecp_group_load(&ec->grp, MBEDTLS_ECP_DP_SECP256R1);
+    if (ret != 0) {
+        MATTER_LOG("mbedtls_ecp_group_load failed: %d", ret);
+    }
 
     /* Store the instance in the class member '.p' */
     be_pushcomptr(vm, ec);
@@ -148,10 +145,19 @@ static int crypto_ec_p256_mul(bvm* vm) {
         be_return_nil(vm);
     }
 
-    LOG_INFO("Starting NIST P-256 scalar multiplication...");
+    if (!drbg_initialized) {
+        if (ensure_drbg_init() != 0) {
+            MATTER_LOG("FAILED to initialize DRBG");
+            mbedtls_mpi_free(&d);
+            mbedtls_ecp_point_free(&Q);
+            be_return_nil(vm);
+        }
+    }
+
+    MATTER_LOG("Starting NIST P-256 scalar multiplication...");
     int ret = mbedtls_ecp_mul(&ec->grp, &Q, &d, &ec->grp.G,
                               mbedtls_ctr_drbg_random, &ctr_drbg);
-    LOG_INFO("mbedtls_ecp_mul finished: %d", ret);
+    MATTER_LOG("mbedtls_ecp_mul finished: %d", ret);
 
     unsigned char out[65];
     size_t out_len = 0;

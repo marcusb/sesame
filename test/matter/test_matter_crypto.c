@@ -64,7 +64,7 @@ static void run_tests_task(void* params) {
 
 int main(void) {
     test_board_init();
-    if (xTaskCreate(run_tests_task, "tests", 8192, NULL, tskIDLE_PRIORITY + 1,
+    if (xTaskCreate(run_tests_task, "tests", 4096, NULL, tskIDLE_PRIORITY + 1,
                     NULL) != pdPASS) {
         return 1;
     }

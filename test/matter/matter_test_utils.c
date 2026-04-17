@@ -12,6 +12,10 @@ extern int be_load_crypto_module(bvm* vm);
 
 void matter_test_setup(void) {
     vm = be_vm_new();
+    if (!vm) {
+        printf("FAILED to create Berry VM (RAM starvation?)\n");
+        return;
+    }
     be_set_ctype_func_handler(vm, be_call_ctype_func);
     be_load_crypto_module(vm);
 }

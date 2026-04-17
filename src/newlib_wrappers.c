@@ -47,9 +47,10 @@ void* __wrap_malloc(size_t size) { return pvPortMalloc(size); }
 void __wrap_free(void* ptr) { vPortFree(ptr); }
 
 void* __wrap_calloc(size_t nmemb, size_t size) {
-    void* ptr = pvPortMalloc(size);
+    size_t total = nmemb * size;
+    void* ptr = pvPortMalloc(total);
     if (ptr) {
-        memset(ptr, 0x00, size);
+        memset(ptr, 0x00, total);
     }
     return ptr;
 }

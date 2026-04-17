@@ -26,7 +26,14 @@ QueueHandle_t ctrl_queue;
 void* psm_hnd = (void*)0x12345678;
 
 /* ---- Unity output ---- */
-void unity_putchar(char c) { PUTCHAR(c); }
+void unity_putchar(char c) {
+    if (c == '\n') {
+        PUTCHAR('\r');
+    }
+    PUTCHAR(c);
+}
+
+void unity_flush(void) { DbgConsole_Flush(); }
 
 /* ---- printf wrapping ---- */
 int __wrap_printf(const char* format, ...) {
@@ -64,19 +71,31 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char* pcTaskName) {
 }
 void vApplicationTickHook(void) {}
 
+/* ---- newlib wrappers ---- */
+void* __wrap_sbrk(int incr) {
+    (void)incr;
+    return (void*)-1;
+}
+
 /* ---- Heap setup (mirrors main.c) ---- */
 extern unsigned __HeapBase, __HeapLimit, __HeapBase_sram0, __HeapLimit_sram0;
 
 void setup_heap(void) {
     HeapRegion_t xHeapRegions[3];
     size_t i = 0;
+
+    /* Prioritize larger SRAM1 region for better contiguous allocation */
+    if ((unsigned)&__HeapLimit > (unsigned)&__HeapBase) {
+        xHeapRegions[i++] =
+            (HeapRegion_t){(uint8_t*)&__HeapBase,
+                           (unsigned)&__HeapLimit - (unsigned)&__HeapBase};
+    }
+
     if ((unsigned)&__HeapLimit_sram0 > (unsigned)&__HeapBase_sram0) {
         xHeapRegions[i++] = (HeapRegion_t){
             (uint8_t*)&__HeapBase_sram0,
             (unsigned)&__HeapLimit_sram0 - (unsigned)&__HeapBase_sram0};
     }
-    xHeapRegions[i++] = (HeapRegion_t){
-        (uint8_t*)&__HeapBase, (unsigned)&__HeapLimit - (unsigned)&__HeapBase};
 
     xHeapRegions[i] = (HeapRegion_t){NULL, 0};
     vPortDefineHeapRegions(xHeapRegions);
