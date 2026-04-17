@@ -45,35 +45,38 @@ target_link_libraries(matter_test_support PUBLIC
     "LINKER:--start-group" sesame_matter berry_matter berry "LINKER:--end-group"
     m)
 
-macro(add_matter_test_binary name source linker_script)
+# Common ARM link options for tests
+set(ARM_TEST_LINK_OPTIONS
+    "-mcpu=cortex-m4"
+    "-mthumb"
+    "-mfloat-abi=softfp"
+    "-mfpu=fpv4-sp-d16"
+    "-specs=nano.specs"
+    "-specs=nosys.specs"
+    "-Wl,--wrap,malloc"
+    "-Wl,--wrap,free"
+    "-Wl,--wrap,calloc"
+    "-Wl,--wrap,realloc"
+    "-Wl,--wrap,printf"
+    "-Wl,--wrap,fprintf"
+    "-Wl,--undefined,uxTopUsedPriority"
+    "-Wl,--gc-sections"
+    "-Wl,--nmagic"
+    "-Wl,--defsym=_keystore_size=0")
+
+macro(add_matter_test_binary name source)
     add_executable(${name} "matter/${source}" $<TARGET_OBJECTS:matter_test_support>)
     target_link_libraries(${name} PRIVATE globals matter_test_support)
     target_link_options(${name} PRIVATE
-        "-mcpu=cortex-m4"
-        "-mthumb"
-        "-mfloat-abi=softfp"
-        "-mfpu=fpv4-sp-d16"
-        "-specs=nano.specs"
-        "-specs=nosys.specs"
-        "-Wl,--wrap,malloc"
-        "-Wl,--wrap,free"
-        "-Wl,--wrap,calloc"
-        "-Wl,--wrap,realloc"
-        "-Wl,--wrap,printf"
-        "-Wl,--wrap,fprintf"
-        "-Wl,--undefined,uxTopUsedPriority"
-        "-Wl,--gc-sections"
-        "-Wl,--nmagic"
-        "-Wl,-T,${CMAKE_SOURCE_DIR}/board/${linker_script}"
-        "-Wl,-Map,${name}.map"
-        "-Wl,--defsym=_keystore_size=0")
+        ${ARM_TEST_LINK_OPTIONS}
+        "-Wl,-T,${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
+        "-Wl,-Map,${name}.map")
 endmacro()
 
-add_matter_test_binary(matter_crypto_tests test_matter_crypto.c 88MW320_xx_xxxx_ram.ld)
-add_matter_test_binary(matter_ec_raw_tests test_ec_raw.c 88MW320_xx_xxxx_ram.ld)
-add_matter_test_binary(matter_crypto_flash_tests test_matter_crypto.c 88MW320_xx_xxxx_flash.ld)
-add_matter_test_binary(matter_sesame_tests test_matter_sesame.c 88MW320_xx_xxxx_ram.ld)
-add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c 88MW320_xx_xxxx_ram.ld)
+add_matter_test_binary(matter_crypto_tests test_matter_crypto.c)
+add_matter_test_binary(matter_ec_raw_tests test_ec_raw.c)
+add_matter_test_binary(matter_sesame_tests test_matter_sesame.c)
+add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c)
 
 # ---------------------------------------------------------------------------
 # sesame_tests – main unit test runner
@@ -120,21 +123,6 @@ endif()
 
 target_link_options(sesame_tests
     PRIVATE
-    "-mcpu=cortex-m4"
-    "-mthumb"
-    "-mfloat-abi=softfp"
-    "-mfpu=fpv4-sp-d16"
-    "-specs=nano.specs"
-    "-specs=nosys.specs"
-    "-Wl,--wrap,malloc"
-    "-Wl,--wrap,free"
-    "-Wl,--wrap,calloc"
-    "-Wl,--wrap,realloc"
-    "-Wl,--wrap,printf"
-    "-Wl,--wrap,fprintf"
-    "-Wl,--undefined,uxTopUsedPriority"
-    "-Wl,--gc-sections"
-    "-Wl,--nmagic"
+    ${ARM_TEST_LINK_OPTIONS}
     "-Wl,-Map,sesame_tests.map"
-    "-Wl,-T,${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
-    "-Wl,--defsym=_keystore_size=0")
+    "-Wl,-T,${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")

@@ -478,7 +478,7 @@ The `gdbinit` script provides helper functions for common tasks:
 
 To run automated GDB traces (e.g., in CI or for specific bug hunts):
 ```bash
-gdb-multiarch -batch -x tools/OpenOCD/gdbinit build/test/matter_crypto_flash_tests.axf \
+gdb-multiarch -batch -x tools/OpenOCD/gdbinit build/sesame.axf \
   -ex "xip-debug" \
   -ex "thbreak mbedtls_ecp_mul" \
   -ex "continue" \
