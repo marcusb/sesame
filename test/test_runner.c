@@ -29,7 +29,14 @@ psm_hnd_t psm_hnd = NULL;
 
 /* ---- Unity output ---- */
 
-void unity_putchar(char c) { PRINTF("%c", c); }
+void unity_putchar(char c) {
+    if (c == '\n') {
+        PUTCHAR('\r');
+    }
+    PUTCHAR(c);
+}
+
+void unity_flush(void) { DbgConsole_Flush(); }
 
 /* ---- capture backend ---- */
 
@@ -88,7 +95,7 @@ static void run_tests_task(void* params) {
 
     register_log_backend(capture_backend);
     init_logging(512, tskIDLE_PRIORITY, 16);
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(2000));
 
     UNITY_BEGIN();
 #ifdef TEST_MATTER_ONLY
@@ -102,6 +109,7 @@ static void run_tests_task(void* params) {
 #endif
     int result = UNITY_END();
 
+    DbgConsole_Flush();
     PRINTF("\r\nTEST_RESULT:%d\r\n", result);
     vTaskDelete(NULL);
 }
@@ -133,6 +141,7 @@ int main(void) {
     board_init_pins();
     init_boot_clocks();
     init_debug_console();
+    DbgConsole_Flush();
 
     setup_heap();
 

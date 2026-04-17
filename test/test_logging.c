@@ -2,14 +2,13 @@
 
 /* FreeRTOS */
 #include "FreeRTOS.h"
-#include "task.h"
-
 #include "logging.h"
 #include "logging_levels.h"
+#include "task.h"
 #include "test_capture.h"
 #include "unity.h"
 
-static void dummy_backend(const log_msg_t *log) { (void)log; }
+static void dummy_backend(const log_msg_t* log) { (void)log; }
 
 /*
  * These tests run in order and share persistent logging state:
@@ -47,6 +46,7 @@ static void test_log_file_line_prefix(void) {
 }
 
 void run_test_logging(void) {
+    UnitySetTestFile(__FILE__);
     RUN_TEST(test_register_second_backend);
     RUN_TEST(test_register_backend_full);
     RUN_TEST(test_log_message_delivered);

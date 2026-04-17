@@ -4,8 +4,8 @@
 #include "config_manager.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
-#include "stubs/stub_psm.h"
 #include "string_util.h"
+#include "stubs/stub_psm.h"
 #include "unity.h"
 
 static void test_load_config_success(void) {
@@ -60,7 +60,7 @@ static void test_save_config_roundtrip(void) {
     int r = save_config();
     TEST_ASSERT_EQUAL(0, r);
 
-    const uint8_t *written;
+    const uint8_t* written;
     size_t written_len;
     stub_psm_get_written(&written, &written_len);
     TEST_ASSERT_GREATER_THAN(0, (int)written_len);
@@ -82,6 +82,7 @@ static void test_save_config_empty(void) {
 }
 
 void run_test_config_manager(void) {
+    UnitySetTestFile(__FILE__);
     RUN_TEST(test_load_config_success);
     RUN_TEST(test_load_config_psm_error);
     RUN_TEST(test_load_config_bad_protobuf);

@@ -39,15 +39,15 @@ static void test_strtcpy_truncation(void) {
 
 static void test_stpecpy_null_propagation(void) {
     char buf[8];
-    char *end = buf + sizeof(buf);
-    char *r = stpecpy(NULL, end, "hello");
+    char* end = buf + sizeof(buf);
+    char* r = stpecpy(NULL, end, "hello");
     TEST_ASSERT_NULL(r);
 }
 
 static void test_stpecpy_chained(void) {
     char buf[16];
-    char *end = buf + sizeof(buf);
-    char *p = stpecpy(buf, end, "foo");
+    char* end = buf + sizeof(buf);
+    char* p = stpecpy(buf, end, "foo");
     TEST_ASSERT_NOT_NULL(p);
     p = stpecpy(p, end, "bar");
     TEST_ASSERT_NOT_NULL(p);
@@ -56,13 +56,14 @@ static void test_stpecpy_chained(void) {
 
 static void test_stpecpy_truncation(void) {
     char buf[5];
-    char *end = buf + sizeof(buf);
-    char *r = stpecpy(buf, end, "hello!");
+    char* end = buf + sizeof(buf);
+    char* r = stpecpy(buf, end, "hello!");
     TEST_ASSERT_NULL(r);
     TEST_ASSERT_EQUAL_STRING("hell", buf);
 }
 
 void run_test_string_util(void) {
+    UnitySetTestFile(__FILE__);
     RUN_TEST(test_strtcpy_zero_dsize);
     RUN_TEST(test_strtcpy_normal);
     RUN_TEST(test_strtcpy_exact_fit);

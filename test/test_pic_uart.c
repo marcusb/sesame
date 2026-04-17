@@ -5,11 +5,12 @@
  * captured from the device; hardware calls (gpio_set/clear,
  * UART_TransferReceiveNonBlocking) are satisfied by no-op stubs.
  */
-/* pic_uart.c brings in fsl_uart.h, fsl_gpio.h, gpio.h — all SDK types available below */
-#include "pic_uart.c"
-
+/* pic_uart.c brings in fsl_uart.h, fsl_gpio.h, gpio.h — all SDK types available
+ * below */
 #include <string.h>
+
 #include "controller.h"
+#include "pic_uart.c"
 #include "unity.h"
 
 /*
@@ -19,7 +20,7 @@
  * provided by libmw320_drivers_uart.a; the real implementations harmlessly
  * set up a receive that never fires since no UART hardware is running.
  */
-void gpio_set(int pin)   { (void)pin; }
+void gpio_set(int pin) { (void)pin; }
 void gpio_clear(int pin) { (void)pin; }
 
 /* ---- calc_chk_sum ---- */
@@ -83,36 +84,31 @@ static void test_next_token_range(void) {
  * Layout: [0x55][len=0x0e][seq][type=0x16][14-byte payload][checksum]
  */
 
-/* door open, moving up: state=OPEN(1), dir=UP(1), up_lim=32881, down_lim=32763 */
+/* door open, moving up: state=OPEN(1), dir=UP(1), up_lim=32881, down_lim=32763
+ */
 static const uint8_t frame_open_up[] = {
-    0x55, 0x0e, 0xda, 0x16,
-    0x11, 0x00, 0x00, 0x00, 0x01, 0x01, 0x06, 0x80, 0x71, 0x80, 0xfb, 0x7f,
-    0x00, 0x00, 0x20
-};
+    0x55, 0x0e, 0xda, 0x16, 0x11, 0x00, 0x00, 0x00, 0x01, 0x01,
+    0x06, 0x80, 0x71, 0x80, 0xfb, 0x7f, 0x00, 0x00, 0x20};
 
 /* door open, moving down: state=OPEN(1), dir=DOWN(0) */
 static const uint8_t frame_open_down[] = {
-    0x55, 0x0e, 0xde, 0x16,
-    0x04, 0x00, 0x00, 0x00, 0x01, 0x00, 0x67, 0x80, 0x71, 0x80, 0xfb, 0x7f,
-    0x00, 0x00, 0x51
-};
+    0x55, 0x0e, 0xde, 0x16, 0x04, 0x00, 0x00, 0x00, 0x01, 0x00,
+    0x67, 0x80, 0x71, 0x80, 0xfb, 0x7f, 0x00, 0x00, 0x51};
 
 /* door closed, stopped: state=CLOSED(0), dir=STOPPED(2) */
 static const uint8_t frame_closed_stopped[] = {
-    0x55, 0x0e, 0xe0, 0x16,
-    0x12, 0x00, 0x00, 0x00, 0x00, 0x02, 0xfc, 0x7f, 0x71, 0x80, 0xfb, 0x7f,
-    0x00, 0x00, 0x1e
-};
+    0x55, 0x0e, 0xe0, 0x16, 0x12, 0x00, 0x00, 0x00, 0x00, 0x02,
+    0xfc, 0x7f, 0x71, 0x80, 0xfb, 0x7f, 0x00, 0x00, 0x1e};
 
 /* Reset module-level statics (accessible since we #include "pic_uart.c"). */
 static void reset_pic_uart_state(void) {
-    state               = DCM_DOOR_STATE_UNKNOWN;
-    direction           = DCM_DOOR_DIR_UNKNOWN;
-    pos                 = 0;
-    down_limit          = 0;
-    up_limit            = 0;
+    state = DCM_DOOR_STATE_UNKNOWN;
+    direction = DCM_DOOR_DIR_UNKNOWN;
+    pos = 0;
+    down_limit = 0;
+    up_limit = 0;
     last_state_pub_time = 0;
-    read_state          = READ_HEADER;
+    read_state = READ_HEADER;
 }
 
 /*
@@ -121,7 +117,7 @@ static void reset_pic_uart_state(void) {
  * UART_TransferReceiveNonBlocking is a stub no-op, so we fill the body bytes
  * into rx_buf manually before the second call.
  */
-static void feed_frame(const uint8_t *frame, size_t len) {
+static void feed_frame(const uint8_t* frame, size_t len) {
     memcpy(rx_buf, frame, 4);
     read_state = READ_HEADER;
     process_serial_data();
@@ -139,8 +135,8 @@ static void test_door_status_open_up(void) {
     ctrl_msg_t msg;
     TEST_ASSERT_TRUE(xQueueReceive(ctrl_queue, &msg, 0));
     TEST_ASSERT_EQUAL(CTRL_MSG_DOOR_STATE_UPDATE, msg.type);
-    TEST_ASSERT_EQUAL(DCM_DOOR_STATE_OPEN,  msg.msg.door_state.state);
-    TEST_ASSERT_EQUAL(DCM_DOOR_DIR_UP,      msg.msg.door_state.direction);
+    TEST_ASSERT_EQUAL(DCM_DOOR_STATE_OPEN, msg.msg.door_state.state);
+    TEST_ASSERT_EQUAL(DCM_DOOR_DIR_UP, msg.msg.door_state.direction);
 
     vQueueDelete(ctrl_queue);
     ctrl_queue = NULL;
@@ -156,8 +152,8 @@ static void test_door_status_open_down(void) {
     ctrl_msg_t msg;
     TEST_ASSERT_TRUE(xQueueReceive(ctrl_queue, &msg, 0));
     TEST_ASSERT_EQUAL(CTRL_MSG_DOOR_STATE_UPDATE, msg.type);
-    TEST_ASSERT_EQUAL(DCM_DOOR_STATE_OPEN,  msg.msg.door_state.state);
-    TEST_ASSERT_EQUAL(DCM_DOOR_DIR_DOWN,    msg.msg.door_state.direction);
+    TEST_ASSERT_EQUAL(DCM_DOOR_STATE_OPEN, msg.msg.door_state.state);
+    TEST_ASSERT_EQUAL(DCM_DOOR_DIR_DOWN, msg.msg.door_state.direction);
 
     vQueueDelete(ctrl_queue);
     ctrl_queue = NULL;
@@ -173,8 +169,8 @@ static void test_door_status_closed_stopped(void) {
     ctrl_msg_t msg;
     TEST_ASSERT_TRUE(xQueueReceive(ctrl_queue, &msg, 0));
     TEST_ASSERT_EQUAL(CTRL_MSG_DOOR_STATE_UPDATE, msg.type);
-    TEST_ASSERT_EQUAL(DCM_DOOR_STATE_CLOSED,    msg.msg.door_state.state);
-    TEST_ASSERT_EQUAL(DCM_DOOR_DIR_STOPPED,     msg.msg.door_state.direction);
+    TEST_ASSERT_EQUAL(DCM_DOOR_STATE_CLOSED, msg.msg.door_state.state);
+    TEST_ASSERT_EQUAL(DCM_DOOR_DIR_STOPPED, msg.msg.door_state.direction);
 
     vQueueDelete(ctrl_queue);
     ctrl_queue = NULL;
@@ -207,7 +203,7 @@ static void test_door_status_checksum_mismatch(void) {
 
     uint8_t bad[sizeof(frame_open_up)];
     memcpy(bad, frame_open_up, sizeof(bad));
-    bad[sizeof(bad) - 1] ^= 0xff;  /* corrupt checksum */
+    bad[sizeof(bad) - 1] ^= 0xff; /* corrupt checksum */
 
     feed_frame(bad, sizeof(bad));
 
@@ -219,6 +215,7 @@ static void test_door_status_checksum_mismatch(void) {
 }
 
 void run_test_pic_uart(void) {
+    UnitySetTestFile(__FILE__);
     RUN_TEST(test_calc_chk_sum_n_zero);
     RUN_TEST(test_calc_chk_sum_n_one);
     RUN_TEST(test_calc_chk_sum_n_two);

@@ -169,6 +169,19 @@ ser.close()
 
 ### Final Validation (Before Commit)
 
+Before committing changes, ensure both host-based and on-device tests pass.
+
+**1. Run Host-based Tests:**
+```sh
+cd test/host && uv run pytest
+```
+
+**2. Run On-device Unit Tests:**
+```sh
+ninja -C build test/sesame_tests.axf && ./tools/run_on_device.sh build/test/sesame_tests.axf
+```
+
+**3. Flash and Full System Test:**
 Build, flash, and test through full reboot cycle:
 ```bash
 ninja -C build sesame.axf && \

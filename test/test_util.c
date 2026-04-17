@@ -4,7 +4,6 @@
 /* FreeRTOS */
 #include "FreeRTOS.h"
 #include "task.h"
-
 #include "test_capture.h"
 #include "unity.h"
 #include "util.h"
@@ -13,13 +12,13 @@ static void wait_for_log(void) { vTaskDelay(pdMS_TO_TICKS(50)); }
 
 static void test_hexdump_zero_len(void) {
     capture_drain_and_reset();
-    debug_hexdump('T', (const uint8_t *)"\xAB", 0);
+    debug_hexdump('T', (const uint8_t*)"\xAB", 0);
     wait_for_log();
     TEST_ASSERT_EQUAL(0, capture_count);
 }
 
 static void test_hexdump_printable_byte(void) {
-    uint8_t data[] = {0x41};  /* 'A' */
+    uint8_t data[] = {0x41}; /* 'A' */
     capture_drain_and_reset();
     debug_hexdump('R', data, sizeof(data));
     wait_for_log();
@@ -60,6 +59,7 @@ static void test_hexdump_17_bytes(void) {
 }
 
 void run_test_util(void) {
+    UnitySetTestFile(__FILE__);
     RUN_TEST(test_hexdump_zero_len);
     RUN_TEST(test_hexdump_printable_byte);
     RUN_TEST(test_hexdump_nonprintable_byte);

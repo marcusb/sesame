@@ -6,6 +6,7 @@ target_include_directories(unity
     PUBLIC
     unity
     "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(unity PUBLIC UNITY_INCLUDE_CONFIG_H)
 target_link_libraries(unity PRIVATE globals)
 
 # ---------------------------------------------------------------------------
