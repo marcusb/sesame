@@ -153,11 +153,13 @@ target_include_directories(sesame_tests
     "${CMAKE_SOURCE_DIR}/src"
     "${CMAKE_SOURCE_DIR}/board"
     "${mw320_sdk_dir}/components/boot2_utils"
-    "${mw320_sdk_dir}/middleware/wifi/incl")
+    "${mw320_sdk_dir}/middleware/wifi/incl"
+    "${mw320_sdk_dir}/middleware/wifi/incl/port/os")
 
 target_link_libraries(sesame_tests
     PRIVATE
     unity
+    test_stubs
     logging
     proto
     freertos_kernel

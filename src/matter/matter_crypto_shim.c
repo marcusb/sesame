@@ -23,6 +23,14 @@
 #include <string.h>
 
 #include "app_logging.h"
+#undef LOG_INFO
+#undef LOG_ERROR
+#undef LOG_WARN
+#undef LOG_DEBUG
+#define LOG_INFO(fmt, ...) LogInfo((fmt, ##__VA_ARGS__))
+#define LOG_ERROR(fmt, ...) LogError((fmt, ##__VA_ARGS__))
+#define LOG_WARN(fmt, ...) LogWarn((fmt, ##__VA_ARGS__))
+#define LOG_DEBUG(fmt, ...) LogDebug((fmt, ##__VA_ARGS__))
 #include "be_mapping.h"
 #include "berry.h"
 #include "mbedtls/ctr_drbg.h"
