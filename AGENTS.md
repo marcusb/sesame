@@ -138,17 +138,7 @@ ninja -C build sesame_ram.axf && ./tools/OpenOCD/ramload.py build/sesame_ram.axf
 
 **Terminal 2** – Monitor serial output:
 ```sh
-# Method 1: Quick monitor (stty + cat)
-stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0
-
-# Method 2: Robust monitor (pyserial script)
-python3 -c "
-import serial, sys
-ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=1)
-while True:
-    if ser.in_waiting:
-        print(ser.read(ser.in_waiting).decode('utf-8', errors='replace'), end='', flush=True)
-"
+./tools/monitor.py
 ```
 
 Typical feature development cycle:
@@ -183,7 +173,7 @@ Build, flash, and test through full reboot cycle:
 ```bash
 ninja -C build sesame.axf && \
 ./tools/OpenOCD/flashprog.py --mcufw build/sesame.bin -r && \
-stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0
+./tools/monitor.py
 ```
 
 - Builds full flash binary
@@ -200,16 +190,10 @@ stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0
 
 **Capture logs to file** – Via tee:
 ```sh
-stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0 | tee output.log
+./tools/monitor.py | tee output.log
 ```
 
 **Stack traces** – Compiled with `USE_BACKTRACE=ON` by default; on crash, backtrace printed to console.
-
-**GDB debugging** – Flash the executable when debugging. The `.axf` file contains debug symbols:
-```sh
-arm-none-eabi-gdb build/sesame.axf
-(gdb) target remote :3333  # OpenOCD listening on 3333
-```
 
 ### Unit Tests
 
@@ -228,7 +212,7 @@ ninja -C build test/sesame_tests.axf
 
 **Monitor output:**
 ```sh
-stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0
+./tools/run_on_device.sh build/test/sesame_tests.axf
 ```
 
 Each test prints immediately as it executes:
@@ -425,62 +409,67 @@ sesame/
 pip install pyserial
 ```
 
-**Rebooting and Serial Capture:**
+### Monitoring Serial Output
+
+The project provides a robust serial monitor that handles reconnections and timestamping.
+
+**Method 1: Monitor-only**
+```bash
+./tools/monitor.py
+```
+
+**Method 2: Run and Monitor (RAM Load)**
+Build the RAM target and run it immediately with monitoring until completion:
+```bash
+./tools/run_on_device.sh build/sesame_ram.axf
+```
+
+**Method 3: Monitor After Flash**
+Monitor an already flashed (XIP) application without attempting to reload it into RAM:
+```bash
+./tools/run_on_device.sh build/sesame.axf --no-load
+```
+
+### Rebooting and Serial Capture
 
 To reboot the device and capture the initial boot sequence (critical for debugging boot crashes):
 
-**Method 1: Manual one-liner (Recommended)**
 ```bash
-python3 -c "
-import serial, time, sys
-try:
-    ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=1)
-    end_time = time.time() + 15
-    while time.time() < end_time:
-        if ser.in_waiting:
-            sys.stdout.write(ser.read(ser.in_waiting).decode('utf-8', errors='replace'))
-            sys.stdout.flush()
-    ser.close()
-except Exception as e: print(f'Error: {e}')
-" & sleep 2 && ./tools/OpenOCD/flashprog.py -r && wait
-```
-This script starts a background listener, waits 2 seconds, triggers a hardware reset via JTAG, and then waits for the capture to finish.
-
-**Method 2: Separate terminals**
-1. In Terminal A, start monitoring: `stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0`
-2. In Terminal B, trigger reset: `./tools/OpenOCD/flashprog.py -r`
-
-**Monitor firmware output** – Use `stty` + `cat` for quick checks or `pyserial` for robust monitoring:
-```sh
-# Method 1: Quick monitor
-stty -F /dev/ttyUSB0 115200 raw -echo && cat /dev/ttyUSB0
-
-# Method 2: Robust monitor (pyserial script)
-python3 -c "
-import serial, sys
-ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=1)
-while True:
-    if ser.in_waiting:
-        print(ser.read(ser.in_waiting).decode('utf-8', errors='replace'), end='', flush=True)
-"
+./tools/monitor.py & sleep 2 && ./tools/OpenOCD/flashprog.py -r && wait
 ```
 
-**Features:**
-- `Ctrl+C` to exit
-- `| tee output.log` to capture logs
-- Works well in scripts and CI/CD pipelines
-...
-**Programmatic testing** – Use pyserial directly in Python test scripts (see Integration Testing section). Claude can help write test automation that verifies device behavior, OTA updates, MQTT messages, etc.
+## GDB Debugging
 
-**Quick test after build:**
+Debugging is performed via JTAG using OpenOCD and GDB.
+
+### Setup
+
+1. **Start OpenOCD** in a separate terminal:
 ```bash
-python3 -c "
-import serial, time
-ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=2)
-time.sleep(1)
-data = ser.read(256).decode(errors='ignore')
-print(data)
-ser.close()
-print('✓ Device is running' if 'Sesame' in data else '✗ No output')
-"
+openocd -s tools/OpenOCD -f tools/OpenOCD/interface/ftdi.cfg -f tools/OpenOCD/openocd.cfg
 ```
+
+2. **Launch GDB** using the provided initialization script:
+```bash
+gdb-multiarch -x tools/OpenOCD/gdbinit build/sesame.axf
+```
+
+### Common Commands
+
+The `gdbinit` script provides helper functions for common tasks:
+
+- `debug` – Resets the board, loads the application into RAM, and stops at `main()`.
+- `xip-debug` – Resets the board and stops at the Flash (XIP) application `main()`.
+
+### Manual Debugging (Batch Mode)
+
+To run automated GDB traces (e.g., in CI or for specific bug hunts):
+```bash
+gdb-multiarch -batch -x tools/OpenOCD/gdbinit build/test/matter_crypto_flash_tests.axf \
+  -ex "xip-debug" \
+  -ex "thbreak mbedtls_ecp_mul" \
+  -ex "continue" \
+  -ex "bt" \
+  -ex "quit"
+```
+*(Note: Use `thbreak` for hardware breakpoints when debugging code running from Flash.)*
