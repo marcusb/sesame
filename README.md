@@ -177,12 +177,7 @@ ninja -C build test/sesame_tests.axf
 
 **Run** (loads to RAM via JTAG, no flash write):
 ```sh
-./tools/OpenOCD/ramload.py build/test/sesame_tests.axf
-```
-
-**Monitor output** on serial:
-```sh
-python3 -m serial.tools.miniterm /dev/ttyUSB0 115200
+./tools/run_on_device.sh build/test/sesame_tests.axf
 ```
 
 Expected output ends with:
