@@ -57,7 +57,6 @@ be_extern_native_module(persist);
 be_extern_native_module(path);
 be_extern_native_module(sesame);
 be_extern_native_module(mdns);
-be_extern_native_module(crypto);
 be_extern_native_module(matter);
 
 be_extern_native_class(bytes);
@@ -69,8 +68,15 @@ be_extern_native_class(int64);
 be_extern_native_class(udp);
 be_extern_native_class(Matter_Counter);
 be_extern_native_class(Matter_Verhoeff);
-// be_extern_native_class(Matter_QRCode);
-be_extern_native_class(crypto_EC_P256);
+
+/*
+ * NOTE: The 'crypto' module (and EC_P256 class) are loaded dynamically
+ * via be_load_crypto_module() instead of being listed in the static tables
+ * below. This is done to avoid complex static macro definitions for
+ * non-solidified modules and to ensure proper stack management during module
+ * construction, which was previously causing memory corruption and hangs during
+ * EC operations.
+ */
 
 const bntvmodule_t* const be_module_table[] = {
 #if BE_USE_STRING_MODULE
@@ -109,18 +115,25 @@ const bntvmodule_t* const be_module_table[] = {
 #if BE_USE_STRICT_MODULE
     &be_native_module(strict),
 #endif
-    &be_native_module(undefined),  &be_native_module(cb),
-    &be_native_module(tasmota),    &be_native_module(persist),
-    &be_native_module(path),       &be_native_module(sesame),
-    &be_native_module(mdns),       &be_native_module(crypto),
-    &be_native_module(matter),     NULL};
+    &be_native_module(undefined),
+    &be_native_module(cb),
+    &be_native_module(tasmota),
+    &be_native_module(persist),
+    &be_native_module(path),
+    &be_native_module(sesame),
+    &be_native_module(mdns),
+    &be_native_module(matter),
+    NULL};
 
-bclass_array be_class_table = {
-    &be_native_class(bytes), &be_native_class(list), &be_native_class(map),
-    &be_native_class(range), &be_native_class(int64), &be_native_class(udp),
-    &be_native_class(Matter_Counter), &be_native_class(Matter_Verhoeff),
-    // &be_native_class(Matter_QRCode),
-    &be_native_class(crypto_EC_P256), NULL};
+bclass_array be_class_table = {&be_native_class(bytes),
+                               &be_native_class(list),
+                               &be_native_class(map),
+                               &be_native_class(range),
+                               &be_native_class(int64),
+                               &be_native_class(udp),
+                               &be_native_class(Matter_Counter),
+                               &be_native_class(Matter_Verhoeff),
+                               NULL};
 
 BERRY_API void be_writebuffer(const char* buffer, size_t length) {
     for (size_t i = 0; i < length; i++) {
