@@ -262,8 +262,10 @@ void reboot() {
     NVIC_SystemReset();
 }
 
+#if SESAME_ENABLE_MATTER
 extern void matter_init(void);
 static bool matter_started = false;
+#endif
 
 static void main_task(void* param) {
     board_init();
@@ -290,6 +292,7 @@ static void main_task(void* param) {
     for (;;) {
         WDT_Refresh(WDT);
 
+#if SESAME_ENABLE_MATTER
         if (!matter_started) {
             NetworkEndPoint_t* pxEP = FreeRTOS_FirstEndPoint(NULL);
             bool any_up = false;
@@ -306,6 +309,7 @@ static void main_task(void* param) {
                 matter_started = true;
             }
         }
+#endif
 
         if (xQueueReceive(ctrl_queue, &ctrl_msg, 1000) == pdPASS) {
             switch (ctrl_msg.type) {

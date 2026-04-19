@@ -16,7 +16,6 @@ endif()
 
 option(USE_BACKTRACE "Include facility for dumping stack traces" ON)
 
-add_library(app_shared STATIC)
 add_library(globals INTERFACE)
 
 add_library(freertos_config INTERFACE)
@@ -94,7 +93,6 @@ if (USE_BACKTRACE)
         "${CMAKE_CURRENT_SOURCE_DIR}/libraries/backtrace/include")
     target_link_libraries(backtrace
         PRIVATE globals)
-    target_link_libraries(app_shared PUBLIC backtrace)
     target_compile_options(globals
         INTERFACE
         "-funwind-tables"
@@ -342,8 +340,7 @@ target_link_libraries(board
 add_subdirectory(third_party)
 add_subdirectory(src/matter)
 
-target_sources(app_shared
-    PRIVATE
+set(app_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
@@ -359,13 +356,16 @@ target_sources(app_shared
     "${CMAKE_CURRENT_SOURCE_DIR}/src/pin_mux.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/time_util.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c")
-target_include_directories(app_shared
-    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
+)
+
+add_library(app_deps INTERFACE)
+target_include_directories(app_deps
+    INTERFACE
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
-target_link_libraries(app_shared
-    PUBLIC
+target_link_libraries(app_deps
+    INTERFACE
     coreHTTP
     coreMQTT_agent
     freertos_plus_transport
@@ -376,22 +376,14 @@ target_link_libraries(app_shared
     board
     logging
     backoff_algorithm
-    proto
-    berry_matter
-    sesame_matter)
+    proto)
 
-# Resolve circular deps between berry and sesame_matter/berry_matter port code.
-target_link_options(app_shared INTERFACE
-    "LINKER:--start-group"
-    "$<TARGET_FILE:berry>"
-    "$<TARGET_FILE:berry_matter>"
-    "LINKER:--whole-archive"
-    "$<TARGET_FILE:sesame_matter>"
-    "LINKER:--no-whole-archive"
-    "LINKER:--end-group"
-)
-target_link_options(app_shared
-    PUBLIC
+if (USE_BACKTRACE)
+    target_link_libraries(app_deps INTERFACE backtrace)
+endif()
+
+target_link_options(app_deps
+    INTERFACE
     "-mcpu=cortex-m4"
     "-mthumb"
     "-mfloat-abi=softfp"
@@ -410,29 +402,43 @@ target_link_options(app_shared
     "-Wl,--nmagic"
     "-lm")
 
-add_executable("${exe_target}")
-target_sources("${exe_target}"
-    PRIVATE
+set(exe_target sesame)
+set(exe_target_ram "${exe_target}_ram")
+set(CMAKE_EXECUTABLE_SUFFIX ".axf")
+
+set(common_exe_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/newlib_wrappers.c")
-target_link_libraries("${exe_target}" PRIVATE app_shared)
-target_link_options("${exe_target}"
-    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/newlib_wrappers.c"
+)
+
+# Flash version (with Matter)
+add_executable("${exe_target}")
+target_sources("${exe_target}" PRIVATE ${app_sources} ${common_exe_sources})
+target_compile_definitions("${exe_target}" PRIVATE SESAME_ENABLE_MATTER=1)
+target_link_libraries("${exe_target}" PRIVATE app_deps sesame_matter berry_matter)
+# Resolve circular deps between berry and sesame_matter/berry_matter port code.
+target_link_options("${exe_target}" PRIVATE
+    "LINKER:--start-group"
+    "$<TARGET_FILE:berry>"
+    "$<TARGET_FILE:berry_matter>"
+    "LINKER:--whole-archive"
+    "$<TARGET_FILE:sesame_matter>"
+    "LINKER:--no-whole-archive"
+    "LINKER:--end-group"
     "-Wl,-Map,${exe_target}.map"
-    "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_flash.ld")
-# set(exe_target_ram "${exe_target}_ram")
-# add_executable("${exe_target_ram}")
-# target_sources("${exe_target_ram}"
-#     PRIVATE
-#     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
-#     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
-#     "${CMAKE_CURRENT_SOURCE_DIR}/src/newlib_wrappers.c")
-# target_link_libraries("${exe_target_ram}" PRIVATE app_shared)
-# target_link_options("${exe_target_ram}"
-#     PRIVATE
-#     "-Wl,-Map,${exe_target_ram}.map"
-#     "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")
+    "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_flash.ld"
+)
+
+# RAM version (without Matter)
+add_executable("${exe_target_ram}")
+target_sources("${exe_target_ram}" PRIVATE ${app_sources} ${common_exe_sources})
+target_compile_definitions("${exe_target_ram}" PRIVATE SESAME_ENABLE_MATTER=0)
+target_link_libraries("${exe_target_ram}" PRIVATE app_deps)
+target_link_options("${exe_target_ram}" PRIVATE
+    "-Wl,-Map,${exe_target_ram}.map"
+    "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
+)
 
 add_subdirectory(test)
 
