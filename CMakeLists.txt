@@ -421,18 +421,18 @@ target_link_options("${exe_target}"
     PRIVATE
     "-Wl,-Map,${exe_target}.map"
     "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_flash.ld")
-
-add_executable("${exe_target_ram}")
-target_sources("${exe_target_ram}"
-    PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/newlib_wrappers.c")
-target_link_libraries("${exe_target_ram}" PRIVATE app_shared)
-target_link_options("${exe_target_ram}"
-    PRIVATE
-    "-Wl,-Map,${exe_target_ram}.map"
-    "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")
+# set(exe_target_ram "${exe_target}_ram")
+# add_executable("${exe_target_ram}")
+# target_sources("${exe_target_ram}"
+#     PRIVATE
+#     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
+#     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
+#     "${CMAKE_CURRENT_SOURCE_DIR}/src/newlib_wrappers.c")
+# target_link_libraries("${exe_target_ram}" PRIVATE app_shared)
+# target_link_options("${exe_target_ram}"
+#     PRIVATE
+#     "-Wl,-Map,${exe_target_ram}.map"
+#     "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")
 
 add_subdirectory(test)
 

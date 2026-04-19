@@ -1,23 +1,4 @@
-#
-# Matter_zz_Device.be - implements a generic Matter device (commissionee)
-#
-# Copyright (C) 2023  Stephan Hadinger & Theo Arends
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-
-import matter
+# import matter
 
 #@ solidify:Matter_Device,weak
 
@@ -30,22 +11,18 @@ class Matter_Device
   var started                         # is the Matter Device started (configured, mDNS and UDPServer started) - 'nil' means that we wait for Wifi to connect, 'false' means that the start is scheduled but not yet triggered
   var plugins                         # list of plugins instances
   var plugins_persist                 # true if plugins configuration needs to be saved
-  static var plugins_classes = matter.plugins_classes                # map of registered classes by type name
+  static var plugins_classes          # map of registered classes by type name
   var plugins_config                  # map of JSON configuration for plugins
-  var plugins_config_remotes          # map of information on each remote under "remotes" key, '{}' when empty
   var udp_server                      # `matter.UDPServer()` object
   var profiler
   var message_handler                 # `matter.MessageHandler()` object
   var commissioning                   # `matter.Commissioning()` object
   var autoconf                        # `matter.Autoconf()` objects
   var sessions                        # `matter.Session_Store()` objet
-  var zigbee                          # `Mattter_Zigbee()` object, only set if compiled with zigbee, `nil` otherwise
   var ui
   var tick                            # increment at each tick, avoids to repeat too frequently some actions
   # Events
   var events                          # Event handler
-  # for brige mode, list of HTTP_remote objects (only one instance per remote object)
-  var http_remotes                    # map of 'domain:port' to `Matter_HTTP_remote` instance or `nil` if no bridges
   # saved in parameters
   var root_discriminator              # as `int`
   var root_passcode                   # as `int`
@@ -53,25 +30,17 @@ class Matter_Device
   var disable_bridge_mode             # default is bridge mode, this flag disables this mode for some non-compliant controllers
   var next_ep                         # next endpoint to be allocated for bridge, start at 1
   var debug                           # debug mode, output all values when responding to read request with wildcard
-  # cron equivalent to call `read_sensors()` regularly and dispatch to all entpoints
-  var probe_sensor_time               # number of milliseconds to wait between each `read_sensors()` or `nil` if none active
-  var probe_sensor_timestamp          # timestamp for `read_sensors()` probe (in millis())
-                                      # if timestamp is `0`, this should be scheduled in priority
-
 
   #############################################################
   def init()
+    if type(self.plugins_classes) == 'nil'
+      self.plugins_classes = matter.plugins_classes
+    end
     import crypto
-    if !tasmota.get_option(151 #-matter.MATTER_OPTION-#)
-      self.ui = matter.UI(self, false)   # minimal UI
-      return
-    end    # abort if SetOption 151 is not set
-
     matter.profiler = matter.Profiler()
     self.tick = 0
     self.plugins = []
     self.plugins_persist = false                  # plugins need to saved only when the first fabric is associated
-    self.plugins_config_remotes = {}
     self.next_ep = self.EP                        # start at endpoint 2 for dynamically allocated endpoints (1 reserved for aggregator)
     self.ipv4only = false
     self.disable_bridge_mode = false
@@ -82,14 +51,9 @@ class Matter_Device
     self.sessions.load_fabrics()
     self.message_handler = matter.MessageHandler(self)
     self.events = matter.EventHandler(self)
-    self.zigbee = self.init_zigbee()
-    self.ui = matter.UI(self, true)
 
-    tasmota.when_network_up(def () self.start() end)    # start when network is connected
+    # tasmota.when_network_up(def () self.start() end)    # start when network is connected
     self.commissioning.init_basic_commissioning()
-    tasmota.add_driver(self)
-
-    self.register_commands()
   end
 
   #############################################################
@@ -97,9 +61,7 @@ class Matter_Device
   def start()
     # autoconfigure other plugins if needed
     self.autoconf_device()
-
     self._start_udp(self.UDP_PORT)
-
     self.commissioning.start_mdns_announce_hostnames()
   end
 
@@ -107,61 +69,11 @@ class Matter_Device
   # Remove a fabric and clean all corresponding values and mDNS entries
   def remove_fabric(fabric)
     if fabric != nil
-      log("MTR: removing fabric " + fabric.get_fabric_id().copy().reverse().tohex(), 2)
       self.message_handler.im.subs_shop.remove_by_fabric(fabric)
       self.commissioning.mdns_remove_op_discovery(fabric)
       self.sessions.remove_fabric(fabric)
     end
-    # var sub_fabrics = self.sessions.find_children_fabrics(fabric_parent.get_fabric_index())
-    # if sub_fabrics == nil return end
-    # for fabric_index : sub_fabrics
-    #   var fabric = self.sessions.find_fabric_by_index(fabric_index)
-    #   if fabric != nil
-    #     log("MTR: removing fabric " + fabric.get_fabric_id().copy().reverse().tohex(), 2)
-    #     self.message_handler.im.subs_shop.remove_by_fabric(fabric)
-    #     self.mdns_remove_op_discovery(fabric)
-    #     self.sessions.remove_fabric(fabric)
-    #   end
-    # end
     self.sessions.save_fabrics()
-  end
-
-  #####################################################################
-  # Driver handling of buttons
-  #####################################################################
-  # Attach driver `button_pressed`
-  def button_pressed(cmd, idx)
-  	var state = (idx >> 16) & 0xFF
-  	var last_state = (idx >> 8) & 0xFF
-  	var index = (idx & 0xFF)
-    var press_counter = (idx >> 24) & 0xFF
-    self.button_handler(index + 1, (state != last_state) ? 1 : 0, state ? 0 : 1, press_counter)  # invert state, originally '0' means press, turn it into '1'
-  end
-  # Attach driver `button_multi_pressed`
-  def button_multi_pressed(cmd, idx)
-    var press_counter = (idx >> 8) & 0xFF
-    var index = (idx & 0xFF)
-    self.button_handler(index + 1, 2, 0, press_counter)
-  end
-  #####################################################################
-  # Centralize to a single call
-  #
-  # Args:
-  #   - button: (int) button number (base 1)
-  #   - mode: (int) 0=static report every second, 1=button state changed (immediate), 2=multi-press status (delayed)
-  #   - state: 1=button pressed, 0=button released, 2..5+=multi-press complete
-  def button_handler(button, mode, state, press_counter)
-    # log(f"MTR: button_handler({button=}, {mode=}, {state=})", 3)
-    # call all plugins, use a manual loop to avoid creating a new object
-    var idx = 0
-    import introspect
-    while idx < size(self.plugins)
-      var pi = self.plugins[idx]
-      if introspect.contains(pi, "button_handler")
-        self.plugins[idx].button_handler(button, mode, state, press_counter)
-      end
-      idx += 1
-    end
   end
 
   #############################################################
@@ -176,61 +88,11 @@ class Matter_Device
   #############################################################
   # dispatch every 250ms to all plugins
   def every_250ms()
-    # call read_sensors if needed
-    self.read_sensors_scheduler()
-    # call all plugins, use a manual loop to avoid creating a new object
     var idx = 0
     while idx < size(self.plugins)
       self.plugins[idx].every_250ms()
       idx += 1
     end
-  end
-
-  #############################################################
-  # add a scheduler for `read_sensors` and update schedule time
-  # if it's more often than previously
-  def add_read_sensors_schedule(update_time)
-    if (self.probe_sensor_time == nil) || (self.probe_sensor_time > update_time)
-      self.probe_sensor_time = update_time
-      self.probe_sensor_timestamp = matter.jitter(update_time)
-    end
-  end
-
-  #############################################################
-  # check if we need to call `read_sensors()`
-  def read_sensors_scheduler()
-    if (self.probe_sensor_time == nil)    return  end       # nothing to schedule
-    if (self.probe_sensor_timestamp == 0) || (tasmota.time_reached(self.probe_sensor_timestamp))
-      self._trigger_read_sensors()
-      # set new next timestamp
-      self.probe_sensor_timestamp = tasmota.millis(self.probe_sensor_time)
-    end
-  end
-
-  #############################################################
-  # trigger a read_sensors and dispatch to plugins
-  # Internally used by cron
-  def _trigger_read_sensors()
-    import json
-    var rs_json = tasmota.read_sensors()
-    if tasmota.loglevel(3)
-      log("MTR: read_sensors: "+str(rs_json), 3)
-    end
-    if rs_json == nil   return  end
-    var rs = json.load(rs_json)
-    if rs != nil
-
-      # call all plugins
-      var idx = 0
-      while idx < size(self.plugins)
-        self.plugins[idx].parse_sensors(rs)
-        idx += 1
-      end
-
-    else
-      log("MTR: unable to parse read_sensors: "+str(rs_json), 3)
-    end
-
   end
 
   #############################################################
@@ -243,7 +105,6 @@ class Matter_Device
 
   #############################################################
   def stop()
-    tasmota.remove_driver(self)
     if self.udp_server    self.udp_server.stop() end
   end
 
@@ -293,7 +154,6 @@ class Matter_Device
   def _start_udp(port)
     if self.udp_server    return end        # already started
     if port == nil      port = 5540 end
-    log("MTR: Starting UDP server on port: " + str(port), 2)
     self.udp_server = matter.UDPServer(self, "", port)
     self.udp_server.start(/ raw, addr, port -> self.msg_received(raw, addr, port))
   end
@@ -452,7 +312,6 @@ class Matter_Device
   # 
   def save_param()
     import json
-    self.update_remotes_info()    # update self.plugins_config_remotes
 
     var j = format('{"distinguish":%i,"passcode":%i,"ipv4only":%s,"disable_bridge_mode":%s,"nextep":%i', self.root_discriminator, self.root_passcode, self.ipv4only ? 'true':'false', self.disable_bridge_mode ? 'true':'false', self.next_ep)
     if self.debug
@@ -461,52 +320,18 @@ class Matter_Device
     if self.plugins_persist
       j += ',\n"config":'
       j += json.dump(self.plugins_config)
-      if size(self.plugins_config_remotes) > 0
-        j += ',\n"remotes":'
-        j += json.dump(self.plugins_config_remotes)
-      end
     end
     j += '}'
     try
       var f = open(self.FILENAME, "w")
       f.write(j)
       f.close()
-      log(format("MTR: =Saved     parameters%s", self.plugins_persist ? " and configuration" : ""), 2)
       return j
     except .. as e, m
-      log("MTR: Session_Store::save Exception:" + str(e) + "|" + str(m), 2)
       return j
     end
   end
-
-  #############################################################
-  # Get remote info by url
-  #
-  # Return a map, potentially empty
-  def get_plugin_remote_info(url)
-    return self.plugins_config_remotes.find(url, {})
-  end
     
-  #############################################################
-  # update back all remote information from actual remotes
-  #
-  # returns a map or `nil` if no information
-  # also stores in `self.plugins_config_remotes`
-  def update_remotes_info()
-    var ret = {}
-    if self.http_remotes != nil
-      for url:self.http_remotes.keys()
-        var info = self.http_remotes[url].get_info()
-        if info != nil && size(info) > 0
-          ret[url] = info
-        end
-      end
-    end
-
-    self.plugins_config_remotes = ret
-    return ret
-  end
-
   #############################################################
   # Reset configuration like a fresh new device
   def reset_param()
@@ -536,19 +361,11 @@ class Matter_Device
       self.plugins_config = j.find("config", {})
       self.debug = bool(j.find("debug"))    # bool converts nil to false
       if self.plugins_config != nil
-        log(f"MTR: Load_config = {self.plugins_config}", 3)
         self.adjust_next_ep()
         dirty = self.check_config_ep()
         self.plugins_persist = true
       end
-      self.plugins_config_remotes = j.find("remotes", {})
-      if self.plugins_config_remotes
-        log("MTR: load_remotes = " + str(self.plugins_config_remotes), 3)
-      end
     except .. as e, m
-      if e != "io_error"
-        log("MTR: load_param Exception:" + str(e) + "|" + str(m), 2)
-      end
     end
 
     if self.root_discriminator == nil
@@ -616,9 +433,7 @@ class Matter_Device
 
     if !self.plugins_persist
       self.plugins_config = self.autoconf.autoconf_device_map()
-      self.plugins_config_remotes = {}
       self.adjust_next_ep()
-      log("MTR: autoconfig = " + str(self.plugins_config), 3)
     end
     self.autoconf.instantiate_plugins_from_config(self.plugins_config)
 
@@ -658,7 +473,7 @@ class Matter_Device
   # returns endpoint number newly allocated, or `nil` if failed
   def bridge_add_endpoint(pi_class_name, plugin_conf)
     var pi_class = self.plugins_classes.find(pi_class_name)
-    if pi_class == nil        log("MTR: unknown class name '"+str(pi_class_name)+"' skipping", 3)  return  end
+    if pi_class == nil    return  end
 
     # get the next allocated endpoint number
     var ep = self.next_ep
@@ -675,7 +490,6 @@ class Matter_Device
       pi_conf[k] = plugin_conf[k]
     end
     # add to main
-    log(format("MTR: adding endpoint = %i type:%s%s", ep, pi_class_name, self.conf_to_log(plugin_conf)), 2)
     self.plugins_config[ep_str] = pi_conf
     self.plugins_persist = true
     self.next_ep += 1     # increment next allocated endpoint before saving
@@ -698,10 +512,8 @@ class Matter_Device
     var f_in
 
     if !self.plugins_config.contains(ep_str)
-      log("MTR: Cannot remove an enpoint not configured: " + ep_str, 3)
       return
     end
-    log(format("MTR: deleting endpoint = %i", ep), 2)
     self.plugins_config.remove(ep_str)
     self.plugins_persist = true
 
@@ -715,9 +527,6 @@ class Matter_Device
         idx += 1
       end
     end
-
-    # clean any orphan remote
-    self.clean_remotes()
 
     # try saving parameters
     self.save_param()
@@ -745,7 +554,6 @@ class Matter_Device
     for ep: keys
       if ep == 0x0001 #-matter.AGGREGATOR_ENDPOINT-#
         dirty = true
-        log(f"MTR: endpoint {ep} collides wit aggregator, relocating to {self.next_ep}", 2)
         self.plugins_config[str(self.next_ep)] = self.plugins_config[str(ep)]
         self.plugins_config.remove(str(ep))
         self.next_ep += 1
@@ -779,249 +587,4 @@ class Matter_Device
     end
   end
 
-  #####################################################################
-  # Manager HTTP remotes
-  #####################################################################
-  # register new http remote
-  #
-  # If already registered, return current instance and check timeout
-  def register_http_remote(addr, timeout)
-    if self.http_remotes == nil     self.http_remotes = {}    end     # lazy initialization
-    var http_remote
-
-    if self.http_remotes.contains(addr)
-      http_remote = self.http_remotes[addr]
-      if timeout < http_remote.get_timeout()
-        http_remote.set_timeout(timeout)          # reduce timeout if new value is shorter
-      end
-    else
-      http_remote = matter.HTTP_remote(self, addr, timeout)
-      if self.plugins_config_remotes.contains(addr)
-        http_remote.set_info(self.plugins_config_remotes[addr])
-      end
-      self.http_remotes[addr] = http_remote
-    end
-    return http_remote
-  end
-
-  #####################################################################
-  # Remove HTTP remotes that are no longer referenced
-  def clean_remotes()
-    import introspect
-
-    # print("clean_remotes", self.http_remotes)
-    # init all remotes with count 0
-    if self.http_remotes      # tests if `self.http_remotes` is not `nil` and not empty
-      var remotes_map = {}    # key: remote object, value: count of references
-  
-      for http_remote: self.http_remotes
-        remotes_map[http_remote] = 0
-      end
-      # print("remotes_map", remotes_map)
-
-      # scan all endpoints
-      for pi: self.plugins
-        var http_remote = introspect.get(pi, "http_remote")
-        if http_remote !=  nil
-          remotes_map[http_remote] = remotes_map.find(http_remote, 0) + 1
-        end
-      end
-
-      # print("remotes_map2", remotes_map)
-
-      # log("MTR: remotes references: " + str(remotes_map), 3)
-
-      var remote_to_remove = []           # we first get the list of remotes to remove, to not interfere with map iterator
-      for remote:remotes_map.keys()
-        if remotes_map[remote] == 0
-          remote_to_remove.push(remote)
-        end
-      end
-
-      for remote: remote_to_remove
-        log("MTR: remove unused remote: " + remote.addr, 3)
-        remote.close()
-        self.http_remotes.remove(remote.addr)
-      end
-
-    end
-
-  end
-
-  # def get_remotes_list()
-  #####################################################################
-  # Get sorted list of remote endpoints
-  # def get_remotes_list()
-  #   var ret = []
-  #   for hr: self.http_remotes
-  #     ret.push(hr.addr)
-  #   end
-  #   return self.sort_distinct(ret)
-  # end
-
-  #####################################################################
-  # Commands `Mtr___`
-  #####################################################################
-  #
-  def register_commands()
-    tasmota.add_cmd("MtrJoin", /cmd_found, idx, payload, payload_json -> self.MtrJoin(cmd_found, idx, payload, payload_json))
-    tasmota.add_cmd("MtrUpdate", /cmd_found, idx, payload, payload_json -> self.MtrUpdate(cmd_found, idx, payload, payload_json))
-    tasmota.add_cmd("MtrInfo", /cmd_found, idx, payload, payload_json -> self.MtrInfo(cmd_found, idx, payload, payload_json))
-  end
-
-  #####################################################################
-  # `MtrJoin`
-  #
-  # Open or close commissioning
-  #
-  def MtrJoin(cmd_found, idx, payload, payload_json)
-    var payload_int = int(payload)
-    if payload_int
-      self.commissioning.start_root_basic_commissioning()
-    else
-      self.commissioning.stop_basic_commissioning()
-    end
-    tasmota.resp_cmnd_done()
-  end
-
-  #####################################################################
-  # `MtrUpdate`
-  #
-  # MtrUpdate {"ep":1, "Power":1}
-  # MtrUpdate {"name":"ep1", "power":1}
-  # MtrUpdate {"Name":"Light0", "Power":0}
-  # MtrUpdate {"Name":"Light0", "Power":1}
-  # MtrUpdate {"Name":"Light1", "Power":0}
-  # MtrUpdate {"Name":"Light1", "Power":1,"Bri":55}
-  # MtrUpdate {"Name":"Light2", "Power":0}
-  # MtrUpdate {"Name":"Light2", "Power":1, "CT":400, "Bri":20}
-  # MtrUpdate {"Name":"Light3", "Power":0}
-  # MtrUpdate {"Name":"Light3", "Power":1, "Bri":20, "Hue":85, "Sat":200}
-  #
-  def MtrUpdate(cmd_found, idx, payload, payload_json)
-    if payload_json == nil    return tasmota.resp_cmnd_str("Invalid JSON")    end
-
-    var key_ep = tasmota.find_key_i(payload_json, 'Ep')
-    var key_name = tasmota.find_key_i(payload_json, 'Name')
-    if key_ep || key_name
-      var pl = nil                  # plugin instance
-
-      if key_ep
-        var ep = int(payload_json[key_ep])
-        if ep <= 0  return tasmota.resp_cmnd_str("Invalid 'Ep' attribute")         end
-        pl = self.find_plugin_by_endpoint(ep)
-        payload_json.remove(key_ep)
-      end
-
-      if key_name
-        if pl == nil
-          pl = self.find_plugin_by_friendly_name(payload_json[key_name])
-        end
-        payload_json.remove(key_name)
-      end
-
-      if (pl == nil)          return tasmota.resp_cmnd_str("Invalid Device")          end
-      if (!pl.VIRTUAL)        return tasmota.resp_cmnd_str("Device is not virtual")   end
-      # filter parameter accedpted by plugin, and rename with canonical
-      # Ex: {"power":1,"HUE":2} becomes {"Power":1,"Hue":2}
-      var uc = pl.consolidate_update_commands()
-      # check that all commands are in the list of supported commands
-      var cmd_cleaned = {}
-      for k: payload_json.keys()
-        var cleaned_command_idx = tasmota.find_list_i(uc, k)
-        if (cleaned_command_idx == nil)
-          tasmota.resp_cmnd_str(f"Invalid attribute '{k}'")
-          return
-        end
-        cmd_cleaned[uc[cleaned_command_idx]] = payload_json[k]
-      end
-      # call plug-in
-      pl.update_virtual(cmd_cleaned)
-      var state_json = pl.state_json()
-      if state_json
-        var cmnd_status = f'{{"{cmd_found}":{state_json}}}'
-        return tasmota.resp_cmnd(cmnd_status)
-      else
-        return tasmota.resp_cmnd_done()
-      end
-    end
-
-    tasmota.resp_cmnd_str("Missing 'Device' attribute")
-  end
-
-  #####################################################################
-  # `MtrInfo`
-  #
-  # MtrInfo 9
-  def MtrInfo(cmd_found, idx, payload, payload_json)
-    if payload == ""
-      # dump all devices
-    end
-
-    if payload == ""
-      # dump all
-      for pl: self.plugins
-        self.MtrInfo_one(pl.endpoint)
-      end
-
-    elif  type(payload_json) == 'int'
-      # try ep number
-      self.MtrInfo_one(payload_json)
-
-    else
-      # try by name
-      var pl = self.find_plugin_by_friendly_name(payload)
-      if pl != nil
-        self.MtrInfo_one(pl.endpoint)
-      end
-    end
-
-    tasmota.resp_cmnd_done()
-  end
-
-  # output for a single endpoint
-  def MtrInfo_one(ep)
-    var pl = self.find_plugin_by_endpoint(ep)
-    if pl == nil    return    end     # abort
-
-    var state_json = pl.state_json()
-    if state_json
-      var mtr_info = f'{{"' 'MtrInfo"' ':{state_json}}}'
-      # publish
-      # tasmota.publish_rule(mtr_info)
-      tasmota.publish_result(mtr_info, "")
-    end
-  end
-
-  #####################################################################
-  # Zigbee support
-  #
-  # Returns true if zigbee module is present
-  #####################################################################
-  def is_zigbee_present()
-    import introspect
-    return (introspect.module('matter_zigbee') != nil)
-  end
-  #
-  def init_zigbee()
-    if self.is_zigbee_present()
-      import matter_zigbee
-      return matter_zigbee(self)
-    end
-  end
-  #
-  def create_zb_mapper(pi)
-    if self.zigbee
-      return self.zigbee.Matter_Zigbee_Mapper(pi)
-    end
-  end
-
-
 end
-matter.Device = Matter_Device
-
-#-
-import global
-global.matter_device = matter_device()
-return matter_device
--#

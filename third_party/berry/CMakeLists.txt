@@ -97,4 +97,50 @@ target_compile_definitions(berry
 
 if(CMAKE_CROSSCOMPILING)
     target_link_libraries(berry PUBLIC globals)
+else()
+    set(RE15_SOURCES_HOST
+        "${RE15_DIR}/compilecode.c"
+        "${RE15_DIR}/pike.c"
+        "${RE15_DIR}/charclass.c"
+        "${RE15_DIR}/cleanmarks.c"
+        "${RE15_DIR}/sub.c"
+        "${RE15_DIR}/util.c"
+    )
+    add_executable(berry_host
+        ${BERRY_SOURCES}
+        ${BERRY_MAPPING_SOURCES}
+        ${BERRY_INT64_SOURCES}
+        ${BERRY_CUSTOM_SOURCES}
+        ${RE15_SOURCES_HOST}
+        "${BERRY_DEF_DIR}/berry.c"
+        "${BERRY_DEF_DIR}/host_modtab.c"
+        "${BERRY_DEF_DIR}/host_port.c"
+    )
+    add_dependencies(berry_host berry_coc)
+    target_compile_definitions(berry_host
+        PRIVATE
+        BE_USE_SCRIPT_COMPILER=1
+        BE_USE_BYTECODE_SAVER=1
+        BE_USE_SOLIDIFY_MODULE=1
+        BE_USE_JSON_MODULE=1
+        BE_USE_MATH_MODULE=1
+        BE_USE_RE_MODULE=1
+        BE_USE_OS_MODULE=0
+        BE_USE_INTROSPECT_MODULE=1
+        BE_USE_STRICT_MODULE=1
+        TASMOTA
+        BERRY_HOST_BUILD
+        BERRY_MODULE_CONTINUE
+    )
+    target_include_directories(berry_host
+        PRIVATE
+        "${BERRY_SRC_DIR}"
+        "${BERRY_GEN_OUT}"
+        "${BERRY_DEF_DIR}"
+        "${BERRY_MAPPING_DIR}"
+        "${BERRY_INT64_DIR}"
+        "${BERRY_CUSTOM_DIR}"
+        "${RE15_DIR}"
+    )
+    target_link_libraries(berry_host PRIVATE m)
 endif()
