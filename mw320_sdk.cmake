@@ -425,15 +425,9 @@ target_include_directories(mw320_mbedtls_port
 target_sources(mw320_mbedtls_port
     PRIVATE
     "${mw320_sdk_dir}/middleware/mbedtls/port/mw/aes_alt.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ccm_alt.c"
+    #"${mw320_sdk_dir}/middleware/mbedtls/port/mw/ksdk_mbedtls.c"
+    "${mw320_sdk_dir}/middleware/mbedtls/port/mw/ccm_alt.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ksdk_mbedtls.c"
-)
-# Add SDK mbedtls includes ONLY for the port files that need them
-set_source_files_properties(
-    "${mw320_sdk_dir}/middleware/mbedtls/port/mw/aes_alt.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ccm_alt.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ksdk_mbedtls.c"
-    PROPERTIES COMPILE_FLAGS "-I${mw320_sdk_dir}/middleware/mbedtls/include"
 )
 target_link_libraries(mw320_mbedtls_port
     PUBLIC
@@ -445,4 +439,6 @@ target_link_libraries(mw320_mbedtls_port
 target_compile_definitions(mw320_mbedtls_port
     PUBLIC
     "MBEDTLS_CONFIG_FILE=\"mbedtls_app_config.h\""
+    PRIVATE
+    MBEDTLS_ALLOW_PRIVATE_ACCESS
 )

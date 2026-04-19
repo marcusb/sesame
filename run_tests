@@ -1,0 +1,15 @@
+#!/bin/bash
+
+echo "Running host tests..."
+pushd test/host > /dev/null && uv run pytest && popd > /dev/null
+
+echo "Running device tests..."
+for t in \
+  sesame_tests.axf \
+  matter_sesame_tests.axf \
+  matter_sesame_tests.axf \
+  matter_sesame_tests.axf \
+  matter_sesame_tests.axf; do
+    echo "Running $t..."
+    ./tools/run_on_device.sh build/test/sesame_tests.axf
+done

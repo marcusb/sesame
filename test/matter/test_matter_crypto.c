@@ -34,16 +34,13 @@ void test_crypto_random(void) {
 }
 
 void test_crypto_ec_p256_smoke(void) {
-    printf("Starting EC P256 smoke test from Berry...\n");
     be_assert_success(
         "var ec = crypto.EC_P256(); "
         "var scalar = "
         "bytes('"
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'); "
         "var Q = ec.mul(scalar); "
-        "print('EC Mul result size:', Q.size()); "
         "assert(Q.size() == 65)");
-    printf("EC P256 smoke test passed.\n");
 }
 
 extern void test_board_init(void);

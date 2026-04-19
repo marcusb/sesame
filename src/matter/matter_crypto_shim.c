@@ -28,13 +28,15 @@
 #define MATTER_LOG(fmt, ...) printf("[MATTER] " fmt "\r\n", ##__VA_ARGS__)
 #include "be_mapping.h"
 #include "berry.h"
+#include "mbedtls/ctr_drbg.h"
 #include "mbedtls/ecp.h"
+#include "mbedtls/entropy.h"
 #include "mbedtls/hkdf.h"
 #include "mbedtls/md.h"
 #include "mbedtls/pkcs5.h"
 #include "mbedtls/sha256.h"
 
-extern int get_drbg_random(void* p_rng, unsigned char* output, size_t len);
+static mbedtls_ctr_drbg_context ctr_drbg;
 
 /* SHA256(data:bytes) -> bytes(32) */
 static int crypto_sha256(bvm* vm) {
@@ -107,7 +109,7 @@ static int crypto_random(bvm* vm) {
     if (size <= 0) be_return_nil(vm);
 
     unsigned char* buf = (unsigned char*)be_pushbytes(vm, NULL, size);
-    if (get_drbg_random(NULL, buf, size) != 0) {
+    if (mbedtls_ctr_drbg_random(&ctr_drbg, buf, size) != 0) {
         be_pop(vm, 1);
         be_return_nil(vm);
     }
@@ -168,10 +170,8 @@ static int crypto_ec_p256_mul(bvm* vm) {
         be_return_nil(vm);
     }
 
-    MATTER_LOG("Starting NIST P-256 scalar multiplication...");
-    int ret =
-        mbedtls_ecp_mul(&ec->grp, &Q, &d, &ec->grp.G, get_drbg_random, NULL);
-    MATTER_LOG("mbedtls_ecp_mul finished: %d", ret);
+    int ret = mbedtls_ecp_mul(&ec->grp, &Q, &d, &ec->grp.G,
+                              mbedtls_ctr_drbg_random, &ctr_drbg);
 
     unsigned char out[65];
     size_t out_len = 0;
@@ -193,7 +193,18 @@ static int crypto_ec_p256_mul(bvm* vm) {
  * Runtime loader called by VM initialization
  */
 int be_load_crypto_module(bvm* vm) {
-    /* 1. Register EC_P256 class */
+    // initialize RNG
+    static mbedtls_entropy_context entropy;
+    mbedtls_entropy_init(&entropy);
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+    int ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
+                                    NULL, 0);
+    if (ret != 0) {
+        MATTER_LOG("mbedtls_ctr_drbg_seed failed: %d", ret);
+        for (;;);
+    }
+
+    // register EC_P256 class
     static const bnfuncinfo ec_members[] = {
         {".p", NULL}, /* Storage for comptr */
         {"init", crypto_ec_p256_init},
@@ -202,7 +213,7 @@ int be_load_crypto_module(bvm* vm) {
         {NULL, NULL}};
     be_regclass(vm, "EC_P256", ec_members);
 
-    /* 2. Create crypto module */
+    // create crypto module
     be_newmodule(vm);
     be_setname(vm, -1, "crypto");
 

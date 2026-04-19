@@ -12,10 +12,13 @@
 /* mw320 board */
 #include "be_mapping.h"
 #include "board.h"
+#include "board_support.h"
 #include "clock_config.h"
 #include "entropy_poll.h"
 #include "fsl_debug_console.h"
 #include "ksdk_mbedtls.h"
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/entropy.h"
 #include "pin_mux.h"
 
 /* Unity */
@@ -24,6 +27,7 @@
 /* Global symbols referenced by modules under test */
 QueueHandle_t ctrl_queue;
 void* psm_hnd = (void*)0x12345678;
+mbedtls_ctr_drbg_context ctr_drbg;
 
 /* ---- Unity output ---- */
 void unity_putchar(char c) {
@@ -111,6 +115,16 @@ void test_board_init(void) {
     uint8_t dummy_hash[32];
     for (int i = 0; i < 32; i++) dummy_hash[i] = (uint8_t)i;
     mbedtls_hardware_init_hash(dummy_hash, 32);
+
+    static mbedtls_entropy_context entropy;
+    mbedtls_entropy_init(&entropy);
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+    int ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
+                                    NULL, 0);
+    if (ret != 0) {
+        printf("mbedtls_ctr_drbg_seed failed: %d\n", ret);
+        for (;;);
+    }
 }
 
 /* ---- PSM Stub ---- */

@@ -6,15 +6,11 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include "ksdk_mbedtls.h"
-
-#include "common.h"
+#include "entropy_poll.h"
 #include "fsl_common.h"
-#include "fsl_debug_console.h"
 #include "mbedtls/build_info.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/entropy.h"
-#include "mbedtls/entropy_poll.h"
 
 #define SHA256_HASH_SIZE (32U)
 
@@ -25,18 +21,6 @@ static struct {
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctrDrbg;
 } s_internalMbedtlsGdata;
-
-/******************************************************************************/
-/******************** CRYPTO_InitHardware
- * **************************************/
-/******************************************************************************/
-/*!
- * @brief Application init for various Crypto blocks.
- *
- * This function is provided to be called by MCUXpresso SDK applications.
- * It calls basic init for Crypto Hw acceleration and Hw entropy modules.
- */
-void CRYPTO_InitHardware(void) {}
 
 static int internal_entropy_poll(void* data, unsigned char* output, size_t len,
                                  size_t* olen) {
@@ -124,14 +108,6 @@ int mbedtls_hardware_poll(void* data, unsigned char* output, size_t len,
     return ret;
 }
 
-int get_drbg_random(void* p_rng, unsigned char* output, size_t len) {
-    (void)p_rng;
-    int ret = internal_entropy_ctr_drbg_setup();
-    if (ret != 0) return ret;
-    return mbedtls_ctr_drbg_random(&s_internalMbedtlsGdata.ctrDrbg, output,
-                                   len);
-}
-
 void mbedtls_hardware_init_hash(uint8_t* entropy, size_t len) {
     assert(entropy != NULL);
     assert(len > 0U);
@@ -140,10 +116,6 @@ void mbedtls_hardware_init_hash(uint8_t* entropy, size_t len) {
     memcpy(s_hashBuf, entropy, s_hashLen);
 }
 
-/******************************************************************************/
-/*************************** FreeRTOS
- * ********************************************/
-/******************************************************************************/
 #if USE_RTOS && defined(FSL_RTOS_FREE_RTOS) && \
     defined(MBEDTLS_FREESCALE_FREERTOS_CALLOC_ALT)
 #include <stdlib.h>
