@@ -26,18 +26,23 @@ static const uint8_t ucMACAddress[6] = {0x52, 0x54, 0x00, 0x12, 0x34, 0x56};
 /* Globals the SUT expects from the embedded firmware. */
 QueueHandle_t ctrl_queue;
 
+/* Pulls dns_hook_stub.c out of libhost_harness.a so its weak DNS responder
+   hooks satisfy FreeRTOS+TCP. matter_mdns.c overrides them with strong defs. */
+extern int matter_dns_hook_stub_anchor;
+void* _dns_hook_stub_keep = &matter_dns_hook_stub_anchor;
+
 /* POSIX socket helpers in host_sockets.c (separate TU to avoid
    FreeRTOS_Sockets.h macro collisions). */
 extern void host_inspector_open(void);
-extern void host_inspector_emit(const char *line);
+extern void host_inspector_emit(const char* line);
 extern int host_cmd_open(int port);
-extern int host_cmd_recv(char *buf, int size);
+extern int host_cmd_recv(char* buf, int size);
 
 static harness_net_up_cb net_up_cb;
 static harness_cmd_handler_t cmd_handler;
 static bool network_up;
 
-extern void log_stdout_backend(const log_msg_t *log);
+extern void log_stdout_backend(const log_msg_t* log);
 
 static const char* ctrl_msg_name(ctrl_msg_type_t t) {
     switch (t) {
@@ -106,7 +111,6 @@ static void inspector_task(void* arg) {
     }
 }
 
-
 void harness_set_guest_port(int udp, uint16_t guest_port) {
     char buf[16];
     snprintf(buf, sizeof(buf), "%u", guest_port);
@@ -117,7 +121,7 @@ void harness_set_guest_port(int udp, uint16_t guest_port) {
 void harness_on_network_up(harness_net_up_cb cb) { net_up_cb = cb; }
 void harness_on_cmd(harness_cmd_handler_t h) { cmd_handler = h; }
 
-static void cmd_task(void *arg) {
+static void cmd_task(void* arg) {
     (void)arg;
     char buf[1024];
     for (;;) {
@@ -134,7 +138,6 @@ static void cmd_task(void *arg) {
         if (cmd_handler) cmd_handler(buf);
     }
 }
-
 
 void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t eNetworkEvent,
                                           struct xNetworkEndPoint* ep) {
@@ -172,7 +175,7 @@ void harness_init(void) {
     xTaskCreate(inspector_task, "Inspector", 2048, NULL, tskIDLE_PRIORITY + 1,
                 NULL);
 
-    const char *p = getenv("HARNESS_CMD_PORT");
+    const char* p = getenv("HARNESS_CMD_PORT");
     if (p && host_cmd_open(atoi(p)) >= 0) {
         xTaskCreate(cmd_task, "HostCmd", 4096, NULL, tskIDLE_PRIORITY + 1,
                     NULL);

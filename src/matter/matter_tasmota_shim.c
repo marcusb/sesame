@@ -22,6 +22,7 @@
 #include "be_string.h"
 #include "be_vm.h"
 #include "controller.h"
+#include "matter_mdns.h"
 #include "psm-v2.h"
 #include "queue.h"
 #include "task.h"
@@ -61,6 +62,298 @@ static int tas_yield(bvm* vm) {
 static int tas_time_reached(bvm* vm) {
     int m = be_toint(vm, 1);
     be_pushbool(vm, (int)(xTaskGetTickCount() * portTICK_PERIOD_MS) >= m);
+    be_return(vm);
+}
+
+/*
+ * Registry helpers. berry_matter expects tasmota.{when_network_up, add_*,
+ * remove_*, defer, set_timer} to accumulate closures that the matter task
+ * later invokes. We store them in Berry-side global lists and call them from
+ * matter_tasmota_run_hooks(vm) which the task drives each tick.
+ *
+ * The tasmota native module is const (its table lives in flash), so we can't
+ * attach Berry closures to it directly. Globals are the simplest escape.
+ */
+static bool network_is_up;
+
+static void list_append_arg(bvm* vm, const char* global_list, int arg_idx) {
+    be_getglobal(vm, global_list);
+    if (be_isnil(vm, -1)) {
+        be_pop(vm, 1);
+        be_newobject(vm, "list");
+        be_pop(vm, 1); /* discard list_insert helper */
+        be_setglobal(vm, global_list);
+        be_getglobal(vm, global_list);
+    }
+    be_getmember(vm, -1, "push");
+    be_pushvalue(vm, -2); /* self */
+    be_pushvalue(vm, arg_idx);
+    be_pcall(vm, 2);
+    be_pop(vm, 3);
+}
+
+static void list_remove_arg(bvm* vm, const char* global_list, int arg_idx) {
+    be_getglobal(vm, global_list); /* [inst] */
+    if (be_isnil(vm, -1)) {
+        be_pop(vm, 1);
+        return;
+    }
+    int inst_idx = be_absindex(vm, -1);
+    be_getmember(vm, inst_idx, ".p"); /* [inst, raw] */
+    int raw_idx = be_absindex(vm, -1);
+    int n = be_data_size(vm, raw_idx);
+    int target = be_absindex(vm, arg_idx);
+    for (int i = 0; i < n; i++) {
+        be_pushint(vm, i);
+        be_getindex(vm, raw_idx); /* [..., raw, i, raw[i]] */
+        be_pushvalue(vm, target);
+        bbool eq = be_iseq(vm);
+        be_pop(vm, 3);
+        if (eq) {
+            be_getmember(vm, inst_idx, "remove");
+            be_pushvalue(vm, inst_idx);
+            be_pushint(vm, i);
+            be_pcall(vm, 2);
+            be_pop(vm, 3);
+            break;
+        }
+    }
+    be_pop(vm, 2); /* raw, inst */
+}
+
+/* Invoke every closure in list_name with no args. Safe on nil/missing list.
+ * The globals we maintain are list instances created via be_newobject("list");
+ * their underlying BE_LIST lives in the ".p" member. be_data_size/be_getindex
+ * only accept raw BE_LIST, so we peel .p first. */
+static void call_each(bvm* vm, const char* list_name) {
+    be_getglobal(vm, list_name); /* [inst] */
+    if (be_isnil(vm, -1)) {
+        be_pop(vm, 1);
+        return;
+    }
+    be_getmember(vm, -1, ".p"); /* [inst, raw_list] */
+    int raw_idx = be_absindex(vm, -1);
+    int n = be_data_size(vm, raw_idx);
+    for (int i = 0; i < n; i++) {
+        be_pushint(vm, i);        /* [..., raw, i] */
+        be_getindex(vm, raw_idx); /* [..., raw, i, func] */
+        int rc = be_pcall(vm, 0); /* [..., raw, i, result|err] */
+        if (rc != 0) {
+            const char* err = be_tostring(vm, -1);
+            LogError(("matter: %s cb #%d: %s", list_name, i, err ? err : "?"));
+        }
+        be_pop(vm, 2); /* pop result + index */
+    }
+    be_pop(vm, 2); /* pop raw, inst */
+}
+
+static int tas_when_network_up(bvm* vm) {
+    list_append_arg(vm, "_matter_net_cbs", 1);
+    if (network_is_up) {
+        be_pushvalue(vm, 1);
+        if (be_pcall(vm, 0) != 0) {
+            be_pop(vm, 1);
+        }
+        be_pop(vm, 1);
+    }
+    be_return_nil(vm);
+}
+
+static int tas_add_fast_loop(bvm* vm) {
+    list_append_arg(vm, "_matter_fast_cbs", 1);
+    be_return_nil(vm);
+}
+
+static int tas_remove_fast_loop(bvm* vm) {
+    list_remove_arg(vm, "_matter_fast_cbs", 1);
+    be_return_nil(vm);
+}
+
+static int tas_add_driver(bvm* vm) {
+    list_append_arg(vm, "_matter_drivers", 1);
+    be_return_nil(vm);
+}
+
+static int tas_remove_driver(bvm* vm) {
+    list_remove_arg(vm, "_matter_drivers", 1);
+    be_return_nil(vm);
+}
+
+static int tas_defer(bvm* vm) {
+    list_append_arg(vm, "_matter_fast_cbs_once", 1);
+    be_return_nil(vm);
+}
+
+static int tas_set_timer(bvm* vm) {
+    /* Ignore the delay for now — runs on next fast_loop tick. */
+    list_append_arg(vm, "_matter_fast_cbs_once", 2);
+    be_return_nil(vm);
+}
+
+/* Stubs that berry_matter references but have no sesame analogue. */
+static int tas_stub_nil(bvm* vm) {
+    (void)vm;
+    be_return_nil(vm);
+}
+static int tas_stub_zero(bvm* vm) {
+    be_pushint(vm, 0);
+    be_return(vm);
+}
+static int tas_stub_false(bvm* vm) {
+    be_pushbool(vm, bfalse);
+    be_return(vm);
+}
+static int tas_stub_str(bvm* vm) {
+    be_pushstring(vm, "sesame");
+    be_return(vm);
+}
+
+/* Called from matter_task's loop. Ticks fast_loop, drains one-shot defers,
+ * fires when_network_up callbacks on transition. */
+void matter_tasmota_tick(bvm* vm) {
+    call_each(vm, "_matter_fast_cbs");
+    be_getglobal(vm, "_matter_fast_cbs_once"); /* [inst] */
+    if (be_isnil(vm, -1)) {
+        be_pop(vm, 1);
+        return;
+    }
+    int inst_idx = be_absindex(vm, -1);
+    be_getmember(vm, inst_idx, ".p"); /* [inst, raw] */
+    int raw_idx = be_absindex(vm, -1);
+    int n = be_data_size(vm, raw_idx);
+    /* Skip the entire drain path when empty. Calling resize(0) on an empty
+     * list each tick leaks ~400B/tick inside the Berry VM (bound-method
+     * allocations not reclaimed quickly enough), OOMing within ~35s. */
+    if (n == 0) {
+        be_pop(vm, 2);
+        return;
+    }
+    for (int i = 0; i < n; i++) {
+        be_pushint(vm, i);
+        be_getindex(vm, raw_idx);
+        if (be_pcall(vm, 0) != 0) {
+            const char* err = be_tostring(vm, -1);
+            LogError(("matter: defer cb #%d: %s", i, err ? err : "?"));
+        }
+        be_pop(vm, 2);
+    }
+    be_getmember(vm, inst_idx, "resize"); /* [inst, raw, method] */
+    if (!be_isnil(vm, -1)) {
+        be_pushvalue(vm, inst_idx);
+        be_pushint(vm, 0);
+        be_pcall(vm, 2);
+    }
+    be_pop(vm, 3); /* resize result, raw, inst */
+}
+
+void matter_tasmota_notify_network_up(bvm* vm) {
+    network_is_up = true;
+    call_each(vm, "_matter_net_cbs");
+}
+
+/* tasmota.wifi(key?) -> map or value */
+static bool get_wifi_info(char* ip_out, char* mac_out, char* ip6_out) {
+    NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(NULL);
+    while (ep && ep->bits.bIPv6) {
+        ep = FreeRTOS_NextEndPoint(NULL, ep);
+    }
+    if (!ep) return false;
+    FreeRTOS_inet_ntoa(ep->ipv4_settings.ulIPAddress, ip_out);
+    const uint8_t* mac = ep->xMACAddress.ucBytes;
+    snprintf(mac_out, 18, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1],
+             mac[2], mac[3], mac[4], mac[5]);
+    ip6_out[0] = '\0';
+    return true;
+}
+
+static int tas_wifi(bvm* vm) {
+    char ip[16], mac[18], ip6[48];
+    bool ok = get_wifi_info(ip, mac, ip6);
+    if (be_top(vm) >= 1 && be_isstring(vm, 1)) {
+        const char* key = be_tostring(vm, 1);
+        if (!strcmp(key, "up")) {
+            be_pushbool(vm, ok ? btrue : bfalse);
+        } else if (!strcmp(key, "ip")) {
+            be_pushstring(vm, ok ? ip : "");
+        } else if (!strcmp(key, "mac")) {
+            be_pushstring(vm, ok ? mac : "");
+        } else {
+            be_pushnil(vm);
+        }
+        be_return(vm);
+    }
+    be_newobject(vm, "map");
+    be_pushstring(vm, "up");
+    be_pushbool(vm, ok ? btrue : bfalse);
+    be_data_insert(vm, -3);
+    be_pop(vm, 2);
+    be_pushstring(vm, "ip");
+    be_pushstring(vm, ok ? ip : "");
+    be_data_insert(vm, -3);
+    be_pop(vm, 2);
+    be_pushstring(vm, "mac");
+    be_pushstring(vm, ok ? mac : "");
+    be_data_insert(vm, -3);
+    be_pop(vm, 2);
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+/* tasmota.eth() -> map (always down; no ethernet on MW320) */
+static int tas_eth(bvm* vm) {
+    be_newobject(vm, "map");
+    be_pushstring(vm, "up");
+    be_pushbool(vm, bfalse);
+    be_data_insert(vm, -3);
+    be_pop(vm, 2);
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+/* tasmota.loglevel(level) -> bool */
+static int tas_loglevel(bvm* vm) {
+    int lvl = be_toint(vm, 1);
+    be_pushbool(vm, lvl <= 3 ? btrue : bfalse);
+    be_return(vm);
+}
+
+/* tasmota.rtc(what?) -> int */
+static int tas_rtc(bvm* vm) {
+    be_pushint(vm, (int)time(NULL));
+    be_return(vm);
+}
+
+/* tasmota.gc() -> int */
+static int tas_gc(bvm* vm) {
+    be_gc_collect(vm);
+    be_pushint(vm, 0);
+    be_return(vm);
+}
+
+/* tasmota.delay(ms) */
+static int tas_delay(bvm* vm) {
+    int ms = be_toint(vm, 1);
+    vTaskDelay(pdMS_TO_TICKS(ms));
+    be_return_nil(vm);
+}
+
+/* tasmota.scale_uint(v, from_min, from_max, to_min, to_max) -> int */
+static int tas_scale_uint(bvm* vm) {
+    int v = be_toint(vm, 1);
+    int fmn = be_toint(vm, 2);
+    int fmx = be_toint(vm, 3);
+    int tmn = be_toint(vm, 4);
+    int tmx = be_toint(vm, 5);
+    int result;
+    if (fmx == fmn) {
+        result = tmn;
+    } else {
+        if (v < fmn) v = fmn;
+        if (v > fmx) v = fmx;
+        result =
+            tmn + (int)(((long long)(v - fmn) * (tmx - tmn)) / (fmx - fmn));
+    }
+    be_pushint(vm, result);
     be_return(vm);
 }
 
@@ -160,12 +453,111 @@ static int sesame_door_cmd(bvm* vm) {
     be_return_nil(vm);
 }
 
-/* mdns module stub */
+/* mdns module — backed by matter_mdns.c */
 static int mdns_start(bvm* vm) { be_return_nil(vm); }
-static int mdns_add_hostname(bvm* vm) { be_return_nil(vm); }
-static int mdns_add_service(bvm* vm) { be_return_nil(vm); }
-static int mdns_add_subtype(bvm* vm) { be_return_nil(vm); }
-static int mdns_remove_service(bvm* vm) { be_return_nil(vm); }
+
+static int mdns_add_hostname(bvm* vm) {
+    const char* hostname = be_tostring(vm, 1);
+    const char* ipv6 =
+        be_top(vm) >= 2 && be_isstring(vm, 2) ? be_tostring(vm, 2) : NULL;
+    const char* ipv4 =
+        be_top(vm) >= 3 && be_isstring(vm, 3) ? be_tostring(vm, 3) : NULL;
+    matter_mdns_add_hostname(hostname, ipv6, ipv4);
+    be_return_nil(vm);
+}
+
+/*
+ * DNS-SD TXT record format: a sequence of <len:byte><chars> chunks, each
+ * chunk being "KEY=VALUE". Walks the Berry map at stack idx and emits.
+ */
+static void serialize_txt_map(bvm* vm, int idx, char* out, size_t outsz) {
+    size_t pos = 0;
+    out[0] = 0;
+    int iter_idx;
+    if (be_ismap(vm, idx)) {
+        iter_idx = be_absindex(vm, idx);
+    } else if (be_isinstance(vm, idx)) {
+        /* Map instance: iterate the underlying BE_MAP in .p. */
+        be_getmember(vm, idx, ".p");
+        iter_idx = be_absindex(vm, -1);
+        if (!be_ismap(vm, iter_idx)) {
+            LogError(
+                ("mdns: .p not a map (type=%s)", be_typename(vm, iter_idx)));
+            be_pop(vm, 1);
+            return;
+        }
+    } else {
+        LogError(("mdns: serialize_txt_map not map/instance (type=%s)",
+                  be_typename(vm, idx)));
+        return;
+    }
+    be_pushiter(vm, iter_idx);
+    while (be_iter_hasnext(vm, iter_idx)) {
+        be_iter_next(vm, iter_idx);
+        /* stack: [..., iter, key, value] */
+        const char* key = be_tostring(vm, -2);
+        char valbuf[32];
+        const char* val;
+        if (be_isstring(vm, -1)) {
+            val = be_tostring(vm, -1);
+        } else if (be_isint(vm, -1)) {
+            snprintf(valbuf, sizeof(valbuf), "%ld", (long)be_toint(vm, -1));
+            val = valbuf;
+        } else {
+            val = be_tostring(vm, -1);
+        }
+        size_t klen = strlen(key);
+        size_t vlen = strlen(val);
+        size_t entry = klen + 1 + vlen;
+        if (entry > 255 || pos + 1 + entry >= outsz) {
+            be_pop(vm, 2);
+            continue;
+        }
+        out[pos++] = (char)entry;
+        memcpy(out + pos, key, klen);
+        pos += klen;
+        out[pos++] = '=';
+        memcpy(out + pos, val, vlen);
+        pos += vlen;
+        be_pop(vm, 2);
+    }
+    be_pop(vm, 1);
+    if (be_isinstance(vm, idx)) {
+        be_pop(vm, 1); /* pop the .p we pushed */
+    }
+    out[pos] = 0;
+}
+
+static int mdns_add_service(bvm* vm) {
+    const char* service = be_tostring(vm, 1);
+    const char* proto = be_tostring(vm, 2);
+    int port = be_toint(vm, 3);
+    char txt[512];
+    serialize_txt_map(vm, 4, txt, sizeof(txt));
+    const char* instance = be_tostring(vm, 5);
+    const char* hostname = be_tostring(vm, 6);
+    matter_mdns_add_service(service, proto, port, txt, instance, hostname);
+    be_return_nil(vm);
+}
+
+static int mdns_add_subtype(bvm* vm) {
+    const char* service = be_tostring(vm, 1);
+    const char* proto = be_tostring(vm, 2);
+    const char* instance = be_tostring(vm, 3);
+    const char* hostname = be_tostring(vm, 4);
+    const char* subtype = be_tostring(vm, 5);
+    matter_mdns_add_subtype(service, proto, instance, hostname, subtype);
+    be_return_nil(vm);
+}
+
+static int mdns_remove_service(bvm* vm) {
+    const char* service = be_tostring(vm, 1);
+    const char* proto = be_tostring(vm, 2);
+    const char* instance = be_tostring(vm, 3);
+    const char* hostname = be_tostring(vm, 4);
+    matter_mdns_remove_service(service, proto, instance, hostname);
+    be_return_nil(vm);
+}
 
 /* UDP class shim */
 typedef struct {
@@ -381,11 +773,35 @@ class be_class_udp (scope: global, name: udp) {
 module tasmota (scope: global, name: tasmota) {
     millis, func(tas_millis)
     rtc_utc, func(tas_rtc_utc)
+    rtc, func(tas_rtc)
     log, func(tas_log)
     yield, func(tas_yield)
     time_reached, func(tas_time_reached)
     get_config, func(tas_get_config)
     set_config, func(tas_set_config)
+    wifi, func(tas_wifi)
+    eth, func(tas_eth)
+    loglevel, func(tas_loglevel)
+    gc, func(tas_gc)
+    delay, func(tas_delay)
+    scale_uint, func(tas_scale_uint)
+    when_network_up, func(tas_when_network_up)
+    add_fast_loop, func(tas_add_fast_loop)
+    remove_fast_loop, func(tas_remove_fast_loop)
+    add_driver, func(tas_add_driver)
+    remove_driver, func(tas_remove_driver)
+    defer, func(tas_defer)
+    set_timer, func(tas_set_timer)
+    cmd, func(tas_stub_nil)
+    resp_cmnd_str, func(tas_stub_nil)
+    resp_cmnd_done, func(tas_stub_nil)
+    publish_result, func(tas_stub_nil)
+    get_option, func(tas_stub_zero)
+    get_power, func(tas_stub_nil)
+    set_power, func(tas_stub_false)
+    locale, func(tas_stub_str)
+    version, func(tas_stub_str)
+    github, func(tas_stub_str)
 }
 
 module persist (scope: global, name: persist) {

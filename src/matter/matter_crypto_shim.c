@@ -25,7 +25,7 @@
 #include <string.h>
 
 #include "app_logging.h"
-#define MATTER_LOG(fmt, ...) printf("[MATTER] " fmt "\r\n", ##__VA_ARGS__)
+#define MATTER_LOG(fmt, ...) LogInfo(("[MATTER] " fmt, ##__VA_ARGS__))
 #include "be_mapping.h"
 #include "berry.h"
 #include "mbedtls/ctr_drbg.h"

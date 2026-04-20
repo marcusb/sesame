@@ -172,6 +172,17 @@ if(_patch_result GREATER 1)
     message(FATAL_ERROR "Failed to apply FreeRTOS-Plus-TCP DNS fallback patch (exit ${_patch_result})")
 endif()
 
+# mDNS/DNS-SD support: https://github.com/FreeRTOS/FreeRTOS-Plus-TCP/pull/1326
+execute_process(
+    COMMAND patch -p1 -N
+        -i "${CMAKE_SOURCE_DIR}/patches/freertos_plus_tcp_mdns.patch"
+    WORKING_DIRECTORY "${freertos_plus_tcp_SOURCE_DIR}"
+    RESULT_VARIABLE _patch_result
+    OUTPUT_QUIET ERROR_QUIET)
+if(_patch_result GREATER 1)
+    message(FATAL_ERROR "Failed to apply FreeRTOS-Plus-TCP mDNS patch (exit ${_patch_result})")
+endif()
+
 target_sources(freertos_kernel
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/idle_task.c")
@@ -343,6 +354,7 @@ add_subdirectory(src/matter)
 set(app_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/dns_hook_default.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/gpio.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"

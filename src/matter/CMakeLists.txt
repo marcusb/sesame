@@ -7,6 +7,7 @@ add_library(sesame_matter STATIC
     matter_tasmota_shim.c
     matter_crypto_shim.c
     matter_berry_port.c
+    matter_mdns.c
 )
 
 target_include_directories(sesame_matter

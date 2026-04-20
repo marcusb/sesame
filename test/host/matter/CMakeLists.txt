@@ -5,6 +5,7 @@ add_executable(host_test_matter
     "${CMAKE_SOURCE_DIR}/src/matter/matter_berry_port.c"
     "${CMAKE_SOURCE_DIR}/src/matter/matter_tasmota_shim.c"
     "${CMAKE_SOURCE_DIR}/src/matter/matter_crypto_shim.c"
+    "${CMAKE_SOURCE_DIR}/src/matter/matter_mdns.c"
 )
 
 target_include_directories(host_test_matter

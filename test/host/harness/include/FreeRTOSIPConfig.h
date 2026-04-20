@@ -19,6 +19,7 @@
 
 #define ipconfigUSE_DNS 1
 #define ipconfigUSE_DNS_CACHE 1
+#define ipconfigUSE_MDNS 1
 #define ipconfigDNS_CACHE_NAME_LENGTH 48
 #define ipconfigDNS_CACHE_ENTRIES 4
 #define ipconfigDNS_REQUEST_ATTEMPTS 2

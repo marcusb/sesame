@@ -2,6 +2,7 @@ add_library(host_harness STATIC
     harness.c
     host_sockets.c
     log_stdout.c
+    stubs/dns_hook_stub.c
     stubs/time_util.c
     stubs/util_stub.c
 )
