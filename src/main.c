@@ -264,7 +264,6 @@ void reboot() {
 
 #if SESAME_ENABLE_MATTER
 extern void matter_init(void);
-static bool matter_started = false;
 #endif
 
 static void main_task(void* param) {
@@ -291,25 +290,6 @@ static void main_task(void* param) {
     ctrl_msg_t ctrl_msg;
     for (;;) {
         WDT_Refresh(WDT);
-
-#if SESAME_ENABLE_MATTER
-        if (!matter_started) {
-            NetworkEndPoint_t* pxEP = FreeRTOS_FirstEndPoint(NULL);
-            bool any_up = false;
-            while (pxEP != NULL) {
-                if (pxEP->bits.bEndPointUp) {
-                    any_up = true;
-                    break;
-                }
-                pxEP = FreeRTOS_NextEndPoint(NULL, pxEP);
-            }
-
-            if (any_up) {
-                matter_init();
-                matter_started = true;
-            }
-        }
-#endif
 
         if (xQueueReceive(ctrl_queue, &ctrl_msg, 1000) == pdPASS) {
             switch (ctrl_msg.type) {
@@ -535,6 +515,9 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                 configure_logging(&app_config.logging_config.syslog_config);
                 xTaskCreate(mqtt_task, "MQTT", 512, &app_config.mqtt_config,
                             tskIDLE_PRIORITY, NULL);
+#if SESAME_ENABLE_MATTER
+                matter_init();
+#endif
             }
         } else if (endpoint->pxNetworkInterface == &uap_iface) {
             static dhcp_task_params_t dhcp_params;
