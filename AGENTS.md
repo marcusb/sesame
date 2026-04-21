@@ -315,6 +315,11 @@ ninja -C build sesame.axf && \
 python3 test_boot.py
 ```
 
+**One-shot flash + capture** – `tools/flash_and_monitor.sh` starts `monitor.py` in the background, runs `flashprog.py --mcufw build/sesame.bin -r`, and writes the serial output to a log file. Useful for grabbing the reset-through-steady-state window in a single step:
+```sh
+tools/flash_and_monitor.sh [timeout_sec] [logfile]   # defaults: 60 /tmp/sesame_matter_dbg.log
+```
+
 ### Device Flashing (first-time install only)
 
 ```sh
