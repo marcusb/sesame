@@ -199,12 +199,26 @@ static int tas_stub_zero(bvm* vm) {
     be_pushint(vm, 0);
     be_return(vm);
 }
+/* Matter_Device.init() early-returns unless SetOption151 (Matter enabled) is
+ * truthy; the rest of the options berry_matter queries (SO8 Fahrenheit, SO68
+ * split RGB/W, SO82 Alexa CT, etc.) are irrelevant to sesame and default 0. */
+static int tas_get_option(bvm* vm) {
+    int opt = (be_top(vm) >= 1 && be_isint(vm, 1)) ? be_toint(vm, 1) : -1;
+    be_pushint(vm, opt == 151 ? 1 : 0);
+    be_return(vm);
+}
 static int tas_stub_false(bvm* vm) {
     be_pushbool(vm, bfalse);
     be_return(vm);
 }
 static int tas_stub_str(bvm* vm) {
     be_pushstring(vm, "sesame");
+    be_return(vm);
+}
+/* tasmota.version() must return an integer (encoded x.y.z.p) because Matter's
+ * EventHandler formats it via >> shifts. Pick 0x00010000 = "0.1.0.0". */
+static int tas_version(bvm* vm) {
+    be_pushint(vm, 0x00010000);
     be_return(vm);
 }
 
@@ -301,6 +315,15 @@ static int tas_wifi(bvm* vm) {
 
 /* tasmota.eth() -> map (always down; no ethernet on MW320) */
 static int tas_eth(bvm* vm) {
+    if (be_top(vm) >= 1 && be_isstring(vm, 1)) {
+        const char* key = be_tostring(vm, 1);
+        if (!strcmp(key, "up")) {
+            be_pushbool(vm, bfalse);
+        } else {
+            be_pushnil(vm);
+        }
+        be_return(vm);
+    }
     be_newobject(vm, "map");
     be_pushstring(vm, "up");
     be_pushbool(vm, bfalse);
@@ -566,41 +589,82 @@ typedef struct {
     int remote_port;
 } tas_udp_t;
 
+static tas_udp_t* udp_self(bvm* vm) {
+    be_getmember(vm, 1, "_p");
+    tas_udp_t* u = (tas_udp_t*)be_tocomptr(vm, -1);
+    be_pop(vm, 1);
+    return u;
+}
+
 static int udp_init(bvm* vm) {
     tas_udp_t* u = (tas_udp_t*)be_malloc(vm, sizeof(tas_udp_t));
     u->socket = FREERTOS_INVALID_SOCKET;
     u->remote_ip[0] = '\0';
     u->remote_port = 0;
     be_pushcomptr(vm, u);
-    be_return(vm);
+    be_setmember(vm, 1, "_p");
+    be_pop(vm, 1);
+    be_return_nil(vm);
 }
 
 static int udp_deinit(bvm* vm) {
-    tas_udp_t* u = (tas_udp_t*)be_tocomptr(vm, 1);
-    if (u->socket != FREERTOS_INVALID_SOCKET) {
-        FreeRTOS_closesocket(u->socket);
+    tas_udp_t* u = udp_self(vm);
+    if (u) {
+        if (u->socket != FREERTOS_INVALID_SOCKET) {
+            FreeRTOS_closesocket(u->socket);
+        }
+        be_free(vm, u, sizeof(tas_udp_t));
+        be_pushcomptr(vm, NULL);
+        be_setmember(vm, 1, "_p");
+        be_pop(vm, 1);
     }
-    be_free(vm, u, sizeof(tas_udp_t));
     be_return_nil(vm);
 }
 
 static int udp_begin(bvm* vm) {
-    tas_udp_t* u = (tas_udp_t*)be_tocomptr(vm, 1);
-    int port = be_toint(vm, 2);
+    tas_udp_t* u = udp_self(vm);
+    if (!u) {
+        be_pushbool(vm, bfalse);
+        be_return(vm);
+    }
+    /* addr is at slot 2 (unused; we bind INADDR_ANY), port at slot 3 */
+    int port = be_toint(vm, 3);
     u->socket = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM,
                                 FREERTOS_IPPROTO_UDP);
-    if (u->socket != FREERTOS_INVALID_SOCKET) {
-        struct freertos_sockaddr addr;
-        addr.sin_port = FreeRTOS_htons(port);
-        addr.sin_address.ulIP_IPv4 = 0;
-        FreeRTOS_bind(u->socket, &addr, sizeof(addr));
+    if (u->socket == FREERTOS_INVALID_SOCKET) {
+        be_pushbool(vm, bfalse);
+        be_return(vm);
+    }
+    TickType_t zero = 0;
+    FreeRTOS_setsockopt(u->socket, 0, FREERTOS_SO_RCVTIMEO, &zero,
+                        sizeof(zero));
+    struct freertos_sockaddr addr = {0};
+    addr.sin_family = FREERTOS_AF_INET;
+    addr.sin_port = FreeRTOS_htons(port);
+    addr.sin_address.ulIP_IPv4 = 0;
+    BaseType_t rc = FreeRTOS_bind(u->socket, &addr, sizeof(addr));
+    if (rc != 0) {
+        FreeRTOS_closesocket(u->socket);
+        u->socket = FREERTOS_INVALID_SOCKET;
+        be_pushbool(vm, bfalse);
+        be_return(vm);
+    }
+    be_pushbool(vm, btrue);
+    be_return(vm);
+}
+
+static int udp_close(bvm* vm) {
+    tas_udp_t* u = udp_self(vm);
+    if (u && u->socket != FREERTOS_INVALID_SOCKET) {
+        FreeRTOS_closesocket(u->socket);
+        u->socket = FREERTOS_INVALID_SOCKET;
     }
     be_return_nil(vm);
 }
 
 static int udp_read(bvm* vm) {
-    tas_udp_t* u = (tas_udp_t*)be_tocomptr(vm, 1);
-    if (u->socket == FREERTOS_INVALID_SOCKET) {
+    tas_udp_t* u = udp_self(vm);
+    if (!u || u->socket == FREERTOS_INVALID_SOCKET) {
         be_return_nil(vm);
     }
     struct freertos_sockaddr from;
@@ -619,16 +683,17 @@ static int udp_read(bvm* vm) {
 }
 
 static int udp_send(bvm* vm) {
-    tas_udp_t* u = (tas_udp_t*)be_tocomptr(vm, 1);
+    tas_udp_t* u = udp_self(vm);
+    if (!u || u->socket == FREERTOS_INVALID_SOCKET) {
+        be_pushbool(vm, bfalse);
+        be_return(vm);
+    }
     const char* ip_str = be_tostring(vm, 2);
     int port = be_toint(vm, 3);
     size_t len;
     const void* data = be_tobytes(vm, 4, &len);
-    if (u->socket == FREERTOS_INVALID_SOCKET) {
-        be_pushbool(vm, bfalse);
-        be_return(vm);
-    }
-    struct freertos_sockaddr to;
+    struct freertos_sockaddr to = {0};
+    to.sin_family = FREERTOS_AF_INET;
     to.sin_port = FreeRTOS_htons(port);
     to.sin_address.ulIP_IPv4 = FreeRTOS_inet_addr(ip_str);
     int32_t n = FreeRTOS_sendto(u->socket, data, len, 0, &to, sizeof(to));
@@ -637,7 +702,10 @@ static int udp_send(bvm* vm) {
 }
 
 static int udp_member(bvm* vm) {
-    tas_udp_t* u = (tas_udp_t*)be_tocomptr(vm, 1);
+    tas_udp_t* u = udp_self(vm);
+    if (!u) {
+        be_return_nil(vm);
+    }
     const char* attr = be_tostring(vm, 2);
     if (!strcmp(attr, "remote_ip")) {
         be_pushstring(vm, u->remote_ip);
@@ -765,6 +833,7 @@ class be_class_udp (scope: global, name: udp) {
     init, func(udp_init)
     deinit, func(udp_deinit)
     begin, func(udp_begin)
+    close, func(udp_close)
     read, func(udp_read)
     send, func(udp_send)
     member, func(udp_member)
@@ -796,12 +865,14 @@ module tasmota (scope: global, name: tasmota) {
     resp_cmnd_str, func(tas_stub_nil)
     resp_cmnd_done, func(tas_stub_nil)
     publish_result, func(tas_stub_nil)
-    get_option, func(tas_stub_zero)
+    get_option, func(tas_get_option)
     get_power, func(tas_stub_nil)
     set_power, func(tas_stub_false)
     locale, func(tas_stub_str)
-    version, func(tas_stub_str)
+    version, func(tas_version)
     github, func(tas_stub_str)
+    add_cmd, func(tas_stub_nil)
+    remove_cmd, func(tas_stub_nil)
 }
 
 module persist (scope: global, name: persist) {

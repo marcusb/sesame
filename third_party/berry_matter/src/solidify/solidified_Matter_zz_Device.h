@@ -3270,7 +3270,7 @@ be_local_closure(class_Matter_Device_start,   /* name */
 ** Solidified class: Matter_Device
 ********************************************************************/
 be_local_class(Matter_Device,
-    24,
+    25,
     NULL,
     be_nested_map(84,
     ( (struct bmapnode*) &(const bmapnode[]) {
@@ -3327,14 +3327,16 @@ be_local_class(Matter_Device,
         { be_const_key_weak(sort_distinct, 56), be_const_static_closure(class_Matter_Device_sort_distinct_closure) },
         { be_const_key_weak(network_up, 48), be_const_closure(class_Matter_Device_network_up_closure) },
         { be_const_key_weak(is_zigbee_present, 68), be_const_closure(class_Matter_Device_is_zigbee_present_closure) },
-        /* Sesame: stripped to shutter + mandatory plugins only */
-        { be_const_key_weak(plugins_classes, -1), be_const_simple_instance(be_nested_simple_instance(&be_class_map, {
-        be_const_map( *     be_nested_map(3,
-    ( (struct bmapnode*) &(const bmapnode[]) {
-        { be_const_key_weak(shutter, -1), be_const_class(be_class_Matter_Plugin_Shutter) },
-        { be_const_key_weak(root, -1), be_const_class(be_class_Matter_Plugin_Root) },
-        { be_const_key_weak(aggregator, -1), be_const_class(be_class_Matter_Plugin_Aggregator) },
-    }))    ) } )) },
+        /* Sesame: undoes an earlier sesame-specific hand-hack that pre-populated
+         * `plugins_classes` with a flash-resident const map. That map was
+         * immutable, so runtime inserts (pc["root"] = ...) triggered a bus
+         * fault when the map needed to resize. The entry here matches what
+         * vanilla berry solidify emits for `static var plugins_classes` (the
+         * uninitialized declaration in Matter_zz_Device.be:14): a writable
+         * instance slot, populated at runtime by init() from matter.plugins_classes.
+         * When tools/solidify_berry_matter.sh is fully wired into the build,
+         * regeneration from the .be source should produce this same entry. */
+        { be_const_key_weak(plugins_classes, -1), be_const_var(24) },
         { be_const_key_weak(read_sensors_scheduler, -1), be_const_closure(class_Matter_Device_read_sensors_scheduler_closure) },
         { be_const_key_weak(remove_fabric, -1), be_const_closure(class_Matter_Device_remove_fabric_closure) },
         { be_const_key_weak(_start_udp, -1), be_const_closure(class_Matter_Device__start_udp_closure) },

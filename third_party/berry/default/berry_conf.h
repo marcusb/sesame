@@ -235,12 +235,8 @@
   #define BE_USE_OS_MODULE                0
   #define BE_USE_SOLIDIFY_MODULE          0
 
-  #define BE_USE_JSON_MODULE              0
-  #define BE_USE_MATH_MODULE              0
-  #define BE_USE_RE_MODULE                0
-
-  #define BE_USE_SOLIDIFY_MODULE          0
-  #define BE_USE_INTROSPECT_MODULE        0
+  #define BE_USE_GLOBAL_MODULE            1
+  #define BE_USE_INTROSPECT_MODULE        1
   #define BE_USE_STRICT_MODULE            0
 #else
   #define BE_USE_STRING_MODULE            1
@@ -256,7 +252,7 @@
   #define BE_USE_RE_MODULE                0
 
   #define BE_USE_SOLIDIFY_MODULE          1
-  #define BE_USE_INTROSPECT_MODULE        0
+  #define BE_USE_INTROSPECT_MODULE        1
   #define BE_USE_STRICT_MODULE            0
 #endif
 

@@ -27,6 +27,8 @@
 #include "app_logging.h"
 #define MATTER_LOG(fmt, ...) LogInfo(("[MATTER] " fmt, ##__VA_ARGS__))
 #include "be_mapping.h"
+#include "be_module.h"
+#include "be_string.h"
 #include "berry.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/ecp.h"
@@ -64,17 +66,23 @@ static int crypto_hmac_sha256(bvm* vm) {
     be_return(vm);
 }
 
-/* HKDF_SHA256(secret:bytes, salt:bytes, info:bytes, out_len:int) ->
- * bytes(out_len) */
+/* Tasmota exposes HKDF_SHA256 / PBKDF2_HMAC_SHA256 as classes whose only
+ * method is `derive(...)`. Matter code calls
+ * `crypto.HKDF_SHA256().derive(...)`, so shift arg indices to skip the implicit
+ * `self`. */
+
+/* HKDF_SHA256.derive(self, secret:bytes, salt:bytes, info:bytes, out_len:int)
+ * -> bytes(out_len) */
 static int crypto_hkdf_sha256(bvm* vm) {
+    int base = (be_top(vm) >= 5) ? 1 : 0; /* skip self if instance-called */
     size_t secret_len, salt_len, info_len;
     const unsigned char* secret =
-        (const unsigned char*)be_tobytes(vm, 1, &secret_len);
+        (const unsigned char*)be_tobytes(vm, base + 1, &secret_len);
     const unsigned char* salt =
-        (const unsigned char*)be_tobytes(vm, 2, &salt_len);
+        (const unsigned char*)be_tobytes(vm, base + 2, &salt_len);
     const unsigned char* info =
-        (const unsigned char*)be_tobytes(vm, 3, &info_len);
-    int out_len = be_toint(vm, 4);
+        (const unsigned char*)be_tobytes(vm, base + 3, &info_len);
+    int out_len = be_toint(vm, base + 4);
 
     if (!secret || out_len <= 0) be_return_nil(vm);
 
@@ -84,16 +92,17 @@ static int crypto_hkdf_sha256(bvm* vm) {
     be_return(vm);
 }
 
-/* PBKDF2_HMAC_SHA256(pass:bytes, salt:bytes, iter:int, out_len:int) ->
- * bytes(out_len) */
+/* PBKDF2_HMAC_SHA256.derive(self, pass:bytes, salt:bytes, iter:int,
+ * out_len:int) -> bytes(out_len) */
 static int crypto_pbkdf2_hmac_sha256(bvm* vm) {
+    int base = (be_top(vm) >= 5) ? 1 : 0;
     size_t pass_len, salt_len;
     const unsigned char* pass =
-        (const unsigned char*)be_tobytes(vm, 1, &pass_len);
+        (const unsigned char*)be_tobytes(vm, base + 1, &pass_len);
     const unsigned char* salt =
-        (const unsigned char*)be_tobytes(vm, 2, &salt_len);
-    int iter = be_toint(vm, 3);
-    int out_len = be_toint(vm, 4);
+        (const unsigned char*)be_tobytes(vm, base + 2, &salt_len);
+    int iter = be_toint(vm, base + 3);
+    int out_len = be_toint(vm, base + 4);
 
     if (!pass || !salt || out_len <= 0) be_return_nil(vm);
 
@@ -146,6 +155,30 @@ static int crypto_ec_p256_deinit(bvm* vm) {
         be_setmember(vm, 1, ".p");
     }
     be_return_nil(vm);
+}
+
+/* mod(x:bytes) -> bytes(32) — reduce x modulo the curve order n. Matter uses
+ * this during SPAKE2+ setup (Matter_z_Commissioning.be). */
+static int crypto_ec_p256_mod(bvm* vm) {
+    be_getmember(vm, 1, ".p");
+    crypto_ec_p256_t* ec = (crypto_ec_p256_t*)be_tocomptr(vm, -1);
+    be_pop(vm, 1);
+
+    size_t in_len;
+    const unsigned char* in = (const unsigned char*)be_tobytes(vm, 2, &in_len);
+    if (!ec || !in) be_return_nil(vm);
+
+    mbedtls_mpi x;
+    mbedtls_mpi_init(&x);
+    int ret = mbedtls_mpi_read_binary(&x, in, in_len);
+    if (ret == 0) ret = mbedtls_mpi_mod_mpi(&x, &x, &ec->grp.N);
+
+    unsigned char out[32] = {0};
+    if (ret == 0) ret = mbedtls_mpi_write_binary(&x, out, 32);
+    mbedtls_mpi_free(&x);
+    if (ret != 0) be_return_nil(vm);
+    be_pushbytes(vm, out, 32);
+    be_return(vm);
 }
 
 /* mul(scalar:bytes) -> bytes(65) - multiply base point by scalar */
@@ -210,6 +243,9 @@ int be_load_crypto_module(bvm* vm) {
         {"init", crypto_ec_p256_init},
         {"deinit", crypto_ec_p256_deinit},
         {"mul", crypto_ec_p256_mul},
+        {"mod", crypto_ec_p256_mod},
+        /* public_key(priv) = priv * G, which is exactly what mul() computes. */
+        {"public_key", crypto_ec_p256_mul},
         {NULL, NULL}};
     be_regclass(vm, "EC_P256", ec_members);
 
@@ -225,11 +261,19 @@ int be_load_crypto_module(bvm* vm) {
     be_setmember(vm, -2, "HMAC_SHA256");
     be_pop(vm, 1);
 
-    be_pushntvfunction(vm, crypto_hkdf_sha256);
+    /* HKDF_SHA256 / PBKDF2_HMAC_SHA256 must be classes so that code like
+     * `crypto.HKDF_SHA256().derive(...)` works (Matter_Session.be, etc.). */
+    static const bnfuncinfo hkdf_members[] = {{"derive", crypto_hkdf_sha256},
+                                              {NULL, NULL}};
+    be_regclass(vm, "HKDF_SHA256", hkdf_members);
+    be_getglobal(vm, "HKDF_SHA256");
     be_setmember(vm, -2, "HKDF_SHA256");
     be_pop(vm, 1);
 
-    be_pushntvfunction(vm, crypto_pbkdf2_hmac_sha256);
+    static const bnfuncinfo pbkdf_members[] = {
+        {"derive", crypto_pbkdf2_hmac_sha256}, {NULL, NULL}};
+    be_regclass(vm, "PBKDF2_HMAC_SHA256", pbkdf_members);
+    be_getglobal(vm, "PBKDF2_HMAC_SHA256");
     be_setmember(vm, -2, "PBKDF2_HMAC_SHA256");
     be_pop(vm, 1);
 
@@ -242,7 +286,10 @@ int be_load_crypto_module(bvm* vm) {
     be_setmember(vm, -2, "EC_P256");
     be_pop(vm, 1);
 
-    /* Register crypto in global scope */
+    /* Register crypto in global scope AND in the module load cache so that
+     * `import crypto` inside Berry code (e.g. solidified Matter_Device.init
+     * at bytecode offset 0: IMPORT crypto) resolves to the same module. */
+    be_cache_module(vm, be_newstr(vm, "crypto"));
     be_setglobal(vm, "crypto");
 
     return 0;

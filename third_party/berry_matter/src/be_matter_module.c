@@ -212,6 +212,16 @@ extern const bclass be_class_Matter_TLV;   // need to declare it upfront because
 #include "solidify/solidified_Matter_Plugin_z_All.h"
 #include "solidify/solidified_Matter_zz_Device.h"
 
+static int matter_dummy_member(bvm *vm) {
+    be_return_nil(vm);
+}
+static int matter_dummy_setmember(bvm *vm) {
+    be_return_nil(vm);
+}
+static int matter_dummy_ui(bvm *vm) {
+    be_return_nil(vm);
+}
+
 #include "be_fixed_matter.h"
 
 /* @const_object_info_begin
@@ -224,8 +234,6 @@ module matter (scope: global, strings: weak) {
 
   Verhoeff, class(be_class_Matter_Verhoeff)
   Counter, class(be_class_Matter_Counter)
-  setmember, closure(module_matter_setmember_closure)
-  member, closure(module_matter_member_closure)
   get_ip_bytes, ctype_func(matter_get_ip_bytes)
   publish_command, func(matter_publish_command)
 
@@ -359,7 +367,9 @@ module matter (scope: global, strings: weak) {
   IM_Subscription_Shop, class(be_class_Matter_IM_Subscription_Shop)
   IM, class(be_class_Matter_IM)
   Control_Message, class(be_class_Matter_Control_Message)
-  // UI removed
+  UI, func(matter_dummy_ui)
+  member, closure(module_matter_member_closure)
+  setmember, closure(module_matter_setmember_closure)
 
   // Commissioning
   Commissioning, class(be_class_Matter_Commissioning)
@@ -380,6 +390,7 @@ module matter (scope: global, strings: weak) {
   Plugin_Root, class(be_class_Matter_Plugin_Root)       // Generic behavior common to all devices
   Plugin_Aggregator, class(be_class_Matter_Plugin_Aggregator) // Aggregator
   Plugin_Device, class(be_class_Matter_Plugin_Device)       // Device
+  Plugin_Shutter, class(be_class_Matter_Plugin_Shutter)     // Window Covering (shutter)
 }
 
 @const_object_info_end */

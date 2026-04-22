@@ -132,7 +132,7 @@ static inline bool wrapper_net_is_ip_or_ipv6(const uint8_t* buffer) {
 #if ipconfigUSE_IPv6
            || eth->usFrameType == ipIPv6_FRAME_TYPE
 #endif
-           ;
+        ;
 }
 
 void net_wlan_init(void) {
@@ -229,6 +229,15 @@ static BaseType_t netif_init(NetworkInterface_t* netif) {
     IPv6_Address_t ip6_allnodes = {
         {0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
     add_mcast_filter(&ip6_allnodes);
+#endif
+
+#if ipconfigUSE_MDNS
+    uint8_t mdns_ipv4_mac[6] = {0x01, 0x00, 0x5e, 0x00, 0x00, 0xfb};
+    wifi_add_mcast_filter(mdns_ipv4_mac);
+#if ipconfigUSE_IPv6
+    uint8_t mdns_ipv6_mac[6] = {0x33, 0x33, 0x00, 0x00, 0x00, 0xfb};
+    wifi_add_mcast_filter(mdns_ipv6_mac);
+#endif
 #endif
 
     enum wlan_connection_state state;
