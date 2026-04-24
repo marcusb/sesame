@@ -465,28 +465,6 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char* task_name) {
     }
 }
 
-static bool has_dns_server() {
-    for (NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(&sta_iface); ep != NULL;
-         ep = FreeRTOS_NextEndPoint(&sta_iface, ep)) {
-#if ipconfigUSE_IPv4
-        if (!ep->bits.bIPv6) {
-            if (ep->ipv4_settings.ulDNSServerAddresses[0] != 0) {
-                return true;
-            }
-        }
-#endif
-#if ipconfigUSE_IPv6
-        if (ep->bits.bIPv6) {
-            if (ep->ipv6_settings.xDNSServerAddresses[0].ucBytes[0] != 0 ||
-                ep->ipv6_settings.xDNSServerAddresses[0].ucBytes[1] != 0) {
-                return true;
-            }
-        }
-#endif
-    }
-    return false;
-}
-
 BaseType_t xApplicationDNSQueryHook_Multi(struct xNetworkEndPoint* pxEndPoint,
                                           const char* pcName) {
     (void)pxEndPoint;
@@ -508,7 +486,7 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
             } else {
                 notify_dhcp_configured();
             }
-            if (!tasks_created && has_dns_server()) {
+            if (!tasks_created) {
                 // Create the tasks that use the TCP/IP stack if they have
                 // not already been created.
                 tasks_created = true;
