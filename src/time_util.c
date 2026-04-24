@@ -50,7 +50,7 @@ void start_rtc_save(void) {
     xTimerStart(tm, 0);
 }
 
-int _gettimeofday(struct timeval *tv, void *tz) {
+int gettimeofday(struct timeval* tv, void* tz) {
     if (tv == NULL) {
         return -1;
     }
@@ -64,7 +64,7 @@ int _gettimeofday(struct timeval *tv, void *tz) {
 
 long get_epoch_millis() {
     struct timeval tv;
-    _gettimeofday(&tv, NULL);
+    gettimeofday(&tv, NULL);
     return 1000 * tv.tv_sec + tv.tv_usec / 1000;
 }
 

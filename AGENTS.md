@@ -19,7 +19,7 @@ The project uses CMake with two-stage builds: a native build produces the `axf2f
 **Debian/Ubuntu:**
 
 ```sh
-apt install cmake ninja-build gcc-arm-none-eabi libnewlib-arm-none-eabi \
+apt install cmake ninja-build gcc-arm-none-eabi \
     binutils-arm-none-eabi protobuf-compiler python3-protobuf openocd
 ```
 

@@ -195,7 +195,11 @@ SECTIONS
     *(.data)                 /* .data sections */
     *(.data*)                /* .data* sections */
     KEEP(*(.jcr*))
-    . = ALIGN(4);
+    *(.wlan_data .wlan_data*)
+    . = ALIGN(8);
+    __tdata_start__ = .;
+    *(.tdata .tdata*)
+    . = ALIGN(8);
     __data_end__ = .;        /* define a global symbol at data end */
   } > m_data0
 
@@ -208,6 +212,9 @@ SECTIONS
   .bss :
   {
     /* This is used by the startup in order to initialize the .bss section */
+    . = ALIGN(8);
+    __tbss_start__ = .;
+    *(.tbss .tbss*)
     . = ALIGN(4);
     __START_BSS = .;
     __bss_start__ = .;
@@ -220,10 +227,8 @@ SECTIONS
   } > m_data0
 
   /* heap in SRAM0 */
-  . = ALIGN(4);
-  __HeapBase_sram0 = .;
-  . = ORIGIN(m_data0) + LENGTH(m_data0);
-  __HeapLimit_sram0 = .;
+  __HeapBase_sram0 = __bss_end__;
+  __HeapLimit_sram0 = ORIGIN(m_data0) + LENGTH(m_data0);
 
   __HeapBase = ORIGIN(m_data1);
   __HeapLimit = _main_stack_start;
@@ -254,4 +259,14 @@ SECTIONS
   .ARM.attributes 0 : { *(.ARM.attributes) }
 
   ASSERT(__StackLimit >= __HeapLimit, "region m_data1 overflowed with stack and heap")
+
+  /* Symbol aliases for picolibc crt0 */
+  PROVIDE(__data_start = __data_start__);
+  PROVIDE(__data_size = __data_end__ - __data_start__);
+  PROVIDE(__data_source = __DATA_ROM);
+  PROVIDE(__bss_start = __tbss_start__);
+  PROVIDE(__bss_size = __bss_end__ - __tbss_start__);
+  PROVIDE(__tls_base = __tdata_start__);
+  PROVIDE(__arm32_tls_tcb_offset = 8);
+  PROVIDE(__interrupt_vector = __VECTOR_TABLE);
 }

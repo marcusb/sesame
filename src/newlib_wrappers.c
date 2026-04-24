@@ -59,8 +59,17 @@ void* __wrap_realloc(void* ptr, size_t size) {
     return pvPortReAlloc(ptr, size);
 }
 
-void __assert_func(const char* file, int line, const char* func,
-                   const char* failedexpr) {
+__attribute__((noreturn)) void _exit(int status) {
+    (void)status;
+    portDISABLE_INTERRUPTS();
+    for (;;) {
+        __BKPT(0);
+    }
+}
+
+__attribute__((noreturn)) void __assert_func(const char* file, int line,
+                                             const char* func,
+                                             const char* failedexpr) {
     PRINTF("\r\n***ASSERT ERROR: %s in function %s %s:%d\r\n", failedexpr, func,
            file, line);
 #ifdef USE_BACKTRACE

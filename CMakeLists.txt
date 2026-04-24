@@ -77,7 +77,8 @@ target_compile_definitions(globals
     INTERFACE
     __FPU_PRESENT
     _DEFAULT_SOURCE
-    _GNU_SOURCE)
+    _GNU_SOURCE
+    __ASSERT_VERBOSE)
 
 # -------------------------------------------------------------------------------------------------
 # Backtrace
@@ -400,8 +401,7 @@ target_link_options(app_deps
     "-mthumb"
     "-mfloat-abi=softfp"
     "-mfpu=fpv4-sp-d16"
-    "-specs=nano.specs"
-    "-specs=nosys.specs"
+    "-specs=picolibc.specs"
     "-Wl,--wrap,malloc"
     "-Wl,--wrap,free"
     "-Wl,--wrap,calloc"
@@ -439,7 +439,7 @@ target_link_options("${exe_target}" PRIVATE
     "LINKER:--no-whole-archive"
     "LINKER:--end-group"
     "-Wl,-Map,${exe_target}.map"
-    "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_flash.ld"
+    "-T${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_flash.ld"
 )
 
 # RAM version (without Matter)
@@ -449,7 +449,7 @@ target_compile_definitions("${exe_target_ram}" PRIVATE SESAME_ENABLE_MATTER=0)
 target_link_libraries("${exe_target_ram}" PRIVATE app_deps)
 target_link_options("${exe_target_ram}" PRIVATE
     "-Wl,-Map,${exe_target_ram}.map"
-    "-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
+    "-T${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
 )
 
 add_subdirectory(test)
