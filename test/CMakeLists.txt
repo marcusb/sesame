@@ -32,7 +32,8 @@ add_library(matter_test_support OBJECT
     "${CMAKE_SOURCE_DIR}/src/libc_wrappers.c"
     "${CMAKE_SOURCE_DIR}/src/pin_mux.c"
     "${CMAKE_SOURCE_DIR}/src/util.c"
-    "${CMAKE_SOURCE_DIR}/src/idle_task.c")
+    "${CMAKE_SOURCE_DIR}/src/idle_task.c"
+    "${CMAKE_SOURCE_DIR}/src/time_util.c")
 
 target_include_directories(matter_test_support PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/matter"
@@ -42,8 +43,7 @@ target_link_libraries(matter_test_support PUBLIC
     globals unity logging board mw320_device_startup mw320_utility_assert
     mw320_mbedtls_port mw320_drivers_aes mw320_drivers_crc
     freertos_kernel
-    "LINKER:--start-group" sesame_matter berry_matter berry "LINKER:--end-group"
-    m)
+    "LINKER:--start-group" sesame_matter berry_matter berry "LINKER:--end-group")
 
 # Common ARM link options for tests
 set(ARM_TEST_LINK_OPTIONS
@@ -51,8 +51,7 @@ set(ARM_TEST_LINK_OPTIONS
     "-mthumb"
     "-mfloat-abi=softfp"
     "-mfpu=fpv4-sp-d16"
-    "-specs=nano.specs"
-    "-specs=nosys.specs"
+    "-specs=picolibc.specs"
     "-Wl,--wrap,malloc"
     "-Wl,--wrap,free"
     "-Wl,--wrap,calloc"
@@ -69,7 +68,7 @@ macro(add_matter_test_binary name source)
     target_link_libraries(${name} PRIVATE globals matter_test_support)
     target_link_options(${name} PRIVATE
         ${ARM_TEST_LINK_OPTIONS}
-        "-Wl,-T,${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
+        "-T${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
         "-Wl,-Map,${name}.map")
 endmacro()
 
@@ -125,4 +124,5 @@ target_link_options(sesame_tests
     PRIVATE
     ${ARM_TEST_LINK_OPTIONS}
     "-Wl,-Map,sesame_tests.map"
-    "-Wl,-T,${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")
+    "-T${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
+)

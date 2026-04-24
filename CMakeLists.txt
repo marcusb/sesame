@@ -411,8 +411,7 @@ target_link_options(app_deps
     "-Wl,--undefined,uxTopUsedPriority"
     "-Wl,--cref"
     "-Wl,--gc-sections"
-    "-Wl,--nmagic"
-    "-lm")
+    "-Wl,--nmagic")
 
 set(exe_target sesame)
 set(exe_target_ram "${exe_target}_ram")

@@ -39,28 +39,6 @@ void unity_putchar(char c) {
 
 void unity_flush(void) { DbgConsole_Flush(); }
 
-/* ---- printf wrapping ---- */
-int __wrap_printf(const char* format, ...) {
-    char buf[256];
-    va_list ap;
-    va_start(ap, format);
-    int ret = vsnprintf(buf, sizeof(buf), format, ap);
-    va_end(ap);
-    DbgConsole_Printf("%s", buf);
-    return ret;
-}
-
-int __wrap_fprintf(FILE* stream, const char* format, ...) {
-    (void)stream;
-    char buf[256];
-    va_list ap;
-    va_start(ap, format);
-    int ret = vsnprintf(buf, sizeof(buf), format, ap);
-    va_end(ap);
-    DbgConsole_Printf("%s", buf);
-    return ret;
-}
-
 /* ---- FreeRTOS application hooks ---- */
 void vApplicationIdleHook(void) {}
 void vApplicationMallocFailedHook(void) {

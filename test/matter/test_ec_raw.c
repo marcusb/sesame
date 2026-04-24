@@ -27,26 +27,16 @@ void test_mbedtls_ec_p256_mul_raw(void) {
     unsigned char scalar_buf[32] = {0x02}; /* Start with small scalar */
     mbedtls_mpi_read_binary(&d, scalar_buf, sizeof(scalar_buf));
 
-    printf("Calling mbedtls_ecp_mul (G*2)...\n");
-    TickType_t start = xTaskGetTickCount();
     ret = mbedtls_ecp_mul(&grp, &Q, &d, &grp.G, mbedtls_ctr_drbg_random,
                           &ctr_drbg);
-    TickType_t end = xTaskGetTickCount();
-    printf("mbedtls_ecp_mul returned %d, took %d ms\n", ret,
-           (int)((end - start) * portTICK_PERIOD_MS));
     TEST_ASSERT_EQUAL(0, ret);
 
     /* Now try full 256-bit scalar */
-    printf("Calling mbedtls_ecp_mul (full 256-bit)...\n");
     for (int i = 0; i < 32; i++) scalar_buf[i] = (unsigned char)i;
     mbedtls_mpi_read_binary(&d, scalar_buf, sizeof(scalar_buf));
 
-    start = xTaskGetTickCount();
     ret = mbedtls_ecp_mul(&grp, &Q, &d, &grp.G, mbedtls_ctr_drbg_random,
                           &ctr_drbg);
-    end = xTaskGetTickCount();
-    printf("mbedtls_ecp_mul (full) returned %d, took %d ms\n", ret,
-           (int)((end - start) * portTICK_PERIOD_MS));
     TEST_ASSERT_EQUAL(0, ret);
 
     mbedtls_ecp_group_free(&grp);
@@ -60,7 +50,6 @@ static void run_tests_task(void* params) {
     UNITY_BEGIN();
     RUN_TEST(test_mbedtls_ec_p256_mul_raw);
     int result = UNITY_END();
-    printf("\r\nTEST_RESULT:%d\r\n", result);
     vTaskDelete(NULL);
 }
 

@@ -1,4 +1,6 @@
+#include <stdarg.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -59,18 +61,25 @@ void* __wrap_realloc(void* ptr, size_t size) {
     return pvPortReAlloc(ptr, size);
 }
 
-/* Intercept printf/fprintf to prevent picolibc's full stdio (188KB) from
- * being linked. The only caller in practice is llhttp's debug output
- * (llhttp_print in api.c), which is not needed in production. */
-int __wrap_printf(const char* fmt, ...) {
-    (void)fmt;
-    return 0;
+int __wrap_printf(const char* format, ...) {
+    char buf[256];
+    va_list ap;
+    va_start(ap, format);
+    int ret = vsnprintf(buf, sizeof(buf), format, ap);
+    va_end(ap);
+    DbgConsole_Printf("%s", buf);
+    return ret;
 }
 
-int __wrap_fprintf(void* stream, const char* fmt, ...) {
+int __wrap_fprintf(FILE* stream, const char* format, ...) {
     (void)stream;
-    (void)fmt;
-    return 0;
+    char buf[256];
+    va_list ap;
+    va_start(ap, format);
+    int ret = vsnprintf(buf, sizeof(buf), format, ap);
+    va_end(ap);
+    DbgConsole_Printf("%s", buf);
+    return ret;
 }
 
 __attribute__((noreturn)) void _exit(int status) {
