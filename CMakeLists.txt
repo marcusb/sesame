@@ -421,7 +421,7 @@ set(CMAKE_EXECUTABLE_SUFFIX ".axf")
 set(common_exe_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/newlib_wrappers.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/libc_wrappers.c"
 )
 
 # Flash version (with Matter)

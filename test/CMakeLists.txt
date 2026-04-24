@@ -29,7 +29,7 @@ target_link_libraries(test_stubs PRIVATE globals)
 add_library(matter_test_support OBJECT
     matter/matter_test_utils.c
     matter/board_support.c
-    "${CMAKE_SOURCE_DIR}/src/newlib_wrappers.c"
+    "${CMAKE_SOURCE_DIR}/src/libc_wrappers.c"
     "${CMAKE_SOURCE_DIR}/src/pin_mux.c"
     "${CMAKE_SOURCE_DIR}/src/util.c"
     "${CMAKE_SOURCE_DIR}/src/idle_task.c")
@@ -89,7 +89,7 @@ add_executable(sesame_tests
     test_pic_uart.c
     test_logging.c
     stubs/stub_os.c
-    "${CMAKE_SOURCE_DIR}/src/newlib_wrappers.c"
+    "${CMAKE_SOURCE_DIR}/src/libc_wrappers.c"
     "${CMAKE_SOURCE_DIR}/src/pin_mux.c"
     "${CMAKE_SOURCE_DIR}/src/util.c"
     "${CMAKE_SOURCE_DIR}/src/config_manager.c"

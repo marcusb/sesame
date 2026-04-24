@@ -59,6 +59,20 @@ void* __wrap_realloc(void* ptr, size_t size) {
     return pvPortReAlloc(ptr, size);
 }
 
+/* Intercept printf/fprintf to prevent picolibc's full stdio (188KB) from
+ * being linked. The only caller in practice is llhttp's debug output
+ * (llhttp_print in api.c), which is not needed in production. */
+int __wrap_printf(const char* fmt, ...) {
+    (void)fmt;
+    return 0;
+}
+
+int __wrap_fprintf(void* stream, const char* fmt, ...) {
+    (void)stream;
+    (void)fmt;
+    return 0;
+}
+
 __attribute__((noreturn)) void _exit(int status) {
     (void)status;
     portDISABLE_INTERRUPTS();
