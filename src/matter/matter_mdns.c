@@ -106,6 +106,8 @@ int matter_mdns_add_hostname(const char* hostname, const char* ipv4_or_ipv6,
     char fqdn[64];
     snprintf(fqdn, sizeof(fqdn), "%s.local", hostname);
     lock();
+    bool added_a = false;
+    bool added_aaaa = false;
     if (!find_entry(dnsTYPE_A_HOST, fqdn, NULL)) {
         matter_mdns_entry_t* e = new_entry();
         if (!e) {
@@ -115,10 +117,26 @@ int matter_mdns_add_hostname(const char* hostname, const char* ipv4_or_ipv6,
         e->owned_name = dup_str(fqdn);
         e->rec.usRecordType = dnsTYPE_A_HOST;
         e->rec.pcName = e->owned_name;
+        added_a = true;
     }
+    /* The DNS responder fills the actual address bytes from the receiving
+     * endpoint when answering A/AAAA queries; we just register the name. */
+    if (!find_entry(dnsTYPE_AAAA_HOST, fqdn, NULL)) {
+        matter_mdns_entry_t* e = new_entry();
+        if (!e) {
+            unlock();
+            return -1;
+        }
+        e->owned_name = dup_str(fqdn);
+        e->rec.usRecordType = dnsTYPE_AAAA_HOST;
+        e->rec.pcName = e->owned_name;
+        added_aaaa = true;
+    }
+    UBaseType_t total = s_count;
     rebuild_view();
     unlock();
-    LogInfo(("mdns: add_hostname %s", fqdn));
+    LogInfo(("mdns: add_hostname %s A=%d AAAA=%d total=%u", fqdn, (int)added_a,
+             (int)added_aaaa, (unsigned)total));
     return 0;
 }
 

@@ -1,0 +1,38 @@
+--- a/source/FreeRTOS_DNS_Parser.c
++++ b/source/FreeRTOS_DNS_Parser.c
+@@ -637,20 +637,25 @@
+
+                 case dnsTYPE_TXT:
+                    {
++                       /* pcTxtRecord is already in DNS-SD wire format: a sequence
++                        * of <len><chars> chunks (no zero bytes mid-stream), NUL
++                        * terminated. strlen() gives total rdata length. */
+                        size_t xTextLength = strlen( pxRecord->xData.pcTxtRecord );
+
+-                       if( xTextLength > 255 )
++                       if( xTextLength == 0 )
+                        {
+-                           /* Each TXT record must be less than 256 bytes, since the length is stored in a single byte. */
+-                           FreeRTOS_printf( ( "DNS_ParseDNSReply: Failed to write TXT record" ) );
+-                           return pdFALSE;
++                           /* Empty TXT must contain a single zero-length string. */
++                           vSetField16( middle, MDNSResponseMiddle_t, usDataLength, 1 );
++                           pucWriteHead += sizeof( *middle );
++                           *pucWriteHead++ = 0;
++                       }
++                       else
++                       {
++                           vSetField16( middle, MDNSResponseMiddle_t, usDataLength, xTextLength );
++                           pucWriteHead += sizeof( *middle );
++                           memcpy( pucWriteHead, pxRecord->xData.pcTxtRecord, xTextLength );
++                           pucWriteHead += xTextLength;
+                        }
+-
+-                       vSetField16( middle, MDNSResponseMiddle_t, usDataLength, strlen( pxRecord->xData.pcTxtRecord ) + 1 );
+-                       pucWriteHead += sizeof( *middle );
+-                       *pucWriteHead++ = ( uint8_t ) xTextLength;
+-                       memcpy( pucWriteHead, pxRecord->xData.pcTxtRecord, xTextLength );
+-                       pucWriteHead += xTextLength;
+                        break;
+                    }
+

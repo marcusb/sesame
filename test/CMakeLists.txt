@@ -74,6 +74,7 @@ endmacro()
 
 add_matter_test_binary(matter_crypto_tests test_matter_crypto.c)
 add_matter_test_binary(matter_ec_raw_tests test_ec_raw.c)
+add_matter_test_binary(matter_mdns_tests test_matter_mdns.c)
 add_matter_test_binary(matter_sesame_tests test_matter_sesame.c)
 add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c)
 
