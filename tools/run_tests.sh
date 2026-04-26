@@ -48,11 +48,10 @@ LAST_BYTE=0
 
 while true; do
     if [[ -f "$LOGFILE" ]]; then
-        # Print new bytes
+        # Print new bytes using tail -c (much faster than dd)
         TOTAL_BYTES=$(stat -c%s "$LOGFILE")
         if (( TOTAL_BYTES > LAST_BYTE )); then
-            # Read only new bytes
-            dd if="$LOGFILE" bs=1 skip=$LAST_BYTE count=$((TOTAL_BYTES - LAST_BYTE)) 2>/dev/null | sed 's/\r//g'
+            tail -c +$((LAST_BYTE + 1)) "$LOGFILE" | tr -d '\r'
             LAST_BYTE=$TOTAL_BYTES
         fi
 
@@ -65,19 +64,15 @@ while true; do
     
     # Check if ramload/openocd died
     if ! kill -0 $RAMLOAD_PID 2>/dev/null; then
-        # Give it a tiny bit of time to flush the very last bit
-        sleep 0.2
-        # Check one last time for result in log
+        # Give it a tiny bit of time to flush
+        sleep 0.1
+        # Final check for result
         if grep -q "TEST_RESULT:[0-9]" "$LOGFILE"; then
             RESULT=$(grep "TEST_RESULT:[0-9]" "$LOGFILE" | tail -n1 | sed 's/.*TEST_RESULT:\([0-9]*\).*/\1/')
             break
         else
             echo "Error: ramload.py / OpenOCD terminated unexpectedly"
-            # Final dump of log
-            TOTAL_BYTES=$(stat -c%s "$LOGFILE")
-            if (( TOTAL_BYTES > LAST_BYTE )); then
-                dd if="$LOGFILE" bs=1 skip=$LAST_BYTE count=$((TOTAL_BYTES - LAST_BYTE)) 2>/dev/null | sed 's/\r//g'
-            fi
+            tail -c +$((LAST_BYTE + 1)) "$LOGFILE" | tr -d '\r'
             exit 1
         fi
     fi
@@ -89,7 +84,7 @@ while true; do
         exit 1
     fi
     
-    sleep 0.5
+    sleep 0.1
 done
 
 # Print final result
