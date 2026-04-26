@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "FreeRTOS.h"
@@ -50,7 +51,9 @@ static void run_tests_task(void* params) {
     UNITY_BEGIN();
     RUN_TEST(test_mbedtls_ec_p256_mul_raw);
     int result = UNITY_END();
-    vTaskDelete(NULL);
+    printf("\r\nTEST_RESULT:%d\r\n", result);
+    fflush(stdout);
+    exit(result);
 }
 
 int main(void) {

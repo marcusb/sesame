@@ -1,4 +1,6 @@
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* FreeRTOS */
@@ -29,14 +31,9 @@ psm_hnd_t psm_hnd = NULL;
 
 /* ---- Unity output ---- */
 
-void unity_putchar(char c) {
-    if (c == '\n') {
-        PUTCHAR('\r');
-    }
-    PUTCHAR(c);
-}
+void unity_putchar(char c) { putchar(c); }
 
-void unity_flush(void) { DbgConsole_Flush(); }
+void unity_flush(void) { fflush(stdout); }
 
 /* ---- capture backend ---- */
 
@@ -109,9 +106,9 @@ static void run_tests_task(void* params) {
 #endif
     int result = UNITY_END();
 
-    DbgConsole_Flush();
-    PRINTF("\r\nTEST_RESULT:%d\r\n", result);
-    vTaskDelete(NULL);
+    printf("\r\nTEST_RESULT:%d\r\n", result);
+    fflush(stdout);
+    exit(result);
 }
 
 /* ---- Heap setup (mirrors main.c) ---- */
@@ -140,14 +137,15 @@ static void setup_heap(void) {
 int main(void) {
     board_init_pins();
     init_boot_clocks();
-    init_debug_console();
-    DbgConsole_Flush();
+    /* init_debug_console() not needed for semihosting */
+
+    setvbuf(stdout, NULL, _IOLBF, 256);
 
     setup_heap();
 
     if (xTaskCreate(run_tests_task, "tests", configMINIMAL_STACK_SIZE + 512,
                     NULL, tskIDLE_PRIORITY + 1, NULL) != pdPASS) {
-        PRINTF("test task creation failed\r\n");
+        printf("test task creation failed\r\n");
     }
     vTaskStartScheduler();
     return 0;

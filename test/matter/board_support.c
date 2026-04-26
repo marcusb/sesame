@@ -30,14 +30,9 @@ void* psm_hnd = (void*)0x12345678;
 mbedtls_ctr_drbg_context ctr_drbg;
 
 /* ---- Unity output ---- */
-void unity_putchar(char c) {
-    if (c == '\n') {
-        PUTCHAR('\r');
-    }
-    PUTCHAR(c);
-}
+void unity_putchar(char c) { putchar(c); }
 
-void unity_flush(void) { DbgConsole_Flush(); }
+void unity_flush(void) { fflush(stdout); }
 
 /* ---- FreeRTOS application hooks ---- */
 void vApplicationIdleHook(void) {}
@@ -86,7 +81,8 @@ void setup_heap(void) {
 void test_board_init(void) {
     board_init_pins();
     init_boot_clocks();
-    init_debug_console();
+    /* init_debug_console() not needed for semihosting */
+    setvbuf(stdout, NULL, _IOLBF, 256);
     setup_heap();
 
     /* Initialize KSDK mbedTLS entropy with a dummy hash */

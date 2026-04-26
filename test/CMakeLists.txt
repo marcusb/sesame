@@ -46,18 +46,19 @@ target_link_libraries(matter_test_support PUBLIC
     "LINKER:--start-group" sesame_matter berry_matter berry "LINKER:--end-group")
 
 # Common ARM link options for tests
+add_compile_definitions(SDK_DEBUGCONSOLE=0)
+
 set(ARM_TEST_LINK_OPTIONS
     "-mcpu=cortex-m4"
     "-mthumb"
     "-mfloat-abi=softfp"
     "-mfpu=fpv4-sp-d16"
     "-specs=picolibc.specs"
+    "--oslib=semihost"
     "-Wl,--wrap,malloc"
     "-Wl,--wrap,free"
     "-Wl,--wrap,calloc"
     "-Wl,--wrap,realloc"
-    "-Wl,--wrap,printf"
-    "-Wl,--wrap,fprintf"
     "-Wl,--undefined,uxTopUsedPriority"
     "-Wl,--gc-sections"
     "-Wl,--nmagic"

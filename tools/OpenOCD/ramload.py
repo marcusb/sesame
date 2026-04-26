@@ -153,9 +153,9 @@ def main():
     sys.stdout.flush()
 
     if SEMIHOST is False:
-        subprocess.call ([OPENOCD, '-s', SCRIPT_DIR + '/interface', '-f', IFC_FILE, '-s', SCRIPT_DIR, '-f','openocd.cfg', '-c', 'init', '-c', 'load ' + FILE + ' ' + str(entry_point) + ' ', '-c', 'resume', '-c', 'shutdown'])
+        subprocess.call ([OPENOCD, '-s', SCRIPT_DIR + '/interface', '-f', IFC_FILE, '-s', SCRIPT_DIR, '-f','openocd.cfg', '-c', 'init', '-c', 'load ' + FILE + ' ' + str(entry_point) + ' ', '-c', 'shutdown'])
     else:
-        subprocess.call ([OPENOCD, '-s', SCRIPT_DIR + '/interface', '-f', IFC_FILE, '-s', SCRIPT_DIR, '-f','openocd.cfg', '-c', 'init', '-c', 'sh_load ' + FILE + ' ' + str(entry_point), '-c', 'resume'])
+        subprocess.call ([OPENOCD, '-s', SCRIPT_DIR + '/interface', '-f', IFC_FILE, '-s', SCRIPT_DIR, '-f','openocd.cfg', '-c', 'init', '-c', 'sh_load ' + FILE + ' ' + str(entry_point)])
     sys.stderr.flush()
 
 if __name__ == "__main__":

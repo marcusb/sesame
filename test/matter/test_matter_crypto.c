@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "FreeRTOS.h"
@@ -56,7 +57,8 @@ static void run_tests_task(void* params) {
     RUN_TEST(test_crypto_ec_p256_smoke);
     int result = UNITY_END();
     printf("\r\nTEST_RESULT:%d\r\n", result);
-    vTaskDelete(NULL);
+    fflush(stdout);
+    exit(result);
 }
 
 int main(void) {
