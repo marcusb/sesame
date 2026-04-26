@@ -214,7 +214,7 @@ static void test_door_status_checksum_mismatch(void) {
     ctrl_queue = NULL;
 }
 
-void run_test_pic_uart(void) {
+void run_tests_pic_uart(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_calc_chk_sum_n_zero);
     RUN_TEST(test_calc_chk_sum_n_one);

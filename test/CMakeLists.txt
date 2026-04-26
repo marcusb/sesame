@@ -10,6 +10,16 @@ target_compile_definitions(unity PUBLIC UNITY_INCLUDE_CONFIG_H)
 target_link_libraries(unity PRIVATE globals)
 
 # ---------------------------------------------------------------------------
+# Test Infrastructure
+# ---------------------------------------------------------------------------
+add_library(test_infra STATIC
+    board_support.c
+    unity_port.c
+    test_runner.c)
+target_include_directories(test_infra PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/unity")
+target_link_libraries(test_infra PUBLIC freertos_kernel mw320_sdk logging mw320_mbedtls_port mbedcrypto)
+
+# ---------------------------------------------------------------------------
 # Hardware stubs
 # ---------------------------------------------------------------------------
 add_library(test_stubs STATIC
@@ -28,7 +38,6 @@ target_link_libraries(test_stubs PRIVATE globals)
 # Object library ensures all shared test code is available to linkers without dropping symbols
 add_library(matter_test_support OBJECT
     matter/matter_test_utils.c
-    matter/board_support.c
     "${CMAKE_SOURCE_DIR}/src/libc_wrappers.c"
     "${CMAKE_SOURCE_DIR}/src/pin_mux.c"
     "${CMAKE_SOURCE_DIR}/src/util.c"
@@ -42,7 +51,7 @@ target_include_directories(matter_test_support PUBLIC
 target_link_libraries(matter_test_support PUBLIC
     globals unity logging board mw320_device_startup mw320_utility_assert
     mw320_mbedtls_port mw320_drivers_aes mw320_drivers_crc
-    freertos_kernel
+    freertos_kernel test_infra test_stubs
     "LINKER:--start-group" sesame_matter berry_matter berry "LINKER:--end-group")
 
 # Common ARM link options for tests
@@ -83,7 +92,7 @@ add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c)
 # sesame_tests – main unit test runner
 # ---------------------------------------------------------------------------
 add_executable(sesame_tests
-    test_runner.c
+    test_main.c
     test_config_manager.c
     test_string_util.c
     test_util.c
@@ -110,6 +119,7 @@ target_link_libraries(sesame_tests
     PRIVATE
     globals
     unity
+    test_infra
     test_stubs
     logging
     proto

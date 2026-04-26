@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* FreeRTOS */
 #include "FreeRTOS.h"
@@ -11,10 +12,10 @@
 /* mw320 board */
 #include "board.h"
 #include "clock_config.h"
-#include "fsl_debug_console.h"
 #include "pin_mux.h"
 
 /* Application */
+#include "board_support.h"
 #include "logging.h"
 #include "psm-v2.h"
 #include "string_util.h"
@@ -24,32 +25,6 @@
 
 /* Capture backend shared by test_util.c and test_logging.c */
 #include "test_capture.h"
-
-/* Global symbols referenced by modules under test */
-QueueHandle_t ctrl_queue;
-psm_hnd_t psm_hnd = NULL;
-
-#include <unistd.h>
-
-/* ---- Unity output ---- */
-
-static char unity_buf[256];
-static size_t unity_buf_ptr = 0;
-
-void unity_putchar(char c) {
-    unity_buf[unity_buf_ptr++] = c;
-    if (c == '\n' || unity_buf_ptr >= sizeof(unity_buf)) {
-        write(1, unity_buf, unity_buf_ptr);
-        unity_buf_ptr = 0;
-    }
-}
-
-void unity_flush(void) {
-    if (unity_buf_ptr > 0) {
-        write(1, unity_buf, unity_buf_ptr);
-        unity_buf_ptr = 0;
-    }
-}
 
 /* ---- capture backend ---- */
 
@@ -75,31 +50,14 @@ void capture_drain_and_reset(void) {
     capture_reset();
 }
 
-/* ---- FreeRTOS application hooks (main.c not linked in test binary) ---- */
-
-void vApplicationIdleHook(void) {}
-
-void vApplicationMallocFailedHook(void) { configASSERT(0); }
-
-void vApplicationStackOverflowHook(TaskHandle_t xTask, char* pcTaskName) {
-    (void)xTask;
-    (void)pcTaskName;
-    configASSERT(0);
-}
-
 /* ---- Unity setUp / tearDown (one definition for entire binary) ---- */
 
-void setUp(void) {}
-void tearDown(void) {}
+__attribute__((weak)) void setUp(void) {}
+__attribute__((weak)) void tearDown(void) {}
 
-/* ---- Test suite forward declarations ---- */
+/* ---- Test suite hook ---- */
 
-void run_test_string_util(void);
-void run_test_util(void);
-void run_test_logging(void);
-void run_test_config_manager(void);
-void run_test_pic_uart(void);
-void run_test_matter(void);
+extern void run_tests(void);
 
 /* ---- Test runner task ---- */
 
@@ -107,18 +65,10 @@ static void run_tests_task(void* params) {
     (void)params;
 
     register_log_backend(capture_backend);
-    init_logging(512, tskIDLE_PRIORITY, 16);
+    init_logging(1024, tskIDLE_PRIORITY, 16);
 
     UNITY_BEGIN();
-#ifdef TEST_MATTER_ONLY
-    run_test_matter();
-#else
-    run_test_string_util();
-    run_test_util();
-    run_test_logging();
-    run_test_config_manager();
-    run_test_pic_uart();
-#endif
+    run_tests();
     int result = UNITY_END();
 
     char sentinel[32];
@@ -128,39 +78,13 @@ static void run_tests_task(void* params) {
     exit(result);
 }
 
-/* ---- Heap setup (mirrors main.c) ---- */
-
-extern unsigned __HeapBase, __HeapLimit, __HeapBase_sram0, __HeapLimit_sram0;
-
-static void setup_heap(void) {
-    /* Large test binaries can push SRAM0 code past the keystore, making the
-     * SRAM0 heap region invalid. Skip it rather than feeding a wrapped size
-     * to FreeRTOS. */
-    HeapRegion_t xHeapRegions[3];
-    size_t i = 0;
-    if ((unsigned)&__HeapLimit_sram0 > (unsigned)&__HeapBase_sram0) {
-        xHeapRegions[i++] = (HeapRegion_t){
-            (uint8_t*)&__HeapBase_sram0,
-            (unsigned)&__HeapLimit_sram0 - (unsigned)&__HeapBase_sram0};
-    }
-    xHeapRegions[i++] = (HeapRegion_t){
-        (uint8_t*)&__HeapBase, (unsigned)&__HeapLimit - (unsigned)&__HeapBase};
-    xHeapRegions[i] = (HeapRegion_t){NULL, 0};
-    vPortDefineHeapRegions(xHeapRegions);
-}
-
 /* ---- Entry point ---- */
 
 int main(void) {
-    board_init_pins();
-    init_boot_clocks();
+    board_init();
 
-    setvbuf(stdout, NULL, _IOLBF, 256);
-
-    setup_heap();
-
-    if (xTaskCreate(run_tests_task, "tests", configMINIMAL_STACK_SIZE + 512,
-                    NULL, tskIDLE_PRIORITY + 1, NULL) != pdPASS) {
+    if (xTaskCreate(run_tests_task, "tests", 8192, NULL, tskIDLE_PRIORITY + 1,
+                    NULL) != pdPASS) {
         printf("test task creation failed\r\n");
     }
     vTaskStartScheduler();

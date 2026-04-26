@@ -1,6 +1,8 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "FreeRTOS.h"
 #include "board_support.h"
@@ -9,9 +11,6 @@
 #include "mbedtls/entropy.h"
 #include "task.h"
 #include "unity.h"
-
-void setUp(void) {}
-void tearDown(void) {}
 
 void test_mbedtls_ec_p256_mul_raw(void) {
     mbedtls_ecp_group grp;
@@ -45,22 +44,7 @@ void test_mbedtls_ec_p256_mul_raw(void) {
     mbedtls_mpi_free(&d);
 }
 
-static void run_tests_task(void* params) {
-    (void)params;
-    UNITY_BEGIN();
+void run_tests(void) {
+    UnitySetTestFile(__FILE__);
     RUN_TEST(test_mbedtls_ec_p256_mul_raw);
-    int result = UNITY_END();
-    char sentinel[32];
-    int len =
-        snprintf(sentinel, sizeof(sentinel), "\r\nTEST_RESULT:%d\r\n", result);
-    write(1, sentinel, len);
-    exit(result);
-}
-
-int main(void) {
-    test_board_init();
-    xTaskCreate(run_tests_task, "tests", 8192, NULL, tskIDLE_PRIORITY + 1,
-                NULL);
-    vTaskStartScheduler();
-    return 0;
 }

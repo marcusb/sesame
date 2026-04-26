@@ -1,6 +1,8 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "FreeRTOS.h"
 #include "berry.h"
@@ -36,27 +38,8 @@ void test_persist(void) {
     be_assert_success("assert(persist.find('f') == 'b')");
 }
 
-static void run_tests_task(void* params) {
-    (void)params;
-    UNITY_BEGIN();
+void run_tests(void) {
+    UnitySetTestFile(__FILE__);
     RUN_TEST(test_tasmota_config);
     RUN_TEST(test_persist);
-    int result = UNITY_END();
-    char sentinel[32];
-    int len =
-        snprintf(sentinel, sizeof(sentinel), "\r\nTEST_RESULT:%d\r\n", result);
-    write(1, sentinel, len);
-    exit(result);
-}
-
-extern void test_board_init(void);
-
-int main(void) {
-    test_board_init();
-    if (xTaskCreate(run_tests_task, "tests", 4096, NULL, tskIDLE_PRIORITY + 1,
-                    NULL) != pdPASS) {
-        return 1;
-    }
-    vTaskStartScheduler();
-    return 0;
 }

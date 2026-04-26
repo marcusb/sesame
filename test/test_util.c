@@ -58,7 +58,7 @@ static void test_hexdump_17_bytes(void) {
     TEST_ASSERT_EQUAL(2, capture_count);
 }
 
-void run_test_util(void) {
+void run_tests_util(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_hexdump_zero_len);
     RUN_TEST(test_hexdump_printable_byte);

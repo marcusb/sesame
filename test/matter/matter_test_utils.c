@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "board_support.h"
 #include "unity.h"
 
 bvm* vm;

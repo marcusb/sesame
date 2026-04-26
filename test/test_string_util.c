@@ -62,7 +62,7 @@ static void test_stpecpy_truncation(void) {
     TEST_ASSERT_EQUAL_STRING("hell", buf);
 }
 
-void run_test_string_util(void) {
+void run_tests_string_util(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_strtcpy_zero_dsize);
     RUN_TEST(test_strtcpy_normal);

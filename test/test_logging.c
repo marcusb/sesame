@@ -45,7 +45,7 @@ static void test_log_file_line_prefix(void) {
     TEST_ASSERT_NOT_NULL(strstr(capture_msgs[0], "prefixed"));
 }
 
-void run_test_logging(void) {
+void run_tests_logging(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_register_second_backend);
     RUN_TEST(test_register_backend_full);

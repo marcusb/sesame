@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,30 +45,10 @@ void test_crypto_ec_p256_smoke(void) {
         "assert(Q.size() == 65)");
 }
 
-extern void test_board_init(void);
-
-static void run_tests_task(void* params) {
-    (void)params;
-
-    UNITY_BEGIN();
+void run_tests(void) {
+    UnitySetTestFile(__FILE__);
     RUN_TEST(test_crypto_sha256);
     RUN_TEST(test_crypto_hmac);
     RUN_TEST(test_crypto_random);
     RUN_TEST(test_crypto_ec_p256_smoke);
-    int result = UNITY_END();
-    char sentinel[32];
-    int len =
-        snprintf(sentinel, sizeof(sentinel), "\r\nTEST_RESULT:%d\r\n", result);
-    write(1, sentinel, len);
-    exit(result);
-}
-
-int main(void) {
-    test_board_init();
-    if (xTaskCreate(run_tests_task, "tests", 4096, NULL, tskIDLE_PRIORITY + 1,
-                    NULL) != pdPASS) {
-        return 1;
-    }
-    vTaskStartScheduler();
-    return 0;
 }

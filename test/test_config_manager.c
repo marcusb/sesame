@@ -81,7 +81,7 @@ static void test_save_config_empty(void) {
     TEST_ASSERT_EQUAL(0, r);
 }
 
-void run_test_config_manager(void) {
+void run_tests_config_manager(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_load_config_success);
     RUN_TEST(test_load_config_psm_error);

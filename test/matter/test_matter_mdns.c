@@ -1,24 +1,16 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "FreeRTOS.h"
 #include "FreeRTOS_DNS_Globals.h"
-#include "fsl_debug_console.h"
+#include "board_support.h"
 #include "logging.h"
 #include "matter_mdns.h"
 #include "task.h"
 #include "unity.h"
-
-extern void test_board_init(void);
-
-static void log_console(const log_msg_t* log) {
-    static const char levels[] = "-EWID";
-    uint8_t lvl = log->level;
-    if (lvl > LOG_LEVEL_LAST) lvl = LOG_NONE;
-    PRINTF("%lu %lu %c[%s] %s\r\n", log->msg_id, log->ticks, levels[lvl],
-           log->task_name, log->msg);
-}
 
 void setUp(void) { matter_mdns_init(); }
 
@@ -130,31 +122,12 @@ void test_remove_service_removes_records(void) {
     TEST_ASSERT_NULL(find_record(dnsTYPE_TXT, "INST._matterc._udp.local"));
 }
 
-static void run_tests_task(void* params) {
-    (void)params;
-    UNITY_BEGIN();
+void run_tests(void) {
+    UnitySetTestFile(__FILE__);
     RUN_TEST(test_add_hostname_registers_both_a_and_aaaa);
     RUN_TEST(test_add_hostname_idempotent);
     RUN_TEST(test_add_service_registers_ptr_srv_txt);
     RUN_TEST(test_add_service_txt_is_pascal_string_format);
     RUN_TEST(test_add_subtype_registers_ptr);
     RUN_TEST(test_remove_service_removes_records);
-    int result = UNITY_END();
-    char sentinel[32];
-    int len =
-        snprintf(sentinel, sizeof(sentinel), "\r\nTEST_RESULT:%d\r\n", result);
-    write(1, sentinel, len);
-    exit(result);
-}
-
-int main(void) {
-    test_board_init();
-    register_log_backend(log_console);
-    init_logging(512, tskIDLE_PRIORITY, 16);
-    if (xTaskCreate(run_tests_task, "tests", 4096, NULL, tskIDLE_PRIORITY + 1,
-                    NULL) != pdPASS) {
-        return 1;
-    }
-    vTaskStartScheduler();
-    return 0;
 }
