@@ -50,8 +50,10 @@ static void run_tests_task(void* params) {
     UNITY_BEGIN();
     RUN_TEST(test_mbedtls_ec_p256_mul_raw);
     int result = UNITY_END();
-    printf("\r\nTEST_RESULT:%d\r\n", result);
-    fflush(stdout);
+    char sentinel[32];
+    int len =
+        snprintf(sentinel, sizeof(sentinel), "\r\nTEST_RESULT:%d\r\n", result);
+    write(1, sentinel, len);
     exit(result);
 }
 

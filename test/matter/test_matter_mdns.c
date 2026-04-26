@@ -140,8 +140,10 @@ static void run_tests_task(void* params) {
     RUN_TEST(test_add_subtype_registers_ptr);
     RUN_TEST(test_remove_service_removes_records);
     int result = UNITY_END();
-    printf("\r\nTEST_RESULT:%d\r\n", result);
-    fflush(stdout);
+    char sentinel[32];
+    int len =
+        snprintf(sentinel, sizeof(sentinel), "\r\nTEST_RESULT:%d\r\n", result);
+    write(1, sentinel, len);
     exit(result);
 }
 

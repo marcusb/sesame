@@ -55,8 +55,10 @@ static void run_tests_task(void* params) {
     RUN_TEST(test_crypto_random);
     RUN_TEST(test_crypto_ec_p256_smoke);
     int result = UNITY_END();
-    printf("\r\nTEST_RESULT:%d\r\n", result);
-    fflush(stdout);
+    char sentinel[32];
+    int len =
+        snprintf(sentinel, sizeof(sentinel), "\r\nTEST_RESULT:%d\r\n", result);
+    write(1, sentinel, len);
     exit(result);
 }
 

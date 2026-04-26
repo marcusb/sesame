@@ -88,6 +88,7 @@ while true; do
 done
 
 # Print final result
+echo ""
 if [[ "$RESULT" == "0" ]]; then
     echo "Tests PASSED"
     exit 0
