@@ -48,7 +48,6 @@ extern void test_board_init(void);
 
 static void run_tests_task(void* params) {
     (void)params;
-    vTaskDelay(pdMS_TO_TICKS(2000));
 
     UNITY_BEGIN();
     RUN_TEST(test_crypto_sha256);

@@ -47,7 +47,6 @@ void test_mbedtls_ec_p256_mul_raw(void) {
 
 static void run_tests_task(void* params) {
     (void)params;
-    vTaskDelay(pdMS_TO_TICKS(2000));
     UNITY_BEGIN();
     RUN_TEST(test_mbedtls_ec_p256_mul_raw);
     int result = UNITY_END();

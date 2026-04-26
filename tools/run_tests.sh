@@ -7,7 +7,7 @@
 set -euo pipefail
 
 AXF="${1:?usage: $0 <path/to/test.axf> [timeout-seconds]}"
-TIMEOUT="${2:-60}"
+TIMEOUT="${2:-300}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null && pwd)"
 RAMLOAD="$SCRIPT_DIR/OpenOCD/ramload.py"

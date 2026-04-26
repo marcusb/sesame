@@ -31,9 +31,26 @@ psm_hnd_t psm_hnd = NULL;
 
 /* ---- Unity output ---- */
 
-void unity_putchar(char c) { putchar(c); }
+static char unity_buf[128];
+static size_t unity_buf_ptr = 0;
 
-void unity_flush(void) { fflush(stdout); }
+void unity_putchar(char c) {
+    unity_buf[unity_buf_ptr++] = c;
+    if (c == '\n' || unity_buf_ptr >= sizeof(unity_buf) - 1) {
+        unity_buf[unity_buf_ptr] = '\0';
+        fputs(unity_buf, stdout);
+        unity_buf_ptr = 0;
+    }
+}
+
+void unity_flush(void) {
+    if (unity_buf_ptr > 0) {
+        unity_buf[unity_buf_ptr] = '\0';
+        fputs(unity_buf, stdout);
+        unity_buf_ptr = 0;
+    }
+    fflush(stdout);
+}
 
 /* ---- capture backend ---- */
 
@@ -92,7 +109,6 @@ static void run_tests_task(void* params) {
 
     register_log_backend(capture_backend);
     init_logging(512, tskIDLE_PRIORITY, 16);
-    vTaskDelay(pdMS_TO_TICKS(2000));
 
     UNITY_BEGIN();
 #ifdef TEST_MATTER_ONLY
@@ -137,7 +153,6 @@ static void setup_heap(void) {
 int main(void) {
     board_init_pins();
     init_boot_clocks();
-    /* init_debug_console() not needed for semihosting */
 
     setvbuf(stdout, NULL, _IOLBF, 256);
 

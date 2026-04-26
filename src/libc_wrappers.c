@@ -82,9 +82,7 @@ int __wrap_fprintf(FILE* stream, const char* format, ...) {
     DbgConsole_Printf("%s", buf);
     return ret;
 }
-#endif
 
-#if SDK_DEBUGCONSOLE
 __attribute__((noreturn)) void _exit(int status) {
     (void)status;
     portDISABLE_INTERRUPTS();

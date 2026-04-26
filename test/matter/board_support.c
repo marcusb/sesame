@@ -30,9 +30,26 @@ void* psm_hnd = (void*)0x12345678;
 mbedtls_ctr_drbg_context ctr_drbg;
 
 /* ---- Unity output ---- */
-void unity_putchar(char c) { putchar(c); }
+static char unity_buf[128];
+static size_t unity_buf_ptr = 0;
 
-void unity_flush(void) { fflush(stdout); }
+void unity_putchar(char c) {
+    unity_buf[unity_buf_ptr++] = c;
+    if (c == '\n' || unity_buf_ptr >= sizeof(unity_buf) - 1) {
+        unity_buf[unity_buf_ptr] = '\0';
+        fputs(unity_buf, stdout);
+        unity_buf_ptr = 0;
+    }
+}
+
+void unity_flush(void) {
+    if (unity_buf_ptr > 0) {
+        unity_buf[unity_buf_ptr] = '\0';
+        fputs(unity_buf, stdout);
+        unity_buf_ptr = 0;
+    }
+    fflush(stdout);
+}
 
 /* ---- FreeRTOS application hooks ---- */
 void vApplicationIdleHook(void) {}
@@ -81,7 +98,6 @@ void setup_heap(void) {
 void test_board_init(void) {
     board_init_pins();
     init_boot_clocks();
-    /* init_debug_console() not needed for semihosting */
     setvbuf(stdout, NULL, _IOLBF, 256);
     setup_heap();
 
