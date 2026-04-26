@@ -1,0 +1,108 @@
+--- a/source/FreeRTOS_DNS_Parser.c
++++ b/source/FreeRTOS_DNS_Parser.c
+@@ -578,22 +578,77 @@
+                 #if ( ipconfigUSE_IPv4 != 0 )
+                     case dnsTYPE_A_HOST:
+                        {
++                           /* mDNS spec allows answering A queries from any interface
++                            * with any of the host's IPv4 addresses, regardless of
++                            * which family the query arrived on. Pick the receiving
++                            * endpoint if it has an IPv4 address, otherwise walk for
++                            * one. */
+                            MDNSResponseHostAEnd_t * host_end;
++                           uint32_t ulIP = pxNetworkBuffer->pxEndPoint->ipv4_settings.ulIPAddress;
++                           if( ulIP == 0U )
++                           {
++                               NetworkEndPoint_t * pxEP;
++                               for( pxEP = FreeRTOS_FirstEndPoint( NULL ); pxEP != NULL; pxEP = FreeRTOS_NextEndPoint( NULL, pxEP ) )
++                               {
++                                   if( ENDPOINT_IS_IPv4( pxEP ) && ( pxEP->ipv4_settings.ulIPAddress != 0U ) )
++                                   {
++                                       ulIP = pxEP->ipv4_settings.ulIPAddress;
++                                       break;
++                                   }
++                               }
++                           }
+                            vSetField16( middle, MDNSResponseMiddle_t, usDataLength, 4 );
+                            pucWriteHead += sizeof( *middle );
+                            host_end = ( MDNSResponseHostAEnd_t * ) pucWriteHead;
+-                           vSetField32( host_end, MDNSResponseHostAEnd_t, ipAddr, FreeRTOS_ntohl( pxNetworkBuffer->pxEndPoint->ipv4_settings.ulIPAddress ) );
++                           vSetField32( host_end, MDNSResponseHostAEnd_t, ipAddr, FreeRTOS_ntohl( ulIP ) );
+                            pucWriteHead += sizeof( *host_end );
+                            break;
+                        }
+                 #endif /* ipconfigUSE_IPv4 */
+                 #if ( ipconfigUSE_IPv6 != 0 )
+                     case dnsTYPE_AAAA_HOST:
+-                        vSetField16( middle, MDNSResponseMiddle_t, usDataLength, ipSIZE_OF_IPv6_ADDRESS );
+-                        pucWriteHead += sizeof( *middle );
+-                        ( void ) memcpy( pucWriteHead, pxNetworkBuffer->pxEndPoint->ipv6_settings.xIPAddress.ucBytes, ipSIZE_OF_IPv6_ADDRESS );
+-                        pucWriteHead += ipSIZE_OF_IPv6_ADDRESS;
+-                        break;
++                       {
++                           /* Find an IPv6 address to advertise. Prefer the receiving
++                            * endpoint, then any non-link-local IPv6 endpoint, then
++                            * any IPv6 endpoint at all. */
++                           const uint8_t * pucIP6 = NULL;
++                           if( pxNetworkBuffer->pxEndPoint->bits.bIPv6 )
++                           {
++                               pucIP6 = pxNetworkBuffer->pxEndPoint->ipv6_settings.xIPAddress.ucBytes;
++                           }
++                           else
++                           {
++                               NetworkEndPoint_t * pxEP;
++                               const uint8_t * pucFallback = NULL;
++                               for( pxEP = FreeRTOS_FirstEndPoint( NULL ); pxEP != NULL; pxEP = FreeRTOS_NextEndPoint( NULL, pxEP ) )
++                               {
++                                   if( pxEP->bits.bIPv6 == pdFALSE ) continue;
++                                   const uint8_t * b = pxEP->ipv6_settings.xIPAddress.ucBytes;
++                                   /* Skip unspecified address. */
++                                   int all_zero = 1;
++                                   for( int j = 0; j < ipSIZE_OF_IPv6_ADDRESS; j++ ) { if( b[j] ) { all_zero = 0; break; } }
++                                   if( all_zero ) continue;
++                                   if( pucFallback == NULL ) pucFallback = b;
++                                   /* Prefer non-link-local (i.e. not fe80::/10). */
++                                   if( !( b[0] == 0xfe && ( b[1] & 0xc0 ) == 0x80 ) )
++                                   {
++                                       pucIP6 = b;
++                                       break;
++                                   }
++                               }
++                               if( pucIP6 == NULL ) pucIP6 = pucFallback;
++                           }
++                           if( pucIP6 == NULL )
++                           {
++                               /* No usable address — skip this record. */
++                               return pdFALSE;
++                           }
++                           vSetField16( middle, MDNSResponseMiddle_t, usDataLength, ipSIZE_OF_IPv6_ADDRESS );
++                           pucWriteHead += sizeof( *middle );
++                           ( void ) memcpy( pucWriteHead, pucIP6, ipSIZE_OF_IPv6_ADDRESS );
++                           pucWriteHead += ipSIZE_OF_IPv6_ADDRESS;
++                           break;
++                       }
+                 #endif /* ipconfigUSE_IPv6 */
+                 case dnsTYPE_PTR:
+                     vSetField16( middle, MDNSResponseMiddle_t, usDataLength, strlen( pxRecord->xData.pcPtrRecord ) + 2 );
+@@ -858,18 +913,9 @@
+                                     xEndPointValid = pdTRUE;
+                                 }
+ 
+-                                if( ( pRecord->usRecordType == dnsTYPE_A_HOST ) && ( ENDPOINT_IS_IPv4( &xEndPoint ) && ( xEndPoint.ipv4_settings.ulIPAddress == 0U ) ) )
+-                                {
+-                                    FreeRTOS_printf( ( "parseDNSQuestions: No IPV4 address, skipping A record even though it matches.\n" ) );
+-                                    continue;
+-                                }
+-
+-                                if( ( pRecord->usRecordType == dnsTYPE_AAAA_HOST ) && ( xEndPoint.bits.bIPv6 == pdFALSE ) )
+-                                {
+-                                    FreeRTOS_printf( ( "parseDNSQuestions: No IPV6 address, skipping AAAA record even though it matches.\n" ) );
+-                                    continue;
+-                                }
+-
++                                /* mDNS hosts may answer A/AAAA queries arriving on
++                                 * any endpoint with any of their addresses; the
++                                 * writer picks an appropriate one. */
+                                 pRecord->uxServeRecord = dnsRECORD_SERVE_ANSWER;
+                                 xSet->xDNSRecordsMatched = pdTRUE;
+                             }
