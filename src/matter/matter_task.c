@@ -3,11 +3,6 @@
 
 #include "FreeRTOS.h"
 #include "app_logging.h"
-#include "fsl_debug_console.h"
-#undef LOG_INFO
-#undef LOG_ERROR
-#define LOG_INFO(fmt, ...) LogInfo((fmt, ##__VA_ARGS__))
-#define LOG_ERROR(fmt, ...) LogError((fmt, ##__VA_ARGS__))
 #include "be_mapping.h"
 #include "be_vm.h"
 #include "berry.h"
@@ -70,17 +65,16 @@ static const char matter_bootstrap[] =
 
 static void matter_task(void* pvParameters) {
     (void)pvParameters;
-    PRINTF("[matter] entry\r\n");
+    LogInfo(("[matter] entry"));
 
-    PRINTF("[matter] be_vm_new\r\n");
     bvm* vm = be_vm_new();
     if (!vm) {
-        PRINTF("[matter] failed to create berry vm\r\n");
+        LogError(("[matter] failed to create berry vm"));
         vTaskDelete(NULL);
         return;
     }
     g_matter_vm = vm;
-    PRINTF("[matter] vm=%p\r\n", vm);
+    LogInfo(("[matter] vm=%p", vm));
 
     /* Solidified matter module exposes `be_const_ctype_func(...)` entries
      * (e.g. get_cluster_name, is_attribute_reportable); without a registered
@@ -89,40 +83,40 @@ static void matter_task(void* pvParameters) {
      * commissioning start paths). */
     be_set_ctype_func_handler(vm, be_call_ctype_func);
 
-    PRINTF("[matter] load crypto\r\n");
+    LogInfo(("[matter] load crypto"));
     extern int be_load_crypto_module(bvm * vm);
     be_load_crypto_module(vm);
 
     /* Define crypto.SPAKE2P_Matter (Berry source — solidify pipeline isn't
      * working yet). Must run after the crypto module exists. */
     if (be_dostring(vm, embedded_be_crypto_spake2p_matter) != 0) {
-        PRINTF("[matter] failed to define SPAKE2P_Matter: %s\r\n",
-               be_tostring(vm, -1));
+        LogError(("[matter] failed to define SPAKE2P_Matter: %s",
+                  be_tostring(vm, -1)));
         be_pop(vm, 1);
     } else if (be_dostring(vm,
                            "import crypto\n"
                            "crypto.SPAKE2P_Matter = SPAKE2P_Matter\n") != 0) {
-        PRINTF("[matter] failed to attach SPAKE2P_Matter: %s\r\n",
-               be_tostring(vm, -1));
+        LogError(("[matter] failed to attach SPAKE2P_Matter: %s",
+                  be_tostring(vm, -1)));
         be_pop(vm, 1);
     }
 
-    PRINTF("[matter] init globals\r\n");
+    LogInfo(("[matter] init globals"));
     if (be_dostring(vm,
                     "_matter_fast_cbs = []\n"
                     "_matter_fast_cbs_once = []\n"
                     "_matter_net_cbs = []\n"
                     "_matter_drivers = []\n") != 0) {
-        PRINTF("[matter] failed to init matter globals: %s\r\n",
-               be_tostring(vm, -1));
+        LogError(("[matter] failed to init matter globals: %s",
+                  be_tostring(vm, -1)));
     }
 
-    PRINTF("[matter] import tasmota\r\n");
+    LogInfo(("[matter] import tasmota"));
     if (be_dostring(vm, "import tasmota\nreturn tasmota") == 0) {
         be_setglobal(vm, "tasmota");
     } else {
-        PRINTF("[matter] failed to load tasmota globally: %s\r\n",
-               be_tostring(vm, -1));
+        LogError(("[matter] failed to load tasmota globally: %s",
+                  be_tostring(vm, -1)));
         be_pop(vm, 1);
     }
 
@@ -202,8 +196,8 @@ static void matter_task(void* pvParameters) {
         NULL};
     for (int i = 0; steps[i]; i++) {
         if (be_dostring(vm, steps[i]) != 0) {
-            PRINTF("[matter] bootstrap step %d failed: %s\r\n", i,
-                   be_tostring(vm, -1));
+            LogError(("[matter] bootstrap step %d failed: %s", i,
+                      be_tostring(vm, -1)));
             break;
         }
     }
@@ -228,7 +222,7 @@ void matter_init(void) {
     matter_mdns_init();
     g_matter_vm_lock =
         xSemaphoreCreateRecursiveMutexStatic(&g_matter_vm_lock_buf);
-    BaseType_t rc = xTaskCreate(matter_task, "matter", 8192, NULL,
-                                tskIDLE_PRIORITY + 1, NULL);
+    BaseType_t rc =
+        xTaskCreate(matter_task, "matter", 8192, NULL, tskIDLE_PRIORITY, NULL);
     LogInfo(("matter_init: xTaskCreate rc=%ld", (long)rc));
 }
