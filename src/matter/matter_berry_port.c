@@ -12,6 +12,7 @@
 #include "app_logging.h"
 #include "berry.h"
 #include "fsl_debug_console.h"
+#include "task.h"
 
 #if BE_USE_STRING_MODULE
 be_extern_native_module(string);
@@ -135,9 +136,46 @@ bclass_array be_class_table = {&be_native_class(bytes),
                                &be_native_class(Matter_Verhoeff),
                                NULL};
 
+/* Berry's print() lands here in fragments — the formatted arguments
+ * followed by a separate "\n". Line-buffer until newline so each print
+ * becomes a single LogInfo entry instead of raw PUTCHARs that race
+ * with the logging task on the UART.
+ *
+ * Guards: if the scheduler isn't running yet, or we're inside an ISR,
+ * or the logger would recurse back into us, fall back to direct
+ * PUTCHAR — log_prepare needs xQueueSend/pvPortMalloc, neither safe
+ * in those contexts. */
 BERRY_API void be_writebuffer(const char* buffer, size_t length) {
+    static char line[160];
+    static size_t pos = 0;
+    static int in_log = 0;
+
+    if (xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED ||
+        xPortIsInsideInterrupt() || in_log) {
+        for (size_t i = 0; i < length; i++) PUTCHAR(buffer[i]);
+        return;
+    }
+
     for (size_t i = 0; i < length; i++) {
-        PUTCHAR(buffer[i]);
+        char c = buffer[i];
+        if (c == '\n') {
+            line[pos] = '\0';
+            in_log = 1;
+            LogInfo(("%s", line));
+            in_log = 0;
+            pos = 0;
+        } else if (c == '\r') {
+            /* drop */
+        } else if (pos + 1 < sizeof(line)) {
+            line[pos++] = c;
+        } else {
+            line[pos] = '\0';
+            in_log = 1;
+            LogInfo(("%s", line));
+            in_log = 0;
+            pos = 0;
+            line[pos++] = c;
+        }
     }
 }
 
