@@ -7,6 +7,7 @@
 #include "FreeRTOS_IP.h"
 #include "FreeRTOS_Sockets.h"
 #include "app_logging.h"
+#include "fsl_debug_console.h"
 #undef LOG_INFO
 #undef LOG_ERROR
 #undef LOG_WARN
@@ -582,10 +583,14 @@ static int mdns_remove_service(bvm* vm) {
     be_return_nil(vm);
 }
 
-/* UDP class shim */
+/* UDP class shim. FreeRTOS+TCP rejects binding two UDP sockets to the same
+ * port (-EADDRINUSE), so we use a single AF_INET socket. The stack still
+ * delivers IPv6 datagrams to it; recvfrom's `from.sin_family` carries the true
+ * family and sendto's destination `sin_family` controls how the packet is
+ * built — the socket family doesn't constrain either direction. */
 typedef struct {
     Socket_t socket;
-    char remote_ip[16];
+    char remote_ip[46]; /* INET6_ADDRSTRLEN */
     int remote_port;
 } tas_udp_t;
 
@@ -610,9 +615,8 @@ static int udp_init(bvm* vm) {
 static int udp_deinit(bvm* vm) {
     tas_udp_t* u = udp_self(vm);
     if (u) {
-        if (u->socket != FREERTOS_INVALID_SOCKET) {
+        if (u->socket != FREERTOS_INVALID_SOCKET)
             FreeRTOS_closesocket(u->socket);
-        }
         be_free(vm, u, sizeof(tas_udp_t));
         be_pushcomptr(vm, NULL);
         be_setmember(vm, 1, "_p");
@@ -627,28 +631,24 @@ static int udp_begin(bvm* vm) {
         be_pushbool(vm, bfalse);
         be_return(vm);
     }
-    /* addr is at slot 2 (unused; we bind INADDR_ANY), port at slot 3 */
     int port = be_toint(vm, 3);
-    u->socket = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM,
-                                FREERTOS_IPPROTO_UDP);
-    if (u->socket == FREERTOS_INVALID_SOCKET) {
+    Socket_t s = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM,
+                                 FREERTOS_IPPROTO_UDP);
+    if (s == FREERTOS_INVALID_SOCKET) {
         be_pushbool(vm, bfalse);
         be_return(vm);
     }
     TickType_t zero = 0;
-    FreeRTOS_setsockopt(u->socket, 0, FREERTOS_SO_RCVTIMEO, &zero,
-                        sizeof(zero));
+    FreeRTOS_setsockopt(s, 0, FREERTOS_SO_RCVTIMEO, &zero, sizeof(zero));
     struct freertos_sockaddr addr = {0};
     addr.sin_family = FREERTOS_AF_INET;
     addr.sin_port = FreeRTOS_htons(port);
-    addr.sin_address.ulIP_IPv4 = 0;
-    BaseType_t rc = FreeRTOS_bind(u->socket, &addr, sizeof(addr));
-    if (rc != 0) {
-        FreeRTOS_closesocket(u->socket);
-        u->socket = FREERTOS_INVALID_SOCKET;
+    if (FreeRTOS_bind(s, &addr, sizeof(addr)) != 0) {
+        FreeRTOS_closesocket(s);
         be_pushbool(vm, bfalse);
         be_return(vm);
     }
+    u->socket = s;
     be_pushbool(vm, btrue);
     be_return(vm);
 }
@@ -664,22 +664,23 @@ static int udp_close(bvm* vm) {
 
 static int udp_read(bvm* vm) {
     tas_udp_t* u = udp_self(vm);
-    if (!u || u->socket == FREERTOS_INVALID_SOCKET) {
-        be_return_nil(vm);
-    }
+    if (!u || u->socket == FREERTOS_INVALID_SOCKET) be_return_nil(vm);
     struct freertos_sockaddr from;
     uint32_t from_len = sizeof(from);
     uint8_t buf[1024];
     int32_t n =
         FreeRTOS_recvfrom(u->socket, buf, sizeof(buf), 0, &from, &from_len);
-    if (n > 0) {
-        FreeRTOS_inet_ntoa(from.sin_address.ulIP_IPv4, u->remote_ip);
-        u->remote_port = FreeRTOS_ntohs(from.sin_port);
-        void* res = be_pushbuffer(vm, n);
-        memcpy(res, buf, n);
-        be_return(vm);
+    if (n <= 0) be_return_nil(vm);
+    if (from.sin_family == FREERTOS_AF_INET6) {
+        FreeRTOS_inet_ntop(FREERTOS_AF_INET6, from.sin_address.xIP_IPv6.ucBytes,
+                           u->remote_ip, sizeof(u->remote_ip));
+    } else {
+        FreeRTOS_inet_ntop(FREERTOS_AF_INET, &from.sin_address.ulIP_IPv4,
+                           u->remote_ip, sizeof(u->remote_ip));
     }
-    be_return_nil(vm);
+    u->remote_port = FreeRTOS_ntohs(from.sin_port);
+    be_pushbytes(vm, buf, n);
+    be_return(vm);
 }
 
 static int udp_send(bvm* vm) {
@@ -692,10 +693,20 @@ static int udp_send(bvm* vm) {
     int port = be_toint(vm, 3);
     size_t len;
     const void* data = be_tobytes(vm, 4, &len);
+    bool is_v6 = strchr(ip_str, ':') != NULL;
     struct freertos_sockaddr to = {0};
-    to.sin_family = FREERTOS_AF_INET;
     to.sin_port = FreeRTOS_htons(port);
-    to.sin_address.ulIP_IPv4 = FreeRTOS_inet_addr(ip_str);
+    if (is_v6) {
+        to.sin_family = FREERTOS_AF_INET6;
+        if (FreeRTOS_inet_pton(FREERTOS_AF_INET6, ip_str,
+                               to.sin_address.xIP_IPv6.ucBytes) != pdPASS) {
+            be_pushbool(vm, bfalse);
+            be_return(vm);
+        }
+    } else {
+        to.sin_family = FREERTOS_AF_INET;
+        to.sin_address.ulIP_IPv4 = FreeRTOS_inet_addr(ip_str);
+    }
     int32_t n = FreeRTOS_sendto(u->socket, data, len, 0, &to, sizeof(to));
     be_pushbool(vm, n == (int32_t)len);
     be_return(vm);

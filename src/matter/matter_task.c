@@ -11,6 +11,7 @@
 #include "be_mapping.h"
 #include "be_vm.h"
 #include "berry.h"
+#include "embedded_be.h"
 #include "matter_mdns.h"
 #include "queue.h"
 #include "semphr.h"
@@ -92,6 +93,20 @@ static void matter_task(void* pvParameters) {
     extern int be_load_crypto_module(bvm * vm);
     be_load_crypto_module(vm);
 
+    /* Define crypto.SPAKE2P_Matter (Berry source — solidify pipeline isn't
+     * working yet). Must run after the crypto module exists. */
+    if (be_dostring(vm, embedded_be_crypto_spake2p_matter) != 0) {
+        PRINTF("[matter] failed to define SPAKE2P_Matter: %s\r\n",
+               be_tostring(vm, -1));
+        be_pop(vm, 1);
+    } else if (be_dostring(vm,
+                           "import crypto\n"
+                           "crypto.SPAKE2P_Matter = SPAKE2P_Matter\n") != 0) {
+        PRINTF("[matter] failed to attach SPAKE2P_Matter: %s\r\n",
+               be_tostring(vm, -1));
+        be_pop(vm, 1);
+    }
+
     PRINTF("[matter] init globals\r\n");
     if (be_dostring(vm,
                     "_matter_fast_cbs = []\n"
@@ -126,11 +141,14 @@ static void matter_task(void* pvParameters) {
          * autoconf_device() can call without erroring. */
         "class Matter_Profiler_Stub\n"
         "  def init() end\n"
+        "  def start() end\n"
         "  def log(s) end\n"
         "  def dump(s) end\n"
+        "  def set_active(v) end\n"
         "  def set_cb(cb) end\n"
         "end\n"
         "matter.Profiler = Matter_Profiler_Stub\n"
+        "matter.profiler = Matter_Profiler_Stub()\n"
         /* Autoconf's only job here is instantiate_plugins_from_config: walk
          * plugins_config and push matter.plugins_classes.find(type)(...). */
         "class Matter_Autoconf_Stub\n"
@@ -204,8 +222,13 @@ static void matter_task(void* pvParameters) {
 }
 
 void matter_init(void) {
+    /* PRINTF deadlocks when called from this network-up hook context, so the
+     * log lines must go through LogInfo (the regular logger). */
+    LogInfo(("matter_init: start"));
     matter_mdns_init();
     g_matter_vm_lock =
         xSemaphoreCreateRecursiveMutexStatic(&g_matter_vm_lock_buf);
-    xTaskCreate(matter_task, "matter", 8192, NULL, tskIDLE_PRIORITY + 1, NULL);
+    BaseType_t rc = xTaskCreate(matter_task, "matter", 8192, NULL,
+                                tskIDLE_PRIORITY + 1, NULL);
+    LogInfo(("matter_init: xTaskCreate rc=%ld", (long)rc));
 }
