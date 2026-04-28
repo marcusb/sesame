@@ -314,6 +314,70 @@ static int tas_wifi(bvm* vm) {
     be_return(vm);
 }
 
+/* tasmota.cmd(name [, silent]) -> map
+ *
+ * berry_matter's Plugin_Root reads Basic Information / General Diagnostics
+ * attributes via tasmota.cmd(...) and indexes the returned JSON-shaped map.
+ * Sesame doesn't run Tasmota's command processor, so synthesize the minimal
+ * shape Plugin_Root expects for the names it actually queries. Returning nil
+ * here causes nil-index exceptions inside read_attribute, which leaves
+ * VendorID/ProductID/RegulatoryConfig unanswered during chip-tool's
+ * ReadCommissioningInfo and surfaces as "Key not found" on the controller.
+ */
+extern const char* pcApplicationHostnameHook(void);
+static void map_put_str(bvm* vm, const char* key, const char* val) {
+    be_pushstring(vm, key);
+    be_pushstring(vm, val);
+    be_data_insert(vm, -3);
+    be_pop(vm, 2);
+}
+static void map_put_int(bvm* vm, const char* key, int val) {
+    be_pushstring(vm, key);
+    be_pushint(vm, val);
+    be_data_insert(vm, -3);
+    be_pop(vm, 2);
+}
+static int tas_cmd(bvm* vm) {
+    const char* name =
+        (be_top(vm) >= 1 && be_isstring(vm, 1)) ? be_tostring(vm, 1) : "";
+    const char* hostname = pcApplicationHostnameHook();
+    if (!hostname) hostname = "sesame";
+
+    be_newobject(vm, "map");
+
+    if (!strcmp(name, "DeviceName")) {
+        map_put_str(vm, "DeviceName", hostname);
+    } else if (!strcmp(name, "FriendlyName")) {
+        map_put_str(vm, "FriendlyName1", hostname);
+    } else if (!strncmp(name, "Status 1", 8) && (name[8] == '\0')) {
+        be_pushstring(vm, "StatusPRM");
+        be_newobject(vm, "map");
+        map_put_int(vm, "BootCount", 0);
+        be_pop(vm, 1); /* drop inner_data, leaving inner_obj */
+        be_data_insert(vm, -3);
+        be_pop(vm, 2);
+    } else if (!strcmp(name, "Status 2")) {
+        be_pushstring(vm, "StatusFWR");
+        be_newobject(vm, "map");
+        map_put_str(vm, "Hardware", "MW320");
+        map_put_str(vm, "Version", "0.1");
+        be_pop(vm, 1);
+        be_data_insert(vm, -3);
+        be_pop(vm, 2);
+    } else if (!strcmp(name, "Status 11")) {
+        be_pushstring(vm, "StatusSTS");
+        be_newobject(vm, "map");
+        map_put_int(vm, "UptimeSec",
+                    (int)(xTaskGetTickCount() * portTICK_PERIOD_MS / 1000));
+        be_pop(vm, 1);
+        be_data_insert(vm, -3);
+        be_pop(vm, 2);
+    }
+
+    be_pop(vm, 1); /* drop outer_data, leaving outer_obj */
+    be_return(vm);
+}
+
 /* tasmota.eth() -> map (always down; no ethernet on MW320) */
 static int tas_eth(bvm* vm) {
     if (be_top(vm) >= 1 && be_isstring(vm, 1)) {
@@ -872,7 +936,7 @@ module tasmota (scope: global, name: tasmota) {
     remove_driver, func(tas_remove_driver)
     defer, func(tas_defer)
     set_timer, func(tas_set_timer)
-    cmd, func(tas_stub_nil)
+    cmd, func(tas_cmd)
     resp_cmnd_str, func(tas_stub_nil)
     resp_cmnd_done, func(tas_stub_nil)
     publish_result, func(tas_stub_nil)
