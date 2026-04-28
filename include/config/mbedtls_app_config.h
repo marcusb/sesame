@@ -419,10 +419,11 @@ void *pvPortCalloc(size_t num, size_t size);
 #endif
 //#define MBEDTLS_ARIA_ALT
 //#define MBEDTLS_CAMELLIA_ALT
-/* Hardware AES_CCM driver does unaligned uint32_t reads in
- * AES_ReadWordFromArray(); commissioning passes byte-aligned (offset != 0)
- * payload pointers via crypto.AES_CCM.encrypt1/decrypt1, which faults on
- * Cortex-M4. Use software CCM instead until the HW driver is fixed. */
+/* Hardware AES_CCM driver (mw320 fsl_aes.c) does word-wide reads from the
+ * caller's buffers (AES_ReadWordFromArray); the matter_crypto_shim's
+ * encrypt1/decrypt1 pass byte-aligned (in_buf + in_off) pointers, which
+ * fault on Cortex-M4. Use software CCM until either the HW driver tolerates
+ * unaligned access or the Berry caller guarantees aligned offsets. */
 /* #define MBEDTLS_CCM_ALT */
 /* #define MBEDTLS_CCM_CRYPT_ALT */
 /* #define MBEDTLS_AES_CRYPT_ALT */
