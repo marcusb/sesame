@@ -9,7 +9,7 @@ MEMORY
 {
   m_interrupts          (RX)  : ORIGIN = 0x00000000, LENGTH = 0x00000400
   m_text                (RX)  : ORIGIN = 0x00000400, LENGTH = 0x00080000
-  m_data                (RW)  : ORIGIN = 0x20000000, LENGTH = 0x00010000
+  m_data                (RW)  : ORIGIN = 0x20000000, LENGTH = 0x00100000
 }
 
 SECTIONS
@@ -113,6 +113,14 @@ SECTIONS
     *(COMMON)
     . = ALIGN(4);
     __bss_end__ = .;
+  } > m_data
+
+  .nvram (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.nvram*)
+    *(.nvram_uninit*)
+    . = ALIGN(4);
   } > m_data
 
   __end__ = ALIGN(__bss_end__, 8);

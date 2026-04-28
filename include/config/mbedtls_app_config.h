@@ -414,12 +414,16 @@ void *pvPortCalloc(size_t num, size_t size);
  *            digests and ciphers instead.
  *
  */
+#ifndef QEMU
 #define MBEDTLS_AES_ALT
+#endif
 //#define MBEDTLS_ARIA_ALT
 //#define MBEDTLS_CAMELLIA_ALT
+#ifndef QEMU
 #define MBEDTLS_CCM_ALT
 #define MBEDTLS_CCM_CRYPT_ALT
 #define MBEDTLS_AES_CRYPT_ALT
+#endif
 
 //#define MBEDTLS_CHACHA20_ALT
 //#define MBEDTLS_CHACHAPOLY_ALT
@@ -493,10 +497,12 @@ void *pvPortCalloc(size_t num, size_t size);
 //#define MBEDTLS_DES_SETKEY_ALT
 //#define MBEDTLS_DES_CRYPT_ECB_ALT
 //#define MBEDTLS_DES3_CRYPT_ECB_ALT
+#ifndef QEMU
 #define MBEDTLS_AES_SETKEY_ENC_ALT
 #define MBEDTLS_AES_SETKEY_DEC_ALT
 #define MBEDTLS_AES_ENCRYPT_ALT
 #define MBEDTLS_AES_DECRYPT_ALT
+#endif
 //#define MBEDTLS_ECDH_GEN_PUBLIC_ALT
 //#define MBEDTLS_ECDH_COMPUTE_SHARED_ALT
 //#define MBEDTLS_ECDSA_VERIFY_ALT

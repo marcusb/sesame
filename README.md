@@ -205,7 +205,7 @@ The firmware can be built on Linux.
 On Debian:
 ```sh
 apt install cmake ninja-build gcc-arm-none-eabi \
-    binutils-arm-none-eabi python3-protobuf qemu-system-arm
+    binutils-arm-none-eabi python3-protobuf openocd qemu-system-arm
 ```
 
 The cross-compiler is specified in the `toolchain.cmake` file.

@@ -1,4 +1,24 @@
 # ---------------------------------------------------------------------------
+# QEMU / Emulation Options
+# ---------------------------------------------------------------------------
+
+set(ARM_TEST_LINK_OPTIONS
+    "-mcpu=cortex-m4"
+    "-mthumb"
+    "-mfloat-abi=softfp"
+    "-mfpu=fpv4-sp-d16"
+    "-specs=picolibc.specs"
+    "--oslib=semihost"
+    "-Wl,--wrap,malloc"
+    "-Wl,--wrap,free"
+    "-Wl,--wrap,calloc"
+    "-Wl,--wrap,realloc"
+    "-Wl,--undefined,uxTopUsedPriority"
+    "-Wl,--gc-sections"
+    "-Wl,--nmagic"
+    "-Wl,--defsym=_keystore_size=0")
+
+# ---------------------------------------------------------------------------
 # Unity test framework
 # ---------------------------------------------------------------------------
 add_library(unity STATIC unity/unity.c)
@@ -44,39 +64,30 @@ add_library(matter_test_support OBJECT
     "${CMAKE_SOURCE_DIR}/src/idle_task.c"
     "${CMAKE_SOURCE_DIR}/src/time_util.c")
 
+if(USE_QEMU)
+    target_sources(matter_test_support PRIVATE qemu_vectors.c stubs/stub_fsl_uart.c)
+endif()
+
 target_include_directories(matter_test_support PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/matter"
     "${CMAKE_SOURCE_DIR}/third_party/berry/src")
 
 target_link_libraries(matter_test_support PUBLIC
-    globals unity logging board mw320_device_startup mw320_utility_assert
+    globals unity logging board mw320_utility_assert
     mw320_mbedtls_port mw320_drivers_aes mw320_drivers_crc
-    freertos_kernel test_infra test_stubs
+    freertos_kernel test_infra test_stubs)
+
+if(USE_QEMU)
+    target_link_libraries(matter_test_support PUBLIC mw320_device_system)
+else()
+    target_link_libraries(matter_test_support PUBLIC mw320_device_startup)
+endif()
+
+target_link_libraries(matter_test_support PUBLIC
     "LINKER:--start-group" sesame_matter berry_matter berry "LINKER:--end-group")
 
 # Common ARM link options for tests
 add_compile_definitions(SDK_DEBUGCONSOLE=0)
-
-option(USE_QEMU "Build for QEMU emulation (stubs out hardware init)" OFF)
-if(USE_QEMU)
-    add_compile_definitions(QEMU)
-endif()
-
-set(ARM_TEST_LINK_OPTIONS
-    "-mcpu=cortex-m4"
-    "-mthumb"
-    "-mfloat-abi=softfp"
-    "-mfpu=fpv4-sp-d16"
-    "-specs=picolibc.specs"
-    "--oslib=semihost"
-    "-Wl,--wrap,malloc"
-    "-Wl,--wrap,free"
-    "-Wl,--wrap,calloc"
-    "-Wl,--wrap,realloc"
-    "-Wl,--undefined,uxTopUsedPriority"
-    "-Wl,--gc-sections"
-    "-Wl,--nmagic"
-    "-Wl,--defsym=_keystore_size=0")
 
 macro(add_matter_test_binary name source)
     add_executable(${name} "matter/${source}" $<TARGET_OBJECTS:matter_test_support>)
@@ -89,6 +100,8 @@ macro(add_matter_test_binary name source)
 
     target_link_options(${name} PRIVATE
         ${ARM_TEST_LINK_OPTIONS}
+        "-Wl,--wrap,UART_TransferReceiveNonBlocking"
+        "-Wl,--wrap,UART_TransferAbortReceive"
         "-T${ARM_TEST_LINKER_SCRIPT}"
         "-Wl,-Map,${name}.map")
 endmacro()
@@ -121,12 +134,7 @@ set(SESAME_TEST_SOURCES
     "${CMAKE_SOURCE_DIR}/src/idle_task.c")
 
 if(USE_QEMU)
-    list(APPEND SESAME_TEST_SOURCES
-        qemu_vectors.c
-        stubs/stub_fsl_uart.c)
-    list(APPEND ARM_TEST_LINK_OPTIONS
-        "-Wl,--wrap,UART_TransferReceiveNonBlocking"
-        "-Wl,--wrap,UART_TransferAbortReceive")
+    list(APPEND SESAME_TEST_SOURCES qemu_vectors.c stubs/stub_fsl_uart.c)
 endif()
 
 add_executable(sesame_tests ${SESAME_TEST_SOURCES})
@@ -151,7 +159,6 @@ target_link_libraries(sesame_tests
     proto
     freertos_kernel
     board
-    mw320_device_startup
     mw320_utility_assert)
 
 if(USE_BACKTRACE)
@@ -161,6 +168,8 @@ endif()
 target_link_options(sesame_tests
     PRIVATE
     ${ARM_TEST_LINK_OPTIONS}
+    "-Wl,--wrap,UART_TransferReceiveNonBlocking"
+    "-Wl,--wrap,UART_TransferAbortReceive"
     "-Wl,-Map,sesame_tests.map"
     "-T${ARM_TEST_LINKER_SCRIPT}"
 )

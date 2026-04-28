@@ -83,7 +83,7 @@ static void run_tests_task(void* params) {
 int main(void) {
     board_init();
 
-    if (xTaskCreate(run_tests_task, "tests", 8192, NULL, tskIDLE_PRIORITY + 1,
+    if (xTaskCreate(run_tests_task, "tests", 16384, NULL, tskIDLE_PRIORITY + 1,
                     NULL) != pdPASS) {
         printf("test task creation failed\r\n");
     }

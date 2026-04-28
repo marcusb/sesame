@@ -38,6 +38,7 @@
  * functions, but mbedtls cipher.c still references mbedtls_ccm_update for the
  * MBEDTLS_MODE_CCM_STAR_NO_TAG cipher mode (a dead branch we never hit). Stub
  * it here so the linker is happy. */
+#ifdef MBEDTLS_CCM_ALT
 int mbedtls_ccm_update(mbedtls_ccm_context* ctx, const unsigned char* input,
                        size_t input_len, unsigned char* output,
                        size_t output_size, size_t* output_len) {
@@ -49,6 +50,7 @@ int mbedtls_ccm_update(mbedtls_ccm_context* ctx, const unsigned char* input,
     (void)output_len;
     return -1;
 }
+#endif
 #include "mbedtls/ecp.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/hkdf.h"
@@ -609,18 +611,21 @@ static int crypto_ec_p256_neg(bvm* vm) {
     be_return(vm);
 }
 
+extern int internal_entropy_poll(void* data, unsigned char* output, size_t len,
+                                 size_t* olen);
+static int entropy_wrapper(void* data, unsigned char* output, size_t len) {
+    size_t olen;
+    return internal_entropy_poll(data, output, len, &olen);
+}
+
 /*
  * Runtime loader called by VM initialization
  */
 int be_load_crypto_module(bvm* vm) {
     // initialize RNG
-    static mbedtls_entropy_context entropy;
-    mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
-    int ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-                                    NULL, 0);
+    int ret = mbedtls_ctr_drbg_seed(&ctr_drbg, entropy_wrapper, NULL, NULL, 0);
     if (ret != 0) {
-        MATTER_LOG("mbedtls_ctr_drbg_seed failed: %d", ret);
         for (;;);
     }
 

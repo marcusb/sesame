@@ -7,6 +7,11 @@ project(
 
 set(mw320_sdk_dir "${CMAKE_CURRENT_LIST_DIR}/mw320_sdk")
 
+option(USE_QEMU "Build for QEMU emulation (stubs out hardware init)" OFF)
+if(USE_QEMU)
+    add_compile_definitions(QEMU)
+endif()
+
 option(BUILD_HOST_TESTS "Build host-based module tests (native build)" ON)
 
 if(CMAKE_CROSSCOMPILING)
@@ -336,11 +341,16 @@ target_link_libraries(mw320_sdk
     mw320_drivers_gpio
     mw320_drivers_rtc
     mw320_drivers_wdt
-    mw320_device_startup
     mw320_utility_assert
     mw320_utility_debug_console
     mw320_boot2_psm
 )
+
+if(USE_QEMU)
+    target_link_libraries(mw320_sdk INTERFACE mw320_device_system)
+else()
+    target_link_libraries(mw320_sdk INTERFACE mw320_device_startup)
+endif()
 
 set(exe_target sesame)
 set(exe_target_ram "${exe_target}_ram")

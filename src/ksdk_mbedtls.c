@@ -22,8 +22,8 @@ static struct {
     mbedtls_ctr_drbg_context ctrDrbg;
 } s_internalMbedtlsGdata;
 
-static int internal_entropy_poll(void* data, unsigned char* output, size_t len,
-                                 size_t* olen) {
+int internal_entropy_poll(void* data, unsigned char* output, size_t len,
+                          size_t* olen) {
     (void)data;
 
     if (s_hashLen > 0) {
