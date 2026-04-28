@@ -75,10 +75,10 @@ target_compile_options(globals
     $<$<CONFIG:Release>:-Os>)
 target_compile_definitions(globals
     INTERFACE
-    __FPU_PRESENT
     _DEFAULT_SOURCE
     _GNU_SOURCE
-    __ASSERT_VERBOSE)
+    __ASSERT_VERBOSE
+    __FPU_PRESENT)
 
 # -------------------------------------------------------------------------------------------------
 # Backtrace

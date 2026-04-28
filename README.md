@@ -168,16 +168,19 @@ cd test/host && uv run pytest
 ### On-device unit tests
 
 The on-device test binary uses the [Unity](https://github.com/ThrowTheSwitch/Unity) framework and
-covers `string_util`, `util`, `logging`, `config_manager`, and `pic_uart`.
+covers `string_util`, `util`, `logging`, `config_manager`, and `pic_uart`. Tests can be run either on physical hardware or in the QEMU emulator.
 
-**Build:**
+**Hardware (JTAG) Build & Run:**
 ```sh
 ninja -C build test/sesame_tests.axf
+./tools/run_on_device.sh build/test/sesame_tests.axf
 ```
 
-**Run** (loads to RAM via JTAG, no flash write):
+**QEMU (Emulator) Build & Run:**
 ```sh
-./tools/run_on_device.sh build/test/sesame_tests.axf
+cmake -B build -G Ninja -DUSE_QEMU=ON -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake .
+ninja -C build test/sesame_tests.axf
+qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel build/test/sesame_tests.axf -serial none -monitor none
 ```
 
 Expected output ends with:
@@ -202,7 +205,7 @@ The firmware can be built on Linux.
 On Debian:
 ```sh
 apt install cmake ninja-build gcc-arm-none-eabi \
-    binutils-arm-none-eabi python3-protobuf
+    binutils-arm-none-eabi python3-protobuf qemu-system-arm
 ```
 
 The cross-compiler is specified in the `toolchain.cmake` file.

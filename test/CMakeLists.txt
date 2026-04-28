@@ -57,6 +57,11 @@ target_link_libraries(matter_test_support PUBLIC
 # Common ARM link options for tests
 add_compile_definitions(SDK_DEBUGCONSOLE=0)
 
+option(USE_QEMU "Build for QEMU emulation (stubs out hardware init)" OFF)
+if(USE_QEMU)
+    add_compile_definitions(QEMU)
+endif()
+
 set(ARM_TEST_LINK_OPTIONS
     "-mcpu=cortex-m4"
     "-mthumb"
@@ -76,9 +81,15 @@ set(ARM_TEST_LINK_OPTIONS
 macro(add_matter_test_binary name source)
     add_executable(${name} "matter/${source}" $<TARGET_OBJECTS:matter_test_support>)
     target_link_libraries(${name} PRIVATE globals matter_test_support)
+
+    set(ARM_TEST_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")
+    if(USE_QEMU)
+        set(ARM_TEST_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/board/qemu.ld")
+    endif()
+
     target_link_options(${name} PRIVATE
         ${ARM_TEST_LINK_OPTIONS}
-        "-T${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
+        "-T${ARM_TEST_LINKER_SCRIPT}"
         "-Wl,-Map,${name}.map")
 endmacro()
 
@@ -96,19 +107,29 @@ add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c)
 # ---------------------------------------------------------------------------
 # sesame_tests – main unit test runner
 # ---------------------------------------------------------------------------
-add_executable(sesame_tests
+set(SESAME_TEST_SOURCES
     test_main.c
     test_config_manager.c
     test_string_util.c
     test_util.c
     test_pic_uart.c
     test_logging.c
-    stubs/stub_os.c
     "${CMAKE_SOURCE_DIR}/src/libc_wrappers.c"
     "${CMAKE_SOURCE_DIR}/src/pin_mux.c"
     "${CMAKE_SOURCE_DIR}/src/util.c"
     "${CMAKE_SOURCE_DIR}/src/config_manager.c"
     "${CMAKE_SOURCE_DIR}/src/idle_task.c")
+
+if(USE_QEMU)
+    list(APPEND SESAME_TEST_SOURCES
+        qemu_vectors.c
+        stubs/stub_fsl_uart.c)
+    list(APPEND ARM_TEST_LINK_OPTIONS
+        "-Wl,--wrap,UART_TransferReceiveNonBlocking"
+        "-Wl,--wrap,UART_TransferAbortReceive")
+endif()
+
+add_executable(sesame_tests ${SESAME_TEST_SOURCES})
 
 target_include_directories(sesame_tests
     PRIVATE
@@ -141,5 +162,5 @@ target_link_options(sesame_tests
     PRIVATE
     ${ARM_TEST_LINK_OPTIONS}
     "-Wl,-Map,sesame_tests.map"
-    "-T${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
+    "-T${ARM_TEST_LINKER_SCRIPT}"
 )

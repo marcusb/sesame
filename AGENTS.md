@@ -20,7 +20,7 @@ The project uses CMake with two-stage builds: a native build produces the `axf2f
 
 ```sh
 apt install cmake ninja-build gcc-arm-none-eabi \
-    binutils-arm-none-eabi protobuf-compiler python3-protobuf openocd
+    binutils-arm-none-eabi protobuf-compiler python3-protobuf openocd qemu-system-arm
 ```
 
 ### Build Commands
@@ -211,21 +211,20 @@ ninja -C build sesame.axf && \
 ### Unit Tests
 
 On-device unit tests use the [Unity](https://github.com/ThrowTheSwitch/Unity) framework.
-Tests run on the ARM Cortex-M4 target via JTAG RAM load (no flash write required).
+Tests can be run either on the physical ARM Cortex-M4 target via JTAG RAM load, or in QEMU.
 
-**Build:**
+**Hardware (JTAG) Build & Run:**
 ```sh
 ninja -C build test/sesame_tests.axf
-```
-
-**Run:**
-```sh
 ./tools/OpenOCD/ramload.py build/test/sesame_tests.axf
+./tools/run_on_device.sh build/test/sesame_tests.axf
 ```
 
-**Monitor output:**
+**QEMU (Emulator) Build & Run:**
 ```sh
-./tools/run_on_device.sh build/test/sesame_tests.axf
+cmake -B build -G Ninja -DUSE_QEMU=ON -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake .
+ninja -C build test/sesame_tests.axf
+qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel build/test/sesame_tests.axf -serial none -monitor none
 ```
 
 Each test prints immediately as it executes:
