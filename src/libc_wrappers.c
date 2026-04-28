@@ -34,7 +34,10 @@ static void* pvPortReAlloc(void* p, size_t size) {
             BlockLink_t* block = (BlockLink_t*)((uint8_t*)p - xHeapStructSize);
             configASSERT((block->xBlockSize & xBlockAllocatedBit) != 0);
             configASSERT(block->pxNextFreeBlock == NULL);
-            size_t block_size = block->xBlockSize &= ~xBlockAllocatedBit;
+            /* Read the allocated size without modifying the metadata —
+             * vPortFree() below re-checks the allocated bit and asserts if
+             * it has been cleared. */
+            size_t block_size = block->xBlockSize & ~xBlockAllocatedBit;
             memcpy(q, p, min(size, block_size));
         }
     }
