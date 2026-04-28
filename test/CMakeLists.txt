@@ -58,6 +58,7 @@ target_link_libraries(test_stubs PRIVATE globals)
 # Object library ensures all shared test code is available to linkers without dropping symbols
 add_library(matter_test_support OBJECT
     matter/matter_test_utils.c
+    stubs/stub_hostname.c
     "${CMAKE_SOURCE_DIR}/src/libc_wrappers.c"
     "${CMAKE_SOURCE_DIR}/src/pin_mux.c"
     "${CMAKE_SOURCE_DIR}/src/util.c"
@@ -76,6 +77,10 @@ target_link_libraries(matter_test_support PUBLIC
     globals unity logging board mw320_utility_assert
     mw320_mbedtls_port mw320_drivers_aes mw320_drivers_crc
     freertos_kernel test_infra test_stubs)
+
+if(USE_BACKTRACE)
+    target_link_libraries(matter_test_support PUBLIC backtrace)
+endif()
 
 if(USE_QEMU)
     target_link_libraries(matter_test_support PUBLIC mw320_device_system)
@@ -106,12 +111,12 @@ macro(add_matter_test_binary name source)
         "-Wl,-Map,${name}.map")
 endmacro()
 
-# matter_crypto_tests currently overflows the test linker's m_text region after
-# the SPAKE2P-class additions to matter_crypto_shim.c (AES_CCM, EC muladd/neg,
-# SHA256/HMAC class form). The functions are exercised end-to-end by Matter
-# commissioning instead. Re-enable once the test linker has more headroom or
-# the shim is split into a lighter test library.
-# add_matter_test_binary(matter_crypto_tests test_matter_crypto.c)
+# matter_crypto_tests still overflows the on-target ram.ld linker region
+# (88MW320_xx_xxxx_ram.ld) once the full crypto shim is linked in.  QEMU has
+# 1MB of RAM, so build the suite there and skip it on hardware.
+if(USE_QEMU)
+    add_matter_test_binary(matter_crypto_tests test_matter_crypto.c)
+endif()
 add_matter_test_binary(matter_ec_raw_tests test_ec_raw.c)
 add_matter_test_binary(matter_mdns_tests test_matter_mdns.c)
 add_matter_test_binary(matter_sesame_tests test_matter_sesame.c)

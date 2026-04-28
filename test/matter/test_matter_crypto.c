@@ -62,6 +62,55 @@ void test_crypto_ec_p256_smoke(void) {
         "assert(Q.size() == 65)");
 }
 
+/* ECDSA sign + verify round-trip with a freshly-derived key. */
+void test_crypto_ec_p256_ecdsa_roundtrip(void) {
+    be_assert_success(
+        "var ec = crypto.EC_P256() "
+        "var priv = "
+        "bytes('"
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f') "
+        "var pub = ec.public_key(priv) "
+        "assert(pub.size() == 65) "
+        "var msg = bytes().fromstring('hello world') "
+        "var sig = ec.ecdsa_sign_sha256(priv, msg) "
+        "assert(sig.size() == 64) "
+        "assert(ec.ecdsa_verify_sha256(pub, msg, sig)) "
+        "var bad = bytes().fromstring('hello dolly') "
+        "assert(!ec.ecdsa_verify_sha256(pub, bad, sig))");
+}
+
+/* ECDSA ASN.1 signing returns a valid DER SEQUENCE { r, s } (tag 0x30). */
+void test_crypto_ec_p256_ecdsa_asn1(void) {
+    be_assert_success(
+        "var ec = crypto.EC_P256() "
+        "var priv = "
+        "bytes('"
+        "0102030405060708010203040506070801020304050607080102030405060708') "
+        "var msg = bytes().fromstring('matter') "
+        "var sig = ec.ecdsa_sign_sha256_asn1(priv, msg) "
+        "assert(sig[0] == 0x30) "
+        "assert(size(sig) >= 8 && size(sig) <= 72)");
+}
+
+/* ECDH: a*B == b*A so shared_key is symmetric and equals the X coord of the
+ * shared point. */
+void test_crypto_ec_p256_shared_key(void) {
+    be_assert_success(
+        "var ec = crypto.EC_P256() "
+        "var a_priv = "
+        "bytes('"
+        "1111111111111111111111111111111111111111111111111111111111111111') "
+        "var b_priv = "
+        "bytes('"
+        "2222222222222222222222222222222222222222222222222222222222222222') "
+        "var a_pub = ec.public_key(a_priv) "
+        "var b_pub = ec.public_key(b_priv) "
+        "var s_ab = ec.shared_key(a_priv, b_pub) "
+        "var s_ba = ec.shared_key(b_priv, a_pub) "
+        "assert(s_ab.size() == 32) "
+        "assert(s_ab == s_ba)");
+}
+
 void run_tests(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_crypto_sha256);
@@ -70,4 +119,7 @@ void run_tests(void) {
     RUN_TEST(test_crypto_hmac);
     RUN_TEST(test_crypto_random);
     RUN_TEST(test_crypto_ec_p256_smoke);
+    RUN_TEST(test_crypto_ec_p256_ecdsa_roundtrip);
+    RUN_TEST(test_crypto_ec_p256_ecdsa_asn1);
+    RUN_TEST(test_crypto_ec_p256_shared_key);
 }

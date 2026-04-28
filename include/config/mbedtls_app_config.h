@@ -419,11 +419,13 @@ void *pvPortCalloc(size_t num, size_t size);
 #endif
 //#define MBEDTLS_ARIA_ALT
 //#define MBEDTLS_CAMELLIA_ALT
-#ifndef QEMU
-#define MBEDTLS_CCM_ALT
-#define MBEDTLS_CCM_CRYPT_ALT
-#define MBEDTLS_AES_CRYPT_ALT
-#endif
+/* Hardware AES_CCM driver does unaligned uint32_t reads in
+ * AES_ReadWordFromArray(); commissioning passes byte-aligned (offset != 0)
+ * payload pointers via crypto.AES_CCM.encrypt1/decrypt1, which faults on
+ * Cortex-M4. Use software CCM instead until the HW driver is fixed. */
+/* #define MBEDTLS_CCM_ALT */
+/* #define MBEDTLS_CCM_CRYPT_ALT */
+/* #define MBEDTLS_AES_CRYPT_ALT */
 
 //#define MBEDTLS_CHACHA20_ALT
 //#define MBEDTLS_CHACHAPOLY_ALT
@@ -2731,7 +2733,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *           and at least one MBEDTLS_ECP_DP_XXX_ENABLED for a
  *           short Weierstrass curve.
  */
-//#define MBEDTLS_ECDSA_C
+#define MBEDTLS_ECDSA_C
 
 /**
  * \def MBEDTLS_ECJPAKE_C
@@ -2837,7 +2839,7 @@ void *pvPortCalloc(size_t num, size_t size);
  *
  * Uncomment to enable the HMAC_DRBG random number generator.
  */
-//#define MBEDTLS_HMAC_DRBG_C
+#define MBEDTLS_HMAC_DRBG_C
 
 /**
  * \def MBEDTLS_LMS_C

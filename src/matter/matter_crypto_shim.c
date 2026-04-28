@@ -26,9 +26,12 @@
 
 #include "app_logging.h"
 #define MATTER_LOG(fmt, ...) LogInfo(("[MATTER] " fmt, ##__VA_ARGS__))
+#include "be_class.h"
 #include "be_mapping.h"
 #include "be_module.h"
+#include "be_object.h"
 #include "be_string.h"
+#include "be_vector.h"
 #include "berry.h"
 #include "mbedtls/ccm.h"
 #include "mbedtls/ctr_drbg.h"
@@ -52,6 +55,10 @@ int mbedtls_ccm_update(mbedtls_ccm_context* ctx, const unsigned char* input,
 }
 #endif
 #include "app_crypto.h"
+#include "mbedtls/asn1.h"
+#include "mbedtls/asn1write.h"
+#include "mbedtls/ecdh.h"
+#include "mbedtls/ecdsa.h"
 #include "mbedtls/ecp.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/hkdf.h"
@@ -401,6 +408,204 @@ static int crypto_ec_p256_muladd(bvm* vm) {
     be_return(vm);
 }
 
+/* shared_key(priv:bytes(32), pub:bytes(65)) -> bytes(32). ECDH: returns the
+ * X coordinate of priv * pub. */
+static int crypto_ec_p256_shared_key(bvm* vm) {
+    be_getmember(vm, 1, ".p");
+    crypto_ec_p256_t* ec = (crypto_ec_p256_t*)be_tocomptr(vm, -1);
+    be_pop(vm, 1);
+    if (!ec) be_return_nil(vm);
+
+    size_t priv_len, pub_len;
+    const unsigned char* priv_buf =
+        (const unsigned char*)be_tobytes(vm, 2, &priv_len);
+    const unsigned char* pub_buf =
+        (const unsigned char*)be_tobytes(vm, 3, &pub_len);
+    if (!priv_buf || !pub_buf) be_return_nil(vm);
+
+    mbedtls_mpi d, z;
+    mbedtls_ecp_point Q;
+    mbedtls_mpi_init(&d);
+    mbedtls_mpi_init(&z);
+    mbedtls_ecp_point_init(&Q);
+
+    int ret = mbedtls_mpi_read_binary(&d, priv_buf, priv_len);
+    if (ret == 0)
+        ret = mbedtls_ecp_point_read_binary(&ec->grp, &Q, pub_buf, pub_len);
+    if (ret == 0)
+        ret = mbedtls_ecdh_compute_shared(&ec->grp, &z, &Q, &d,
+                                          mbedtls_ctr_drbg_random,
+                                          app_get_global_drbg());
+
+    unsigned char out[32] = {0};
+    if (ret == 0) ret = mbedtls_mpi_write_binary(&z, out, 32);
+
+    mbedtls_mpi_free(&d);
+    mbedtls_mpi_free(&z);
+    mbedtls_ecp_point_free(&Q);
+
+    if (ret != 0) be_return_nil(vm);
+    be_pushbytes(vm, out, 32);
+    be_return(vm);
+}
+
+/* Internal: compute SHA256(msg) and ECDSA-sign it with priv key, returning the
+ * raw (r,s) MPIs for the caller to serialize. Returns 0 on success. */
+static int ecdsa_sign_hashed(crypto_ec_p256_t* ec, const unsigned char* priv,
+                             size_t priv_len, const unsigned char* msg,
+                             size_t msg_len, mbedtls_mpi* r, mbedtls_mpi* s) {
+    unsigned char hash[32];
+    int ret = mbedtls_sha256(msg, msg_len, hash, 0);
+    if (ret != 0) return ret;
+    mbedtls_mpi d;
+    mbedtls_mpi_init(&d);
+    ret = mbedtls_mpi_read_binary(&d, priv, priv_len);
+    if (ret == 0)
+        ret =
+            mbedtls_ecdsa_sign(&ec->grp, r, s, &d, hash, sizeof(hash),
+                               mbedtls_ctr_drbg_random, app_get_global_drbg());
+    mbedtls_mpi_free(&d);
+    return ret;
+}
+
+/* ecdsa_sign_sha256(priv:bytes(32), msg:bytes()) -> bytes(64). Returns the
+ * raw r||s P-256 ECDSA signature over SHA256(msg). */
+static int crypto_ec_p256_ecdsa_sign_sha256(bvm* vm) {
+    be_getmember(vm, 1, ".p");
+    crypto_ec_p256_t* ec = (crypto_ec_p256_t*)be_tocomptr(vm, -1);
+    be_pop(vm, 1);
+    if (!ec) be_return_nil(vm);
+
+    size_t priv_len, msg_len;
+    const unsigned char* priv =
+        (const unsigned char*)be_tobytes(vm, 2, &priv_len);
+    const unsigned char* msg =
+        (const unsigned char*)be_tobytes(vm, 3, &msg_len);
+    if (!priv || !msg) be_return_nil(vm);
+
+    mbedtls_mpi r, s;
+    mbedtls_mpi_init(&r);
+    mbedtls_mpi_init(&s);
+    int ret = ecdsa_sign_hashed(ec, priv, priv_len, msg, msg_len, &r, &s);
+    unsigned char out[64];
+    if (ret == 0) ret = mbedtls_mpi_write_binary(&r, out, 32);
+    if (ret == 0) ret = mbedtls_mpi_write_binary(&s, out + 32, 32);
+    mbedtls_mpi_free(&r);
+    mbedtls_mpi_free(&s);
+    if (ret != 0) be_return_nil(vm);
+    be_pushbytes(vm, out, 64);
+    be_return(vm);
+}
+
+/* ecdsa_sign_sha256_asn1(priv:bytes(32), msg:bytes()) -> bytes. ASN.1 DER
+ * encoded SEQUENCE { INTEGER r, INTEGER s }. */
+static int crypto_ec_p256_ecdsa_sign_sha256_asn1(bvm* vm) {
+    be_getmember(vm, 1, ".p");
+    crypto_ec_p256_t* ec = (crypto_ec_p256_t*)be_tocomptr(vm, -1);
+    be_pop(vm, 1);
+    if (!ec) be_return_nil(vm);
+
+    size_t priv_len, msg_len;
+    const unsigned char* priv =
+        (const unsigned char*)be_tobytes(vm, 2, &priv_len);
+    const unsigned char* msg =
+        (const unsigned char*)be_tobytes(vm, 3, &msg_len);
+    if (!priv || !msg) be_return_nil(vm);
+
+    mbedtls_mpi r, s;
+    mbedtls_mpi_init(&r);
+    mbedtls_mpi_init(&s);
+    int ret = ecdsa_sign_hashed(ec, priv, priv_len, msg, msg_len, &r, &s);
+
+    /* Encode r,s as ASN.1 DER. mbedtls_asn1_write_* functions write backwards
+     * from the end of the buffer. Max P-256 sig: tag(1)+len(1)+9*2+32*2 ~ 72.
+     */
+    unsigned char buf[80];
+    unsigned char* p = buf + sizeof(buf);
+    int len = 0;
+    if (ret == 0) {
+        int n = mbedtls_asn1_write_mpi(&p, buf, &s);
+        if (n < 0)
+            ret = n;
+        else
+            len += n;
+    }
+    if (ret == 0) {
+        int n = mbedtls_asn1_write_mpi(&p, buf, &r);
+        if (n < 0)
+            ret = n;
+        else
+            len += n;
+    }
+    if (ret == 0) {
+        int n = mbedtls_asn1_write_len(&p, buf, len);
+        if (n < 0)
+            ret = n;
+        else
+            len += n;
+    }
+    if (ret == 0) {
+        int n = mbedtls_asn1_write_tag(
+            &p, buf, MBEDTLS_ASN1_CONSTRUCTED | MBEDTLS_ASN1_SEQUENCE);
+        if (n < 0)
+            ret = n;
+        else
+            len += n;
+    }
+    mbedtls_mpi_free(&r);
+    mbedtls_mpi_free(&s);
+    if (ret != 0) be_return_nil(vm);
+    be_pushbytes(vm, p, len);
+    be_return(vm);
+}
+
+/* ecdsa_verify_sha256(pub:bytes(65), msg:bytes(), sig:bytes(64)) -> bool.
+ * Verifies a raw r||s signature over SHA256(msg) under the given public key. */
+static int crypto_ec_p256_ecdsa_verify_sha256(bvm* vm) {
+    be_getmember(vm, 1, ".p");
+    crypto_ec_p256_t* ec = (crypto_ec_p256_t*)be_tocomptr(vm, -1);
+    be_pop(vm, 1);
+    if (!ec) {
+        be_pushbool(vm, bfalse);
+        be_return(vm);
+    }
+
+    size_t pub_len, msg_len, sig_len;
+    const unsigned char* pub =
+        (const unsigned char*)be_tobytes(vm, 2, &pub_len);
+    const unsigned char* msg =
+        (const unsigned char*)be_tobytes(vm, 3, &msg_len);
+    const unsigned char* sig =
+        (const unsigned char*)be_tobytes(vm, 4, &sig_len);
+    if (!pub || !msg || !sig || sig_len != 64) {
+        be_pushbool(vm, bfalse);
+        be_return(vm);
+    }
+
+    unsigned char hash[32];
+    int ret = mbedtls_sha256(msg, msg_len, hash, 0);
+
+    mbedtls_ecp_point Q;
+    mbedtls_mpi r, s;
+    mbedtls_ecp_point_init(&Q);
+    mbedtls_mpi_init(&r);
+    mbedtls_mpi_init(&s);
+
+    if (ret == 0)
+        ret = mbedtls_ecp_point_read_binary(&ec->grp, &Q, pub, pub_len);
+    if (ret == 0) ret = mbedtls_mpi_read_binary(&r, sig, 32);
+    if (ret == 0) ret = mbedtls_mpi_read_binary(&s, sig + 32, 32);
+    if (ret == 0)
+        ret = mbedtls_ecdsa_verify(&ec->grp, hash, sizeof(hash), &Q, &r, &s);
+
+    mbedtls_ecp_point_free(&Q);
+    mbedtls_mpi_free(&r);
+    mbedtls_mpi_free(&s);
+
+    be_pushbool(vm, ret == 0 ? btrue : bfalse);
+    be_return(vm);
+}
+
 /* AES_CCM with the Tasmota Berry surface that Matter uses:
  *   - constructor: AES_CCM(key, iv, aad, data_len, tag_len) -> instance
  *   - instance.encrypt(data) -> ciphertext (encrypted in one shot)
@@ -625,6 +830,10 @@ int be_load_crypto_module(bvm* vm) {
         {"mod", crypto_ec_p256_mod},
         /* public_key(priv) = priv * G, which is exactly what mul() computes. */
         {"public_key", crypto_ec_p256_mul},
+        {"shared_key", crypto_ec_p256_shared_key},
+        {"ecdsa_sign_sha256", crypto_ec_p256_ecdsa_sign_sha256},
+        {"ecdsa_sign_sha256_asn1", crypto_ec_p256_ecdsa_sign_sha256_asn1},
+        {"ecdsa_verify_sha256", crypto_ec_p256_ecdsa_verify_sha256},
         {NULL, NULL}};
     be_regclass(vm, "EC_P256", ec_members);
 
@@ -681,14 +890,21 @@ int be_load_crypto_module(bvm* vm) {
         {NULL, NULL}};
     be_regclass(vm, "AES_CCM", aes_ccm_members);
     be_getglobal(vm, "AES_CCM");
-    /* Attach static encrypt1/decrypt1 to the class object itself for the
-     * `crypto.AES_CCM.encrypt1(...)` Matter_Message.be call form. */
-    be_pushntvfunction(vm, crypto_aes_ccm_encrypt1);
-    be_setmember(vm, -2, "encrypt1");
-    be_pop(vm, 1);
-    be_pushntvfunction(vm, crypto_aes_ccm_decrypt1);
-    be_setmember(vm, -2, "decrypt1");
-    be_pop(vm, 1);
+    /* Attach encrypt1/decrypt1 to the AES_CCM class for Matter_Message.be's
+     * `crypto.AES_CCM.encrypt1(...)` / `decrypt1(...)` call form. We use
+     * be_class_native_method_bind here rather than be_setmember because the
+     * latter requires the member to already exist (be_class_setmember only
+     * updates, never inserts) and silently no-ops otherwise — leaving the
+     * post-PASE encrypted-message decode failing with "no static attribute
+     * 'decrypt1'" as soon as commissioning leaves the SPAKE2+ phase. */
+    {
+        bvalue* slot = be_indexof(vm, -1);
+        bclass* aes_cls = var_toobj(slot);
+        be_class_native_method_bind(vm, aes_cls, be_newstr(vm, "encrypt1"),
+                                    crypto_aes_ccm_encrypt1);
+        be_class_native_method_bind(vm, aes_cls, be_newstr(vm, "decrypt1"),
+                                    crypto_aes_ccm_decrypt1);
+    }
     be_setmember(vm, -2, "AES_CCM");
     be_pop(vm, 1);
 
