@@ -51,14 +51,13 @@ int mbedtls_ccm_update(mbedtls_ccm_context* ctx, const unsigned char* input,
     return -1;
 }
 #endif
+#include "app_crypto.h"
 #include "mbedtls/ecp.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/hkdf.h"
 #include "mbedtls/md.h"
 #include "mbedtls/pkcs5.h"
 #include "mbedtls/sha256.h"
-
-static mbedtls_ctr_drbg_context ctr_drbg;
 
 /* SHA256 / HMAC_SHA256 are exposed as classes in Tasmota — Berry code uses
  * `crypto.SHA256().update(d).update(d2).out()` (incremental). The one-shot
@@ -222,7 +221,7 @@ static int crypto_random(bvm* vm) {
     if (size <= 0) be_return_nil(vm);
 
     unsigned char* buf = (unsigned char*)be_pushbytes(vm, NULL, size);
-    if (mbedtls_ctr_drbg_random(&ctr_drbg, buf, size) != 0) {
+    if (mbedtls_ctr_drbg_random(app_get_global_drbg(), buf, size) != 0) {
         be_pop(vm, 1);
         be_return_nil(vm);
     }
@@ -324,7 +323,7 @@ static int crypto_ec_p256_mul(bvm* vm) {
     }
     if (ret == 0) {
         ret = mbedtls_ecp_mul(&ec->grp, &Q, &d, &P, mbedtls_ctr_drbg_random,
-                              &ctr_drbg);
+                              app_get_global_drbg());
     }
 
     unsigned char out[65];
@@ -611,24 +610,10 @@ static int crypto_ec_p256_neg(bvm* vm) {
     be_return(vm);
 }
 
-extern int internal_entropy_poll(void* data, unsigned char* output, size_t len,
-                                 size_t* olen);
-static int entropy_wrapper(void* data, unsigned char* output, size_t len) {
-    size_t olen;
-    return internal_entropy_poll(data, output, len, &olen);
-}
-
 /*
  * Runtime loader called by VM initialization
  */
 int be_load_crypto_module(bvm* vm) {
-    // initialize RNG
-    mbedtls_ctr_drbg_init(&ctr_drbg);
-    int ret = mbedtls_ctr_drbg_seed(&ctr_drbg, entropy_wrapper, NULL, NULL, 0);
-    if (ret != 0) {
-        for (;;);
-    }
-
     // register EC_P256 class
     static const bnfuncinfo ec_members[] = {
         {".p", NULL}, /* Storage for comptr */

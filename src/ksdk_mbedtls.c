@@ -6,6 +6,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+#include "app_crypto.h"
 #include "entropy_poll.h"
 #include "fsl_common.h"
 #include "mbedtls/build_info.h"
@@ -114,6 +115,11 @@ void mbedtls_hardware_init_hash(uint8_t* entropy, size_t len) {
 
     s_hashLen = MIN(len, SHA256_HASH_SIZE);
     memcpy(s_hashBuf, entropy, s_hashLen);
+}
+
+mbedtls_ctr_drbg_context* app_get_global_drbg(void) {
+    internal_entropy_ctr_drbg_setup();
+    return &s_internalMbedtlsGdata.ctrDrbg;
 }
 
 #if USE_RTOS && defined(FSL_RTOS_FREE_RTOS) && \

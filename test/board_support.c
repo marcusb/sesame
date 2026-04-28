@@ -9,7 +9,6 @@
 #include "board.h"
 #include "clock_config.h"
 #include "ksdk_mbedtls.h"
-#include "mbedtls/ctr_drbg.h"
 #include "mbedtls/entropy.h"
 #include "pin_mux.h"
 #include "queue.h"
@@ -18,7 +17,6 @@
 /* Global symbols referenced by modules under test */
 QueueHandle_t ctrl_queue;
 void* psm_hnd = NULL;
-mbedtls_ctr_drbg_context ctr_drbg;
 
 /* ---- Heap setup (mirrors main.c) ---- */
 
@@ -64,15 +62,6 @@ void* __wrap_sbrk(int incr) {
     return (void*)-1;
 }
 
-#include "mbedtls/ctr_drbg.h"
-
-extern int internal_entropy_poll(void* data, unsigned char* output, size_t len,
-                                 size_t* olen);
-static int entropy_wrapper(void* data, unsigned char* output, size_t len) {
-    size_t olen;
-    return internal_entropy_poll(data, output, len, &olen);
-}
-
 void board_init(void) {
     /* Minimal init for QEMU debugging */
     setvbuf(stdout, NULL, _IOLBF, 256);
@@ -80,10 +69,6 @@ void board_init(void) {
     /* Initialize dummy entropy for tests */
     uint8_t dummy_hash[32] = {0x42};
     mbedtls_hardware_init_hash(dummy_hash, sizeof(dummy_hash));
-
-    /* Initialize global RNG for tests */
-    mbedtls_ctr_drbg_init(&ctr_drbg);
-    mbedtls_ctr_drbg_seed(&ctr_drbg, entropy_wrapper, NULL, NULL, 0);
 
     setup_heap();
 }

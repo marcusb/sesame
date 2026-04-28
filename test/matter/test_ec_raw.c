@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include "FreeRTOS.h"
+#include "app_crypto.h"
 #include "board_support.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/ecp.h"
@@ -28,7 +29,7 @@ void test_mbedtls_ec_p256_mul_raw(void) {
     mbedtls_mpi_read_binary(&d, scalar_buf, sizeof(scalar_buf));
 
     ret = mbedtls_ecp_mul(&grp, &Q, &d, &grp.G, mbedtls_ctr_drbg_random,
-                          &ctr_drbg);
+                          app_get_global_drbg());
     TEST_ASSERT_EQUAL(0, ret);
 
     /* Now try full 256-bit scalar */
@@ -36,7 +37,7 @@ void test_mbedtls_ec_p256_mul_raw(void) {
     mbedtls_mpi_read_binary(&d, scalar_buf, sizeof(scalar_buf));
 
     ret = mbedtls_ecp_mul(&grp, &Q, &d, &grp.G, mbedtls_ctr_drbg_random,
-                          &ctr_drbg);
+                          app_get_global_drbg());
     TEST_ASSERT_EQUAL(0, ret);
 
     mbedtls_ecp_group_free(&grp);

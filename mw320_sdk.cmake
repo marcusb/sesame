@@ -421,6 +421,7 @@ target_include_directories(mw320_mbedtls_port
     "${mbedtls_SOURCE_DIR}/library"
     "${mbedtls_SOURCE_DIR}/include"
     "${mw320_sdk_dir}/middleware/mbedtls/port/mw"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 target_sources(mw320_mbedtls_port
     PRIVATE

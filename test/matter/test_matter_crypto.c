@@ -4,9 +4,9 @@
 #include <string.h>
 
 #include "FreeRTOS.h"
+#include "app_crypto.h"
 #include "berry.h"
 #include "matter_test_utils.h"
-#include "mbedtls/ctr_drbg.h"
 #include "mbedtls/ecp.h"
 #include "mbedtls/entropy.h"
 #include "task.h"
