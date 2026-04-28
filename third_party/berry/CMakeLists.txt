@@ -93,6 +93,8 @@ target_compile_definitions(berry
     PUBLIC
     TASMOTA
     BERRY_MODULE_CONTINUE
+    BE_USE_MATH_MODULE=1
+    BE_USE_JSON_MODULE=1
 )
 
 if(CMAKE_CROSSCOMPILING)
