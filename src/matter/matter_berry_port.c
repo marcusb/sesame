@@ -11,7 +11,7 @@
 #include "FreeRTOS.h"
 #include "app_logging.h"
 #include "berry.h"
-#include "fsl_debug_console.h"
+#include "debug_console.h"
 #include "task.h"
 
 #if BE_USE_STRING_MODULE

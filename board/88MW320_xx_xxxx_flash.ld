@@ -19,9 +19,7 @@ _m_interrupts_length = 0x280;
 MEMORY
 {
   m_interrupts          (RX)  : ORIGIN = 0x1F000000, LENGTH = _m_interrupts_length
-  /* Matter + Berry build needs more flash than the original 0x90000 budget;
-   * the 4MB mcufw partition at 0x10000 has 0x190000 (1.6MB) available. */
-  m_text                (RX)  : ORIGIN = ORIGIN(m_interrupts) + _m_interrupts_length, LENGTH = 0x00100000 - _m_interrupts_length
+  m_text                (RX)  : ORIGIN = ORIGIN(m_interrupts) + _m_interrupts_length, LENGTH = 0x00200000 - _m_interrupts_length
   m_data0               (RW)  : ORIGIN = 0x00100000, LENGTH = 0x0005EFC0
   m_data1               (RW)  : ORIGIN = 0x20000000, LENGTH = 0x00020000
   m_nvram               (RW)  : ORIGIN = 0x480C0044, LENGTH = 0x00000FBC

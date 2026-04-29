@@ -225,9 +225,30 @@ mkdir build
 cd build
 cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Debug -DUSE_BACKTRACE=ON \
   -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake \
-  -G Ninja -Daxf2firmware_DIR=~/src/sesame/build-native ..
+  -G Ninja -Daxf2firmware_DIR=$(pwd)/../build-native ..
 ninja
 ```
+
+### QEMU Emulation
+
+You can run the full application in QEMU for development and testing without hardware.
+The QEMU build isolates board-dependent modules and uses semihosting for I/O.
+
+**1. Build the QEMU version:**
+```bash
+ninja -C build qemu_app
+```
+
+**2. Run in QEMU:**
+```bash
+qemu-system-arm -M mps2-an386 -nographic -semihosting \
+  -kernel build/qemu-app/sesame.axf \
+  -serial none -monitor none \
+  -net nic,model=lan9118 -net user,hostfwd=tcp::8080-:80
+```
+
+The QEMU build uses a local file `sesame_psm.bin` to persist configuration (PSM) across restarts.
+Networking is supported via QEMU's user-mode stack (SLIRP) with port forwarding.
 
 For hardware details see [this doc](docs/teardown.md).
 

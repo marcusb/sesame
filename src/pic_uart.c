@@ -8,7 +8,7 @@
 #include "task.h"
 
 // wmsdk
-#include "fsl_debug_console.h"
+#include "debug_console.h"
 #include "fsl_gpio.h"
 #include "fsl_uart.h"
 

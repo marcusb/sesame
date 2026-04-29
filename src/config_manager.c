@@ -1,7 +1,7 @@
 #include "app_logging.h"
 
 // wmsdk
-#include "psm-v2.h"
+#include "psm.h"
 
 // Application
 #include "app_config.pb.h"

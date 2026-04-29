@@ -10,6 +10,7 @@ set(mw320_sdk_dir "${CMAKE_CURRENT_LIST_DIR}/mw320_sdk")
 option(USE_QEMU "Build for QEMU emulation (stubs out hardware init)" OFF)
 if(USE_QEMU)
     add_compile_definitions(QEMU)
+    set(USE_BACKTRACE ON CACHE BOOL "Enable backtrace" FORCE)
 endif()
 
 option(BUILD_HOST_TESTS "Build host-based module tests (native build)" ON)
@@ -137,7 +138,11 @@ set(FREERTOS_HEAP "5" CACHE STRING "" FORCE)
 set(FREERTOS_PORT "GCC_ARM_CM4F" CACHE STRING "" FORCE)
 
 set(FREERTOS_PLUS_TCP_BUFFER_ALLOCATION "2" CACHE STRING "" FORCE)
-set(FREERTOS_PLUS_TCP_NETWORK_IF "A_CUSTOM_NETWORK_IF" CACHE STRING "" FORCE)
+if(USE_QEMU)
+    set(FREERTOS_PLUS_TCP_NETWORK_IF "MPS2_AN385" CACHE STRING "" FORCE)
+else()
+    set(FREERTOS_PLUS_TCP_NETWORK_IF "A_CUSTOM_NETWORK_IF" CACHE STRING "" FORCE)
+endif()
 
 FetchContent_Declare(freertos_plus_tcp
     GIT_REPOSITORY https://github.com/FreeRTOS/FreeRTOS-Plus-TCP.git
@@ -239,10 +244,12 @@ target_link_libraries(freertos_plus_transport
     freertos_plus_tcp
     logging)
 
-add_library(freertos_plus_tcp_network_if INTERFACE)
-target_link_libraries(freertos_plus_tcp_network_if
-    INTERFACE
-    mw320_wlcmgr)
+if(NOT TARGET freertos_plus_tcp_network_if)
+    add_library(freertos_plus_tcp_network_if INTERFACE)
+    target_link_libraries(freertos_plus_tcp_network_if
+        INTERFACE
+        mw320_wlcmgr)
+endif()
 
 # -------------------------------------------------------------------------------------------------
 # Other libraries
@@ -386,25 +393,45 @@ target_link_libraries(board
 add_subdirectory(third_party)
 add_subdirectory(src/matter)
 
-set(app_sources
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/dns_hook_default.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/gpio.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/mqtt.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/network_manager.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ota.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ota_client.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/pic_uart.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/pin_mux.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/time_util.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
-)
+if(USE_QEMU)
+    set(app_sources
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/dns_hook_default.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/qemu_main.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/qemu_psm.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/qemu_stubs.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/mqtt.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/time_util.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/qemu_vectors.c"
+    )
+else()
+    set(app_sources
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/dns_hook_default.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpio.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/board_main.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/mqtt.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/network_manager.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/ota.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/ota_client.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/pic_uart.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/pin_mux.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/time_util.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
+    )
+endif()
 
 add_library(app_deps INTERFACE)
 target_include_directories(app_deps
@@ -420,10 +447,13 @@ target_link_libraries(app_deps
     freertos_plus_tcp_network_if
     mbedcrypto
     mw320_sdk
-    board
     logging
     backoff_algorithm
     proto)
+
+if(NOT USE_QEMU)
+    target_link_libraries(app_deps INTERFACE board)
+endif()
 
 if (USE_BACKTRACE)
     target_link_libraries(app_deps INTERFACE backtrace)
@@ -451,11 +481,20 @@ set(exe_target sesame)
 set(exe_target_ram "${exe_target}_ram")
 set(CMAKE_EXECUTABLE_SUFFIX ".axf")
 
-set(common_exe_sources
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/libc_wrappers.c"
-)
+if(USE_QEMU)
+    set(USE_BACKTRACE ON)
+    set(common_exe_sources
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/libc_wrappers.c"
+    )
+else()
+    set(common_exe_sources
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/hardfault_irq.S"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/libc_wrappers.c"
+    )
+endif()
 
 # Flash version (with Matter)
 add_executable("${exe_target}")
@@ -472,8 +511,12 @@ target_link_options("${exe_target}" PRIVATE
     "LINKER:--no-whole-archive"
     "LINKER:--end-group"
     "-Wl,-Map,${exe_target}.map"
-    "-T${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_flash.ld"
 )
+if(USE_QEMU)
+    target_link_options("${exe_target}" PRIVATE "-T${CMAKE_CURRENT_SOURCE_DIR}/board/qemu.ld" "--oslib=semihost")
+else()
+    target_link_options("${exe_target}" PRIVATE "-T${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_flash.ld")
+endif()
 
 # RAM version (without Matter)
 add_executable("${exe_target_ram}")
@@ -482,8 +525,12 @@ target_compile_definitions("${exe_target_ram}" PRIVATE SESAME_ENABLE_MATTER=0)
 target_link_libraries("${exe_target_ram}" PRIVATE app_deps)
 target_link_options("${exe_target_ram}" PRIVATE
     "-Wl,-Map,${exe_target_ram}.map"
-    "-T${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld"
 )
+if(USE_QEMU)
+    target_link_options("${exe_target_ram}" PRIVATE "-T${CMAKE_CURRENT_SOURCE_DIR}/board/qemu.ld" "--oslib=semihost")
+else()
+    target_link_options("${exe_target_ram}" PRIVATE "-T${CMAKE_CURRENT_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")
+endif()
 
 add_subdirectory(test)
 
@@ -499,6 +546,22 @@ ExternalProject_Add(host_tests
     INSTALL_COMMAND ""
     BUILD_ALWAYS    TRUE
 )
+
+if(NOT USE_QEMU)
+    ExternalProject_Add(qemu_app
+        SOURCE_DIR      "${CMAKE_SOURCE_DIR}"
+        BINARY_DIR      "${CMAKE_BINARY_DIR}/qemu-app"
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND
+            "${CMAKE_COMMAND}" -G Ninja -DUSE_QEMU=ON -DUSE_BACKTRACE=ON -DCMAKE_BUILD_TYPE=Debug
+                -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+                -Daxf2firmware_DIR=${axf2firmware_DIR}
+                -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/qemu-app"
+            COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/qemu-app" --target sesame
+        INSTALL_COMMAND ""
+        BUILD_ALWAYS    TRUE
+    )
+endif()
 
 add_custom_command(
     TARGET ${exe_target} POST_BUILD

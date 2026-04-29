@@ -66,7 +66,11 @@ add_library(matter_test_support OBJECT
     "${CMAKE_SOURCE_DIR}/src/time_util.c")
 
 if(USE_QEMU)
-    target_sources(matter_test_support PRIVATE qemu_vectors.c stubs/stub_fsl_uart.c)
+    target_sources(matter_test_support PRIVATE 
+        qemu_vectors.c 
+        stubs/stub_fsl_uart.c
+        "${CMAKE_SOURCE_DIR}/src/hardfault.c"
+        "${CMAKE_SOURCE_DIR}/src/hardfault_irq.S")
 endif()
 
 target_include_directories(matter_test_support PUBLIC
@@ -94,33 +98,36 @@ target_link_libraries(matter_test_support PUBLIC
 # Common ARM link options for tests
 add_compile_definitions(SDK_DEBUGCONSOLE=0)
 
+set(ARM_TEST_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")
+if(USE_QEMU)
+    set(ARM_TEST_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/board/qemu.ld")
+endif()
+
 macro(add_matter_test_binary name source)
     add_executable(${name} "matter/${source}" $<TARGET_OBJECTS:matter_test_support>)
     target_link_libraries(${name} PRIVATE globals matter_test_support)
 
-    set(ARM_TEST_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")
-    if(USE_QEMU)
-        set(ARM_TEST_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/board/qemu.ld")
-    endif()
-
     target_link_options(${name} PRIVATE
         ${ARM_TEST_LINK_OPTIONS}
-        "-Wl,--wrap,UART_TransferReceiveNonBlocking"
-        "-Wl,--wrap,UART_TransferAbortReceive"
         "-T${ARM_TEST_LINKER_SCRIPT}"
         "-Wl,-Map,${name}.map")
+    if(USE_QEMU)
+        target_link_options(${name} PRIVATE
+            "-Wl,--wrap,UART_TransferReceiveNonBlocking"
+            "-Wl,--wrap,UART_TransferAbortReceive")
+    endif()
 endmacro()
 
 # matter_crypto_tests still overflows the on-target ram.ld linker region
-# (88MW320_xx_xxxx_ram.ld) once the full crypto shim is linked in.  QEMU has
-# 1MB of RAM, so build the suite there and skip it on hardware.
+# (88MW320_xx_xxxx_ram.ld) once the full crypto shim is linked in,
+# so only build these for QEMU.
 if(USE_QEMU)
     add_matter_test_binary(matter_crypto_tests test_matter_crypto.c)
+    add_matter_test_binary(matter_ec_raw_tests test_ec_raw.c)
+    add_matter_test_binary(matter_mdns_tests test_matter_mdns.c)
+    add_matter_test_binary(matter_sesame_tests test_matter_sesame.c)
+    add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c)
 endif()
-add_matter_test_binary(matter_ec_raw_tests test_ec_raw.c)
-add_matter_test_binary(matter_mdns_tests test_matter_mdns.c)
-add_matter_test_binary(matter_sesame_tests test_matter_sesame.c)
-add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c)
 
 # ---------------------------------------------------------------------------
 # sesame_tests – main unit test runner
@@ -139,7 +146,11 @@ set(SESAME_TEST_SOURCES
     "${CMAKE_SOURCE_DIR}/src/idle_task.c")
 
 if(USE_QEMU)
-    list(APPEND SESAME_TEST_SOURCES qemu_vectors.c stubs/stub_fsl_uart.c)
+    list(APPEND SESAME_TEST_SOURCES 
+        qemu_vectors.c 
+        stubs/stub_fsl_uart.c
+        "${CMAKE_SOURCE_DIR}/src/hardfault.c"
+        "${CMAKE_SOURCE_DIR}/src/hardfault_irq.S")
 endif()
 
 add_executable(sesame_tests ${SESAME_TEST_SOURCES})
@@ -173,8 +184,12 @@ endif()
 target_link_options(sesame_tests
     PRIVATE
     ${ARM_TEST_LINK_OPTIONS}
-    "-Wl,--wrap,UART_TransferReceiveNonBlocking"
-    "-Wl,--wrap,UART_TransferAbortReceive"
     "-Wl,-Map,sesame_tests.map"
     "-T${ARM_TEST_LINKER_SCRIPT}"
 )
+if(USE_QEMU)
+    target_link_options(sesame_tests
+        PRIVATE
+        "-Wl,--wrap,UART_TransferReceiveNonBlocking"
+        "-Wl,--wrap,UART_TransferAbortReceive")
+endif()

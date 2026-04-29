@@ -1,5 +1,11 @@
-#include "fsl_debug_console.h"
+#include "debug_console.h"
+#ifdef QEMU
+#include "FreeRTOS.h"
+#include "fsl_common.h"
+#include "task.h"
+#else
 #include "wm_os.h"
+#endif
 
 #ifdef USE_BACKTRACE
 #include "backtrace.h"
@@ -37,8 +43,8 @@ struct callee_registers {
 };
 
 __attribute__((__used__)) void HardFault_IRQHandler_C(
-    const struct fault_frame *fault_frame,
-    const struct callee_registers *callee_registers,
+    const struct fault_frame* fault_frame,
+    const struct callee_registers* callee_registers,
     uint32_t exception_return) {
     PRINTF("\r\n***Hard fault***\r\n");
 #ifdef USE_BACKTRACE
@@ -62,29 +68,31 @@ __attribute__((__used__)) void HardFault_IRQHandler_C(
         "\r\nr0  = 0x%08x\r\nr1  = 0x%08x\r\nr2  = 0x%08x\r\n"
         "r3  = 0x%08x\r\nr12 = 0x%08x\r\nlr = 0x%08x\r\npc = 0x%08x"
         "\r\npsr = 0x%08x\r\n",
-        fault_frame->r0, fault_frame->r1, fault_frame->r2, fault_frame->r3,
-        fault_frame->IP, fault_frame->LR, fault_frame->PC, fault_frame->PSR);
+        (unsigned int)fault_frame->r0, (unsigned int)fault_frame->r1,
+        (unsigned int)fault_frame->r2, (unsigned int)fault_frame->r3,
+        (unsigned int)fault_frame->IP, (unsigned int)fault_frame->LR,
+        (unsigned int)fault_frame->PC, (unsigned int)fault_frame->PSR);
 
     PRINTF("Task name: %s\r\n", pcTaskGetName(NULL));
 
     uint32_t hfsr = SCB->HFSR;
-    PRINTF("HFSR: 0x%08x\r\n", hfsr);
+    PRINTF("HFSR: 0x%08x\r\n", (unsigned int)hfsr);
     if (hfsr & SCB_HFSR_FORCED_Msk) {
         hfsr = SCB->CFSR;
-        PRINTF("CFSR: 0x%08x\r\n", hfsr);
-        PRINTF("MMSR: 0x%02x\r\n", hfsr & 0xff);
+        PRINTF("CFSR: 0x%08x\r\n", (unsigned int)hfsr);
+        PRINTF("MMSR: 0x%02x\r\n", (unsigned int)(hfsr & 0xff));
 
         // if MMARVALID bit is set, read the address that caused the fault
         if (hfsr & SCB_CFSR_MEMFAULTSR_Msk) {
-            PRINTF("MMAR : 0x%08x\r\n", SCB->MMFAR);
+            PRINTF("MMAR : 0x%08x\r\n", (unsigned int)SCB->MMFAR);
         }
-        PRINTF("BFSR: 0x%02x\r\n", (hfsr >> 8) & 0xff);
+        PRINTF("BFSR: 0x%02x\r\n", (unsigned int)((hfsr >> 8) & 0xff));
 
         // if BFARVALID bit is set, read the address that caused the fault
         if (hfsr & SCB_CFSR_BUSFAULTSR_Msk) {
-            PRINTF("BFAR: 0x%08x\r\n", SCB->BFAR);
+            PRINTF("BFAR: 0x%08x\r\n", (unsigned int)SCB->BFAR);
         }
-        PRINTF("UFSR: 0x%04x\r\n", hfsr >> 16);
+        PRINTF("UFSR: 0x%04x\r\n", (unsigned int)(hfsr >> 16));
     }
     for (;;);
 }

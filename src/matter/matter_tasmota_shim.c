@@ -7,7 +7,7 @@
 #include "FreeRTOS_IP.h"
 #include "FreeRTOS_Sockets.h"
 #include "app_logging.h"
-#include "fsl_debug_console.h"
+#include "debug_console.h"
 #undef LOG_INFO
 #undef LOG_ERROR
 #undef LOG_WARN
@@ -24,7 +24,7 @@
 #include "be_vm.h"
 #include "controller.h"
 #include "matter_mdns.h"
-#include "psm-v2.h"
+#include "psm.h"
 #include "queue.h"
 #include "task.h"
 

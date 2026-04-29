@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "FreeRTOS.h"
-#include "fsl_debug_console.h"
+#include "debug_console.h"
 #ifdef USE_BACKTRACE
 #include "backtrace.h"
 #endif
@@ -64,25 +64,34 @@ void* __wrap_realloc(void* ptr, size_t size) {
     return pvPortReAlloc(ptr, size);
 }
 
-#if SDK_DEBUGCONSOLE
+#if SDK_DEBUGCONSOLE || defined(QEMU)
 int __wrap_printf(const char* format, ...) {
-    char buf[256];
     va_list ap;
     va_start(ap, format);
+#if defined(QEMU)
+    extern int __real_vprintf(const char* format, va_list ap);
+    int ret = vprintf(format, ap);
+#else
+    char buf[256];
     int ret = vsnprintf(buf, sizeof(buf), format, ap);
-    va_end(ap);
     DbgConsole_Printf("%s", buf);
+#endif
+    va_end(ap);
     return ret;
 }
 
 int __wrap_fprintf(FILE* stream, const char* format, ...) {
-    (void)stream;
-    char buf[256];
     va_list ap;
     va_start(ap, format);
+#if defined(QEMU)
+    int ret = vfprintf(stream, format, ap);
+#else
+    (void)stream;
+    char buf[256];
     int ret = vsnprintf(buf, sizeof(buf), format, ap);
-    va_end(ap);
     DbgConsole_Printf("%s", buf);
+#endif
+    va_end(ap);
     return ret;
 }
 
@@ -90,7 +99,11 @@ __attribute__((noreturn)) void _exit(int status) {
     (void)status;
     portDISABLE_INTERRUPTS();
     for (;;) {
+#if defined(QEMU)
+        __asm__ volatile("bkpt #0");
+#else
         __BKPT(0);
+#endif
     }
 }
 
@@ -116,7 +129,11 @@ __attribute__((noreturn)) void __assert_func(const char* file, int line,
 #endif
     portDISABLE_INTERRUPTS();
     for (;;) {
+#if defined(QEMU)
+        __asm__ volatile("bkpt #0");
+#else
         __BKPT(0);
+#endif
     }
 }
 #endif

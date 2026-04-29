@@ -23,11 +23,16 @@ __attribute((section(".nvram_uninit"))) uint64_t rtc_ticks;
 __attribute((section(".nvram_uninit"))) static uint32_t rtc_sig;
 
 static void update_clock(TimerHandle_t timer) {
+#ifdef QEMU
+    rtc_ticks += 10000 << 10;  // 10 seconds worth of ticks
+#else
     rtc_ticks += (uint64_t)RTC_GetCounter(RTC) + RTC_UPD_CALIB;
     RTC_ResetTimer(RTC);
+#endif
 }
 
 void setup_rtc() {
+#ifndef QEMU
     // if RTC_SIG is found, it signifies a valid stored RTC count
     if (rtc_sig != RTC_SIG) {
         rtc_ticks = 0;
@@ -41,6 +46,7 @@ void setup_rtc() {
     EnableIRQ(RTC_IRQn);
     RTC_ResetTimer(RTC);
     RTC_StartTimer(RTC);
+#endif
 }
 
 void start_rtc_save(void) {
@@ -55,7 +61,11 @@ int gettimeofday(struct timeval* tv, void* tz) {
         return -1;
     }
 
+#ifdef QEMU
+    uint64_t ticks = rtc_ticks + ((uint64_t)xTaskGetTickCount() << 10) / 1000;
+#else
     uint64_t ticks = rtc_ticks + RTC_GetCounter(RTC);
+#endif
     tv->tv_sec = ticks >> 10;
     // 1 tick = 1/1024 ms = 1000/1024 us = 15625/16 us
     tv->tv_usec = ((ticks & 0x3ff) * 15625) >> 4;
@@ -71,7 +81,9 @@ long get_epoch_millis() {
 uint32_t ulApplicationTimeHook(void) { return get_epoch_millis() / 1000; }
 
 int hwrtc_time_set(time_t time) {
+#ifndef QEMU
     RTC_ResetTimer(RTC);
+#endif
     /// RTC runs at 1024 Hz
     rtc_ticks = (uint64_t)time << 10;
     return 0;

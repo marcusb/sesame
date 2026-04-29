@@ -7,18 +7,17 @@ extern void __StackTop(void);
 extern void SVC_Handler(void);
 extern void PendSV_Handler(void);
 extern void SysTick_Handler(void);
+extern void HardFault_Handler(void);
+extern void EthernetISR(void);
 
 /* Default handler for unexpected interrupts */
 void Default_Handler(void) {
-    printf("DEFAULT HANDLER\n");
+    uint32_t icsr = *(volatile uint32_t*)0xE000ED04;
+    printf("DEFAULT HANDLER for IRQ: %lu\n", icsr & 0xFF);
     while (1);
 }
 void NMI_Handler(void) {
     printf("NMI\n");
-    while (1);
-}
-void HardFault_Handler(void) {
-    printf("HARD FAULT\n");
     while (1);
 }
 void MemManage_Handler(void) {
@@ -34,7 +33,10 @@ void UsageFault_Handler(void) {
     while (1);
 }
 
-__attribute__((section(".isr_vector"))) void (*const __isr_vector[])(void) = {
+extern void EthernetISR(void);
+
+__attribute__((section(".isr_vector"))) void (*const __isr_vector[128])(
+    void) = {
     __StackTop,
     _start,
     NMI_Handler,
@@ -51,4 +53,41 @@ __attribute__((section(".isr_vector"))) void (*const __isr_vector[])(void) = {
     0,               /* Reserved */
     PendSV_Handler,
     SysTick_Handler,
+    /* IRQs */
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler, /* IRQ 12 */
+    EthernetISR,     /* IRQ 13 (Index 29) */
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
+    Default_Handler,
 };

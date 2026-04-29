@@ -41,6 +41,7 @@ cd build && cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Debug \
 ```sh
 ninja -C build                     # Build flash version
 ninja -C build sesame_ram.axf      # Build RAM-bootable version
+ninja -C build qemu_app            # Build QEMU version (in build/qemu-app/)
 ```
 
 **Build outputs:**
@@ -49,14 +50,15 @@ ninja -C build sesame_ram.axf      # Build RAM-bootable version
 - `sesame.bin` – Binary firmware image (for permanent flash)
 - `sesame_ram.axf` – ELF (RAM version, loads non-permanently via ramload.py)
 - `sesame.map`, `sesame_ram.map` – Linker map files (symbol addresses, memory layout)
+- `build/qemu-app/sesame.axf` – ELF (QEMU version)
 
 ## Project Architecture
 
 ### App framework and management
 
-1. **System startup** (`main.c`): Initializes heap, flash/config storage (PSM), logging, FreeRTOS scheduler
-2. **Network stack** (`network_manager.c`): Manages WiFi (STA mode or access point), DHCP, IPv4/IPv6
-3. **Configuration** (`config_manager.c`): Reads/writes protobuf config from flash partitions
+1. **System startup** (`main.c`): Initializes generic RTOS scheduler and app tasks. Hardware-specific initialization is handled in `board_main.c` (physical device) or `qemu_main.c` (QEMU).
+2. **Network stack** (`network_manager.c`): Manages WiFi on hardware. QEMU uses direct Ethernet initialization in `qemu_main.c`.
+3. **Configuration** (`config_manager.c`): Reads/writes protobuf config via `psm.h` abstraction.
 4. **Control interfaces**:
    - HTTP server (`httpd.c`) for REST API and device setup
    - MQTT agent (`mqtt.c`) for pub/sub commands and door status
@@ -65,16 +67,20 @@ ninja -C build sesame_ram.axf      # Build RAM-bootable version
 
 | Component                | File(s)                 | Purpose  |
 | ------------------------ | ----------------------- | -------------------- |
-| **App startup**          | `main.c`                | Initializes board, logging, FreeRTOS                                        |
-| **Network Manager**      | `network_manager.c`     | WiFi state machine, IP configuration (DHCP/static), connects tasks          |
+| **App startup**          | `main.c`                | Initializes generic app tasks, FreeRTOS                             |
+| **Board Entry**          | `board_main.c`          | Hardware-specific init, starts WiFi network manager                 |
+| **QEMU Entry**           | `qemu_main.c`           | QEMU-specific init, starts Ethernet driver via semihosting          |
+| **Network Manager**      | `network_manager.c`     | WiFi state machine, IP configuration (DHCP/static), hardware only   |
 | **HTTP Server**          | `httpd.c`               | Receives config and OTA requests via REST, protobuf payloads                |
 | **MQTT**                 | `mqtt.c`                | MQTT agent for pub/sub, topic structure, reconnection logic                 |
-| **Config Manager**       | `config_manager.c`      | Read/write AppConfig (network, MQTT, logging) stored in flash PSM partition |
-| **OTA**                  | `ota.c`, `ota_client.c` | Firmware download, partition management, A/B boot scheme                    |
-| **LEDs & Buttons**       | `leds.c`, `gpio.c`      | Status indicators, user input handling                                      |
-| **PIC comms**            | `pic_uart.c`            | Serial I/O with the PIC16 for door control and status                       |
-| **Logging**              | `logging.c`, `syslog.c` | Circular buffer logs, syslog facility                                       |
-| **Board-specific files** | `board/*`               | Flash layout, board config, ld scripts                                      |
+| **Config Manager**       | `config_manager.c`      | Read/write AppConfig (network, MQTT, logging) stored in PSM         |
+| **OTA**                  | `ota.c`, `ota_client.c` | Firmware download, partition management, hardware only              |
+| **LEDs & Buttons**       | `leds.c`, `gpio.c`      | Status indicators, user input handling, hardware only               |
+| **PIC comms**            | `pic_uart.c`            | Serial I/O with the PIC16 for door control and status, hardware only|
+| **Logging**              | `logging.c`, `syslog.c` | Circular buffer logs, syslog facility                               |
+| **Board-specific files** | `board/*`               | Flash layout, board config, ld scripts                             |
+| **QEMU Stubs**           | `qemu_stubs.c`          | Mocked peripherals for QEMU emulation                               |
+| **QEMU PSM**             | `qemu_psm.c`            | Persistent storage via semihosting file I/O                         |
 
 ### Task Hierarchy (FreeRTOS)
 

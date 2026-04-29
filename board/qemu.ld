@@ -8,7 +8,7 @@ FAULT_STACK_SIZE = 0x0400;
 MEMORY
 {
   m_interrupts          (RX)  : ORIGIN = 0x00000000, LENGTH = 0x00000400
-  m_text                (RX)  : ORIGIN = 0x00000400, LENGTH = 0x00080000
+  m_text                (RX)  : ORIGIN = 0x00000400, LENGTH = 0x00200000
   m_data                (RW)  : ORIGIN = 0x20000000, LENGTH = 0x00100000
 }
 
@@ -126,16 +126,17 @@ SECTIONS
   __end__ = ALIGN(__bss_end__, 8);
   PROVIDE(end = __end__);
   __HeapBase = __end__;
-  __HeapLimit = ORIGIN(m_data) + LENGTH(m_data) - STACK_SIZE - FAULT_STACK_SIZE;
+  __fault_stack = ORIGIN(m_data) + LENGTH(m_data);
+  __StackTop = __fault_stack - FAULT_STACK_SIZE;
+  __StackLimit = __StackTop - STACK_SIZE;
+  __HeapLimit = __StackLimit;
 
-  .stack __HeapLimit :
+  .stack __StackLimit :
   {
     . = ALIGN(8);
     . += STACK_SIZE;
-    __StackTop = .;
+    __StackTop_alias = .;
   } > m_data
-
-  __StackLimit = __StackTop - STACK_SIZE;
 
   /* picolibc and SDK symbols */
   PROVIDE(__data_start = __data_start__);

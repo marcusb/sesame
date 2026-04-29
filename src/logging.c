@@ -6,7 +6,7 @@
 #include "queue.h"
 
 // Application
-#include "fsl_debug_console.h"
+#include "debug_console.h"
 #include "logging.h"
 #include "string_util.h"
 
@@ -33,7 +33,7 @@ int register_log_backend(log_backend_func f) {
     return -1;
 }
 
-void logging_task(void *params) {
+void logging_task(void* params) {
     QueueHandle_t xQueue = (QueueHandle_t)params;
     log_msg_t log;
 
@@ -65,8 +65,8 @@ BaseType_t init_logging(uint16_t stack_size, UBaseType_t priority,
     return pdFAIL;
 }
 
-static void log_prepare(uint8_t log_level, const char *filename,
-                        size_t line_num, const char *fmt, va_list args) {
+static void log_prepare(uint8_t log_level, const char* filename,
+                        size_t line_num, const char* fmt, va_list args) {
     static unsigned long msg_id = 0;
 
     configASSERT(fmt != NULL);
@@ -74,8 +74,8 @@ static void log_prepare(uint8_t log_level, const char *filename,
     log_msg_t log = {++msg_id, log_level, filename, line_num,
                      xTaskGetTickCount()};
 
-    const char *task_name;
-    static const char *no_task = "-";
+    const char* task_name;
+    static const char* no_task = "-";
     if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
         task_name = pcTaskGetName(NULL);
     } else {
@@ -93,13 +93,13 @@ static void log_prepare(uint8_t log_level, const char *filename,
     // allocate some extra for the filename info, cap length
     // as safety precaution to avoid OOM
     n = min(n + 24, configLOGGING_MAX_MESSAGE_LENGTH);
-    char *p = log.msg = pvPortMalloc(n);
+    char* p = log.msg = pvPortMalloc(n);
     if (p == NULL) {
         return;
     }
 
     if (filename != NULL) {
-        const char *file;
+        const char* file;
 
         /* If a file path is provided, extract only the file name from the
          * string by looking for '/' or '\' directory seperator. */
@@ -124,36 +124,36 @@ static void log_prepare(uint8_t log_level, const char *filename,
     }
 }
 
-void vLoggingPrintfError(const char *pcFormat, ...) {
+void vLoggingPrintfError(const char* pcFormat, ...) {
     va_list args;
     va_start(args, pcFormat);
     log_prepare(LOG_ERROR, NULL, 0, pcFormat, args);
     va_end(args);
 }
 
-void vLoggingPrintfWarn(const char *pcFormat, ...) {
+void vLoggingPrintfWarn(const char* pcFormat, ...) {
     va_list args;
     va_start(args, pcFormat);
     log_prepare(LOG_WARN, NULL, 0, pcFormat, args);
     va_end(args);
 }
 
-void vLoggingPrintfInfo(const char *pcFormat, ...) {
+void vLoggingPrintfInfo(const char* pcFormat, ...) {
     va_list args;
     va_start(args, pcFormat);
     log_prepare(LOG_INFO, NULL, 0, pcFormat, args);
     va_end(args);
 }
 
-void vLoggingPrintfDebug(const char *pcFormat, ...) {
+void vLoggingPrintfDebug(const char* pcFormat, ...) {
     va_list args;
     va_start(args, pcFormat);
     log_prepare(LOG_DEBUG, NULL, 0, pcFormat, args);
     va_end(args);
 }
 
-void vLoggingPrintfWithFileAndLine(const char *pcFile, size_t fileLineNo,
-                                   const char *pcFormat, ...) {
+void vLoggingPrintfWithFileAndLine(const char* pcFile, size_t fileLineNo,
+                                   const char* pcFormat, ...) {
     configASSERT(pcFile != NULL);
     va_list args;
     va_start(args, pcFormat);
@@ -170,11 +170,11 @@ void vLoggingPrintfWithFileAndLine(const char *pcFile, size_t fileLineNo,
  * print statement.
  *
  */
-void vLoggingPrintf(const char *pcFormat, ...) {
+void vLoggingPrintf(const char* pcFormat, ...) {
     va_list args;
     va_start(args, pcFormat);
     log_prepare(LOG_NONE, NULL, 0, pcFormat, args);
     va_end(args);
 }
 
-void vLoggingPrint(const char *pcMessage) { vLoggingPrintf(pcMessage); }
+void vLoggingPrint(const char* pcMessage) { vLoggingPrintf(pcMessage); }
