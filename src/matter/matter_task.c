@@ -174,6 +174,16 @@ static void matter_task(void* pvParameters) {
         "matter_device.plugins_persist = true",
         "matter_device.plugins_config = {\"0\":{\"type\":\"root\"},"
         "\"2\":{\"type\":\"sesame_door\"}}",
+        /* Reseed with the canonical Matter test pair (discriminator 3840,
+         * passcode 20202021) and reopen commissioning with the new SPAKE2+
+         * verifier so chip-tool can pair without us decoding the random
+         * manual pairing code on every reboot. */
+        "matter_device.commissioning.stop_basic_commissioning()\n"
+        "matter_device.root_discriminator = 3840\n"
+        "matter_device.root_passcode = 20202021\n"
+        "matter_device.commissioning.start_root_basic_commissioning()\n"
+        "log('MTR: discriminator=' + str(matter_device.root_discriminator) "
+        "+ ' passcode=' + str(matter_device.root_passcode), 2)",
         /* start() is fired from tasmota.when_network_up (registered from
          * init_basic_commissioning); the callback runs in _matter_net_cbs,
          * which matter_tasmota_notify_network_up drains after bootstrap.
@@ -195,6 +205,7 @@ static void matter_task(void* pvParameters) {
         "end",
         NULL};
     for (int i = 0; steps[i]; i++) {
+        LogInfo(("[matter] bootstrap step %d", i));
         if (be_dostring(vm, steps[i]) != 0) {
             LogError(("[matter] bootstrap step %d failed: %s", i,
                       be_tostring(vm, -1)));

@@ -104,10 +104,26 @@ uint32_t SystemCoreClock = 25000000;  // 25MHz standard for MPS2
 
 void vApplicationIdleHook() {}
 
+extern void mbedtls_hardware_init_hash(uint8_t* entropy, size_t len);
+
 int main(void) {
     // In QEMU, stdout goes to host via semihosting automatically with
     // --oslib=semihost
     setup_heap();
+
+    /* QEMU has no hardware entropy source. Seed the mbedtls entropy pool
+     * with a deterministic placeholder so internal_entropy_poll() answers
+     * with non-zero data — without this, ctr_drbg_random() returns
+     * NO_SOURCE, crypto.random() yields nil to Berry, and Matter's
+     * generate_random_passcode() spins forever. The PRNG is still seeded
+     * in CTR_DRBG; this just gates startup. */
+    static uint8_t qemu_seed_entropy[32] = {
+        0xa1, 0x5e, 0xc0, 0xde, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x11, 0x22,
+        0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd,
+        0xee, 0xff, 0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe,
+    };
+    mbedtls_hardware_init_hash(qemu_seed_entropy, sizeof(qemu_seed_entropy));
+
     if (xTaskCreate(main_task, "main", configMINIMAL_STACK_SIZE + 896, NULL,
                     tskIDLE_PRIORITY + 3, NULL) != pdPASS) {
         printf("main task creation failed\n");
