@@ -560,6 +560,15 @@ if(NOT USE_QEMU)
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_mdns_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_mdns_tests-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_sesame_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_sesame_tests-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_tasmota_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_tasmota_tests-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/test/integration/httpd"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/integration/httpd/httpd_it-qemu.axf" "${CMAKE_BINARY_DIR}/test/integration/httpd/httpd_it-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/test/integration/mqtt"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/integration/mqtt/mqtt_it-qemu.axf" "${CMAKE_BINARY_DIR}/test/integration/mqtt/mqtt_it-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/test/integration/ota"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/integration/ota/ota_it-qemu.axf" "${CMAKE_BINARY_DIR}/test/integration/ota/ota_it-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/test/integration/syslog"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/integration/syslog/syslog_it-qemu.axf" "${CMAKE_BINARY_DIR}/test/integration/syslog/syslog_it-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_BINARY_DIR}/qemu-build/test/integration/proto_py" "${CMAKE_BINARY_DIR}/test/integration/proto_py"
         DEPENDEES build
     )
 
@@ -570,6 +579,10 @@ if(NOT USE_QEMU)
     add_test(NAME matter_mdns_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_mdns_tests-qemu.axf -serial none -monitor none)
     add_test(NAME matter_sesame_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_sesame_tests-qemu.axf -serial none -monitor none)
     add_test(NAME matter_tasmota_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_tasmota_tests-qemu.axf -serial none -monitor none)
+
+    add_test(NAME integration_tests
+        COMMAND uv run --project "${CMAKE_SOURCE_DIR}/test/integration" pytest -xvs "${CMAKE_SOURCE_DIR}/test/integration"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/test/integration")
 endif()
 
 add_custom_command(

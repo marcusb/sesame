@@ -27,7 +27,7 @@ add_custom_command(
         "${CMAKE_SOURCE_DIR}/proto/api.proto"
         "${CMAKE_SOURCE_DIR}/proto/app_config.proto"
 )
-add_custom_target(it_proto_py
+add_custom_target(it_proto_py ALL
     DEPENDS "${PROTO_PY_DIR}/api_pb2.py" "${PROTO_PY_DIR}/app_config_pb2.py")
 
 # -------------------------------------------------------------------------------------------------
@@ -38,7 +38,7 @@ add_subdirectory(harness)
 
 # Macro to add an integration test executable
 macro(add_integration_test name)
-    set(target "${name}_it")
+    set(target "${name}_it${target_suffix}")
     add_executable(${target} ${ARGN}
         "${CMAKE_SOURCE_DIR}/src/libc_wrappers.c"
         "${CMAKE_SOURCE_DIR}/src/hardfault.c"

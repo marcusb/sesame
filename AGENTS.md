@@ -180,7 +180,7 @@ ser.close()
 
 Before committing changes, ensure that all unit tests pass in both QEMU and on physical hardware.
 
-**1. Run Unit Tests in QEMU:**
+**1. Run Unit & Integration Tests in QEMU:**
 Build and run the full test suite in the emulator using CTest:
 ```sh
 ninja -C build test

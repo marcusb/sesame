@@ -32,11 +32,13 @@ _BUILD_DIR = _REPO_ROOT / "build"
 
 
 def _find_build_artifact(rel: str) -> Path:
-    p = _BUILD_DIR / "test" / "integration" / rel
+    # Integration tests are always built for QEMU and suffixed with -qemu.axf
+    qemu_rel = rel.replace(".axf", "-qemu.axf")
+    p = _BUILD_DIR / "test" / "integration" / qemu_rel
     if p.exists():
         return p
     pytest.fail(
-        f"build artifact {p} not found; run `ninja -C build integration_tests` first."
+        f"build artifact {p} not found; run `ninja -C build qemu_variants` first."
     )
 
 

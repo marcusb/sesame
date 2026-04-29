@@ -203,7 +203,7 @@ Networking is supported via QEMU's user-mode stack (SLIRP) with port forwarding.
 
 ### Tests
 
-The project includes unit tests using the [Unity](https://github.com/ThrowTheSwitch/Unity) framework. Tests can be run either on physical hardware or in the QEMU emulator.
+The project includes unit and integration tests using the [Unity](https://github.com/ThrowTheSwitch/Unity) and [pytest](https://pytest.org) frameworks. Tests can be run either on physical hardware or in the QEMU emulator.
 
 **Hardware (JTAG) Build & Run:**
 ```sh
@@ -212,7 +212,7 @@ ninja -C build sesame_tests
 ```
 
 **QEMU (Emulator) Build & Run:**
-The build system automatically configures CTest to run tests in QEMU.
+The build system automatically configures CTest to run all unit and integration tests in QEMU.
 ```sh
 ninja -C build test
 ```
