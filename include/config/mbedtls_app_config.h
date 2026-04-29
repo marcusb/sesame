@@ -419,14 +419,16 @@ void *pvPortCalloc(size_t num, size_t size);
 #endif
 //#define MBEDTLS_ARIA_ALT
 //#define MBEDTLS_CAMELLIA_ALT
-/* Hardware AES_CCM driver (mw320 fsl_aes.c) does word-wide reads from the
- * caller's buffers (AES_ReadWordFromArray); the matter_crypto_shim's
- * encrypt1/decrypt1 pass byte-aligned (in_buf + in_off) pointers, which
- * fault on Cortex-M4. Use software CCM until either the HW driver tolerates
- * unaligned access or the Berry caller guarantees aligned offsets. */
-/* #define MBEDTLS_CCM_ALT */
-/* #define MBEDTLS_CCM_CRYPT_ALT */
-/* #define MBEDTLS_AES_CRYPT_ALT */
+#ifndef QEMU
+/* Hardware CCM is safe again now that matter_crypto_shim's aes_ccm_run()
+ * bounces caller-supplied unaligned buffers (encrypt1/decrypt1 in particular
+ * pass raw + payload_idx, where payload_idx is dictated by the Matter wire
+ * format and rarely 4-byte aligned).  HW CCM is still avoided under QEMU
+ * because the emulator doesn't model the AES peripheral. */
+#define MBEDTLS_CCM_ALT
+#define MBEDTLS_CCM_CRYPT_ALT
+#define MBEDTLS_AES_CRYPT_ALT
+#endif
 
 //#define MBEDTLS_CHACHA20_ALT
 //#define MBEDTLS_CHACHAPOLY_ALT

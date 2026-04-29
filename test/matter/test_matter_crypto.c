@@ -111,6 +111,78 @@ void test_crypto_ec_p256_shared_key(void) {
         "assert(s_ab == s_ba)");
 }
 
+/* AES-CCM encrypt1/decrypt1 round-trip with everything starting at offset 0
+ * — exercises the fast path where aes_ccm_run() hands the caller's buffers
+ * straight to mbedtls. */
+void test_crypto_aes_ccm_static_aligned_roundtrip(void) {
+    be_assert_success(
+        "var key = bytes('00112233445566778899aabbccddeeff') "
+        "var n = bytes('0102030405060708090a0b0c0d') "
+        "var aad = bytes('aaaaaaaa') "
+        "var pt = bytes('48656c6c6f2057' .. '6f726c6420212121') " /* 'Hello
+                                                                     World !!!'
+                                                                   */
+        "var ct = pt.copy() "
+        "var tag = bytes(-16) "
+        "assert(crypto.AES_CCM.encrypt1(key, n, 0, size(n), aad, 0, size(aad),"
+        " ct, 0, size(ct), tag, 0, 16)) "
+        "assert(ct != pt) "
+        "var pt2 = ct.copy() "
+        "assert(crypto.AES_CCM.decrypt1(key, n, 0, size(n), aad, 0, size(aad),"
+        " pt2, 0, size(pt2), tag, 0, 16)) "
+        "assert(pt2 == pt)");
+}
+
+/* Same round-trip but with byte-aligned (offset != 0) AAD/payload/tag — this
+ * is what Matter actually does: the encrypted region sits inside the wire
+ * buffer at offset payload_idx (typically 8/16/18 bytes).  Forces the bounce
+ * path inside aes_ccm_run() and verifies that HW CCM (when enabled) doesn't
+ * fault on Cortex-M4 unaligned word loads.
+ *
+ * Strategy: encrypt the same plaintext twice — once with aligned offsets
+ * (offset 0) and once with unaligned offsets (offset 1) — and assert that
+ * the resulting ciphertext+tag are byte-identical, so the bounce path
+ * matches the fast path. */
+void test_crypto_aes_ccm_static_unaligned_roundtrip(void) {
+    be_assert_success(
+        "var key = bytes('00112233445566778899aabbccddeeff') "
+        "var n   = bytes('0102030405060708090a0b0c0d') "
+        "var aad = bytes('aaaaaaaa') "
+        "var pt  = bytes('48656c6c6f20576f726c64212121') " /* 14 B */
+
+        /* Aligned reference: 14 B input + 16 B tag, all at offset 0. */
+        "var ref_ct  = pt.copy() "
+        "var ref_tag = bytes(-16) "
+        "assert(crypto.AES_CCM.encrypt1(key, n, 0, size(n), aad, 0, size(aad),"
+        " ref_ct, 0, size(ref_ct), ref_tag, 0, 16),"
+        " 'aligned encrypt1 failed') "
+
+        /* Same params, but stored 1 byte into longer host buffers so every
+         * offset is byte-aligned. */
+        "var n_un = bytes(-1) + n " /* prefix 1 zero byte */
+        "var aad_un = bytes(-1) + aad "
+        "var io = bytes(-1) + pt + bytes(-16) " /* pt at off 1, tag at off 15 */
+        "assert(size(n_un) == size(n) + 1, 'n_un size wrong: '..size(n_un)) "
+        "assert(size(aad_un) == size(aad) + 1, 'aad_un size wrong: "
+        "'..size(aad_un)) "
+        "assert(size(io) == size(pt) + 17, 'io size wrong: '..size(io)) "
+        "assert(crypto.AES_CCM.encrypt1(key, n_un, 1, size(n), aad_un, 1, "
+        "size(aad), io, 1, size(pt), io, 1 + size(pt), 16),"
+        " 'unaligned encrypt1 failed') "
+        "var got_ct  = io[1 .. size(pt)] "
+        "var got_tag = io[1 + size(pt) .. size(io) - 1] "
+        "assert(got_ct == ref_ct, 'ct mismatch: '..got_ct.tohex()..' vs "
+        "'..ref_ct.tohex()) "
+        "assert(got_tag == ref_tag, 'tag mismatch: '..got_tag.tohex()..' vs "
+        "'..ref_tag.tohex()) "
+
+        /* And decrypt the unaligned buffer back to plaintext. */
+        "assert(crypto.AES_CCM.decrypt1(key, n_un, 1, size(n), aad_un, 1, "
+        "size(aad), io, 1, size(pt), io, 1 + size(pt), 16),"
+        " 'unaligned decrypt1 failed') "
+        "assert(io[1 .. size(pt)] == pt, 'pt mismatch')");
+}
+
 void run_tests(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_crypto_sha256);
@@ -122,4 +194,6 @@ void run_tests(void) {
     RUN_TEST(test_crypto_ec_p256_ecdsa_roundtrip);
     RUN_TEST(test_crypto_ec_p256_ecdsa_asn1);
     RUN_TEST(test_crypto_ec_p256_shared_key);
+    RUN_TEST(test_crypto_aes_ccm_static_aligned_roundtrip);
+    RUN_TEST(test_crypto_aes_ccm_static_unaligned_roundtrip);
 }

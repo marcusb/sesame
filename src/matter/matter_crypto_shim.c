@@ -736,7 +736,82 @@ static int crypto_aes_ccm_tag(bvm* vm) {
  * Both calls modify in_buf in place; encrypt1 writes the resulting tag into
  * tag_buf at tag_off; decrypt1 returns true on auth success, false otherwise.
  * Indexes are 1-based in the Berry-method sense (after self), but for static
- * methods Berry passes args at slots 1..N. */
+ * methods Berry passes args at slots 1..N.
+ *
+ * Matter wire-format messages have a variable-length header (8/16/18 bytes
+ * depending on session/source/dest IDs), so payload_idx — and therefore the
+ * data/tag offsets — are usually NOT 4-byte aligned.  The MW320 hardware AES
+ * driver (fsl_aes.c, AES_ReadWordFromArray) does word-wide loads from the
+ * input pointers and faults on Cortex-M4 when given an unaligned address.
+ * We bounce through aligned scratch buffers in that case; in the common
+ * aligned case we hand the caller's buffers straight to mbedtls so we don't
+ * pay for an extra alloc + memcpy on every secure-channel message.
+ */
+static int aes_ccm_buf_aligned(const void* p) {
+    return (((uintptr_t)p) & 3u) == 0u;
+}
+
+/* Run mbedtls_ccm_encrypt_and_tag / auth_decrypt, bouncing each input/output
+ * region through an aligned malloc'd buffer if the caller-supplied pointer
+ * is byte-aligned. Returns 0 on success or a negative mbedtls error code (or
+ * MBEDTLS_ERR_CCM_HW_ACCEL_FAILED on bounce-buffer OOM). */
+static int aes_ccm_run(int is_encrypt, const unsigned char* key, size_t key_len,
+                       const unsigned char* n, size_t n_len,
+                       const unsigned char* aad, size_t aad_len,
+                       unsigned char* io, size_t io_len, unsigned char* tag,
+                       size_t tag_len) {
+    int need_bounce = !aes_ccm_buf_aligned(n) || !aes_ccm_buf_aligned(aad) ||
+                      !aes_ccm_buf_aligned(io) || !aes_ccm_buf_aligned(tag);
+
+    mbedtls_ccm_context ctx;
+    mbedtls_ccm_init(&ctx);
+    int ret = mbedtls_ccm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, key, key_len * 8);
+    if (ret != 0) goto out;
+
+    if (!need_bounce) {
+        ret = is_encrypt
+                  ? mbedtls_ccm_encrypt_and_tag(&ctx, io_len, n, n_len, aad,
+                                                aad_len, io, io, tag, tag_len)
+                  : mbedtls_ccm_auth_decrypt(&ctx, io_len, n, n_len, aad,
+                                             aad_len, io, io, tag, tag_len);
+        goto out;
+    }
+
+    /* Allocate aligned bounces (n is small + on-stack-aligned; AAD may be
+     * empty). pvPortMalloc returns portBYTE_ALIGNMENT-aligned (>= 4) blocks. */
+    unsigned char* bn = malloc(n_len ? n_len : 1);
+    unsigned char* baad = aad_len ? malloc(aad_len) : NULL;
+    unsigned char* bio = malloc(io_len ? io_len : 1);
+    unsigned char* btag = malloc(tag_len ? tag_len : 1);
+    if (!bn || (aad_len && !baad) || !bio || !btag) {
+        ret = MBEDTLS_ERR_CCM_HW_ACCEL_FAILED;
+        goto cleanup;
+    }
+    memcpy(bn, n, n_len);
+    if (aad_len) memcpy(baad, aad, aad_len);
+    memcpy(bio, io, io_len);
+    if (!is_encrypt) memcpy(btag, tag, tag_len);
+
+    ret = is_encrypt
+              ? mbedtls_ccm_encrypt_and_tag(&ctx, io_len, bn, n_len, baad,
+                                            aad_len, bio, bio, btag, tag_len)
+              : mbedtls_ccm_auth_decrypt(&ctx, io_len, bn, n_len, baad, aad_len,
+                                         bio, bio, btag, tag_len);
+    if (ret == 0) {
+        memcpy(io, bio, io_len);
+        if (is_encrypt) memcpy(tag, btag, tag_len);
+    }
+
+cleanup:
+    free(bn);
+    free(baad);
+    free(bio);
+    free(btag);
+out:
+    mbedtls_ccm_free(&ctx);
+    return ret;
+}
+
 static int crypto_aes_ccm_encrypt1(bvm* vm) {
     size_t key_len, n_len_b, aad_len_b, in_len_b, tag_len_b;
     const unsigned char* key =
@@ -752,13 +827,9 @@ static int crypto_aes_ccm_encrypt1(bvm* vm) {
     int tag_off = be_toint(vm, 12), tag_len = be_toint(vm, 13);
     if (!key || !n_buf || !in_buf || !tag_buf) be_return_nil(vm);
 
-    mbedtls_ccm_context ctx;
-    mbedtls_ccm_init(&ctx);
-    mbedtls_ccm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, key, key_len * 8);
-    int ret = mbedtls_ccm_encrypt_and_tag(
-        &ctx, in_len, n_buf + n_off, n_len, aad_buf + aad_off, aad_len,
-        in_buf + in_off, in_buf + in_off, tag_buf + tag_off, tag_len);
-    mbedtls_ccm_free(&ctx);
+    int ret = aes_ccm_run(1, key, key_len, n_buf + n_off, n_len,
+                          aad_buf + aad_off, aad_len, in_buf + in_off, in_len,
+                          tag_buf + tag_off, tag_len);
     be_pushbool(vm, ret == 0 ? btrue : bfalse);
     be_return(vm);
 }
@@ -778,13 +849,9 @@ static int crypto_aes_ccm_decrypt1(bvm* vm) {
     int tag_off = be_toint(vm, 12), tag_len = be_toint(vm, 13);
     if (!key || !n_buf || !in_buf || !tag_buf) be_return_nil(vm);
 
-    mbedtls_ccm_context ctx;
-    mbedtls_ccm_init(&ctx);
-    mbedtls_ccm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, key, key_len * 8);
-    int ret = mbedtls_ccm_auth_decrypt(
-        &ctx, in_len, n_buf + n_off, n_len, aad_buf + aad_off, aad_len,
-        in_buf + in_off, in_buf + in_off, tag_buf + tag_off, tag_len);
-    mbedtls_ccm_free(&ctx);
+    int ret = aes_ccm_run(0, key, key_len, n_buf + n_off, n_len,
+                          aad_buf + aad_off, aad_len, in_buf + in_off, in_len,
+                          tag_buf + tag_off, tag_len);
     be_pushbool(vm, ret == 0 ? btrue : bfalse);
     be_return(vm);
 }
