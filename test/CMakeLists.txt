@@ -104,15 +104,16 @@ if(USE_QEMU)
 endif()
 
 macro(add_matter_test_binary name source)
-    add_executable(${name} "matter/${source}" $<TARGET_OBJECTS:matter_test_support>)
-    target_link_libraries(${name} PRIVATE globals matter_test_support)
+    set(target_name "${name}${target_suffix}")
+    add_executable(${target_name} "matter/${source}" $<TARGET_OBJECTS:matter_test_support>)
+    target_link_libraries(${target_name} PRIVATE globals matter_test_support)
 
-    target_link_options(${name} PRIVATE
+    target_link_options(${target_name} PRIVATE
         ${ARM_TEST_LINK_OPTIONS}
         "-T${ARM_TEST_LINKER_SCRIPT}"
-        "-Wl,-Map,${name}.map")
+        "-Wl,-Map,${target_name}.map")
     if(USE_QEMU)
-        target_link_options(${name} PRIVATE
+        target_link_options(${target_name} PRIVATE
             "-Wl,--wrap,UART_TransferReceiveNonBlocking"
             "-Wl,--wrap,UART_TransferAbortReceive")
     endif()
@@ -153,9 +154,10 @@ if(USE_QEMU)
         "${CMAKE_SOURCE_DIR}/src/hardfault_irq.S")
 endif()
 
-add_executable(sesame_tests ${SESAME_TEST_SOURCES})
+set(test_target "sesame_tests${target_suffix}")
+add_executable(${test_target} ${SESAME_TEST_SOURCES})
 
-target_include_directories(sesame_tests
+target_include_directories(${test_target}
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_SOURCE_DIR}/include"
@@ -165,7 +167,7 @@ target_include_directories(sesame_tests
     "${mw320_sdk_dir}/middleware/wifi/incl"
     "${mw320_sdk_dir}/middleware/wifi/incl/port/os")
 
-target_link_libraries(sesame_tests
+target_link_libraries(${test_target}
     PRIVATE
     globals
     unity
@@ -178,17 +180,17 @@ target_link_libraries(sesame_tests
     mw320_utility_assert)
 
 if(USE_BACKTRACE)
-    target_link_libraries(sesame_tests PRIVATE backtrace)
+    target_link_libraries(${test_target} PRIVATE backtrace)
 endif()
 
-target_link_options(sesame_tests
+target_link_options(${test_target}
     PRIVATE
     ${ARM_TEST_LINK_OPTIONS}
-    "-Wl,-Map,sesame_tests.map"
+    "-Wl,-Map,${test_target}.map"
     "-T${ARM_TEST_LINKER_SCRIPT}"
 )
 if(USE_QEMU)
-    target_link_options(sesame_tests
+    target_link_options(${test_target}
         PRIVATE
         "-Wl,--wrap,UART_TransferReceiveNonBlocking"
         "-Wl,--wrap,UART_TransferAbortReceive")

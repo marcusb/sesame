@@ -39,18 +39,21 @@ cd build && cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Debug \
 **Incremental build:**
 
 ```sh
-ninja -C build                     # Build flash version
-ninja -C build sesame_ram.axf      # Build RAM-bootable version
-ninja -C build qemu_app            # Build QEMU version (in build/qemu-app/)
+ninja -C build                     # Build all variants (hardware & QEMU)
+ninja -C build sesame              # Build hardware flash version
+ninja -C build sesame-qemu         # Build QEMU flash version
+ninja -C build sesame_ram          # Build hardware RAM version
+ninja -C build sesame_ram-qemu     # Build QEMU RAM version
 ```
 
 **Build outputs:**
 
-- `sesame.axf` – ELF (flash version, for debugging)
-- `sesame.bin` – Binary firmware image (for permanent flash)
-- `sesame_ram.axf` – ELF (RAM version, loads non-permanently via ramload.py)
-- `sesame.map`, `sesame_ram.map` – Linker map files (symbol addresses, memory layout)
-- `build/qemu-app/sesame.axf` – ELF (QEMU version)
+- `sesame.axf`, `sesame.bin` – Hardware flash version
+- `sesame_ram.axf` – Hardware RAM version
+- `sesame-qemu.axf` – QEMU flash version
+- `sesame_ram-qemu.axf` – QEMU RAM version
+- `test/sesame_tests.axf` – Hardware test suite
+- `test/sesame_tests-qemu.axf` – QEMU test suite
 
 ## Project Architecture
 
@@ -178,18 +181,14 @@ ser.close()
 Before committing changes, ensure that all unit tests pass in both QEMU and on physical hardware.
 
 **1. Run Unit Tests in QEMU:**
-Build and run the main test suite and all Matter test suites in the emulator. This requires the build to be configured with `-DUSE_QEMU=ON`.
+Build and run the full test suite in the emulator using CTest:
 ```sh
-ninja -C build && \
-for t in sesame_tests matter_tasmota_tests matter_mdns_tests matter_sesame_tests; do \
-  echo "Running $t..." && \
-  qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel build/test/$t.axf -serial none -monitor none || exit 1; \
-done
+ninja -C build test
 ```
 
 **2. Run On-device Unit Tests:**
 ```sh
-ninja -C build test/sesame_tests.axf && ./tools/run_on_device.sh build/test/sesame_tests.axf
+ninja -C build sesame_tests && ./tools/run_on_device.sh build/test/sesame_tests.axf
 ```
 
 **3. Flash and Full System Test:**
@@ -226,18 +225,16 @@ Tests can be run either on the physical ARM Cortex-M4 target via JTAG RAM load, 
 
 **Hardware (JTAG) Build & Run:**
 ```sh
-ninja -C build test/sesame_tests.axf
-./tools/OpenOCD/ramload.py build/test/sesame_tests.axf
+ninja -C build sesame_tests
 ./tools/run_on_device.sh build/test/sesame_tests.axf
 ```
 
 **QEMU (Emulator) Build & Run:**
+The build system automatically configures CTest to run tests in QEMU.
 ```sh
-cmake -B build -G Ninja -DUSE_QEMU=ON -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake .
-ninja -C build
-qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel build/test/sesame_tests.axf -serial none -monitor none
+ninja -C build test
 ```
-Additional Matter-specific test suites (QEMU-only) include `matter_tasmota_tests`, `matter_mdns_tests`, and `matter_sesame_tests`.
+Individual test binaries (e.g., `test/sesame_tests-qemu.axf`, `test/matter_sesame_tests-qemu.axf`) can also be run manually via `qemu-system-arm`.
 
 Each test prints immediately as it executes:
 ```

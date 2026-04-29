@@ -188,12 +188,12 @@ ninja
 ### QEMU Emulation
 
 You can run the full application in QEMU for development and testing without hardware.
-The QEMU build isolates board-dependent modules and uses semihosting for I/O.
+The QEMU build isolates board-dependent modules and uses semihosting for I/O. Both hardware and QEMU variants are built automatically.
 
 ```bash
-ninja -C build qemu_app
+ninja -C build
 qemu-system-arm -M mps2-an386 -nographic -semihosting \
-  -kernel build/qemu-app/sesame.axf \
+  -kernel build/sesame-qemu.axf \
   -serial none -monitor none \
   -net nic,model=lan9118 -net user,hostfwd=tcp::8080-:80
 ```
@@ -207,20 +207,19 @@ The project includes unit tests using the [Unity](https://github.com/ThrowTheSwi
 
 **Hardware (JTAG) Build & Run:**
 ```sh
-ninja -C build test/sesame_tests.axf
+ninja -C build sesame_tests
 ./tools/run_on_device.sh build/test/sesame_tests.axf
 ```
 
 **QEMU (Emulator) Build & Run:**
+The build system automatically configures CTest to run tests in QEMU.
 ```sh
-cmake -B build -G Ninja -DUSE_QEMU=ON -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake .
-ninja -C build test/sesame_tests.axf
-qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel build/test/sesame_tests.axf -serial none -monitor none
+ninja -C build test
 ```
 
 Expected output ends with:
 ```
-25 Tests 0 Failures 0 Ignored
+34 Tests 0 Failures 0 Ignored
 OK
 TEST_RESULT:0
 ```

@@ -7,10 +7,12 @@ project(
 
 set(mw320_sdk_dir "${CMAKE_CURRENT_LIST_DIR}/mw320_sdk")
 
-option(USE_QEMU "Build for QEMU emulation (stubs out hardware init)" OFF)
+set(USE_QEMU OFF CACHE BOOL "Build for QEMU emulation (stubs out hardware init)")
+set(target_suffix "")
 if(USE_QEMU)
     add_compile_definitions(QEMU)
     set(USE_BACKTRACE ON CACHE BOOL "Enable backtrace" FORCE)
+    set(target_suffix "-qemu")
 endif()
 
 if(CMAKE_CROSSCOMPILING)
@@ -357,8 +359,8 @@ else()
     target_link_libraries(mw320_sdk INTERFACE mw320_device_startup)
 endif()
 
-set(exe_target sesame)
-set(exe_target_ram "${exe_target}_ram")
+set(exe_target "sesame${target_suffix}")
+set(exe_target_ram "sesame_ram${target_suffix}")
 set(CMAKE_EXECUTABLE_SUFFIX ".axf")
 
 add_library(board STATIC)
@@ -475,8 +477,8 @@ target_link_options(app_deps
     "-Wl,--gc-sections"
     "-Wl,--nmagic")
 
-set(exe_target sesame)
-set(exe_target_ram "${exe_target}_ram")
+set(exe_target "sesame${target_suffix}")
+set(exe_target_ram "sesame_ram${target_suffix}")
 set(CMAKE_EXECUTABLE_SUFFIX ".axf")
 
 if(USE_QEMU)
@@ -534,19 +536,40 @@ add_subdirectory(test)
 
 include(ExternalProject)
 if(NOT USE_QEMU)
-    ExternalProject_Add(qemu_app
+    ExternalProject_Add(qemu_variants
         SOURCE_DIR      "${CMAKE_SOURCE_DIR}"
-        BINARY_DIR      "${CMAKE_BINARY_DIR}/qemu-app"
+        BINARY_DIR      "${CMAKE_BINARY_DIR}/qemu-build"
         CONFIGURE_COMMAND ""
         BUILD_COMMAND
             "${CMAKE_COMMAND}" -G Ninja -DUSE_QEMU=ON -DUSE_BACKTRACE=ON -DCMAKE_BUILD_TYPE=Debug
                 -DCMAKE_TOOLCHAIN_FILE=${CMAKE_SOURCE_DIR}/toolchain.cmake
                 -Daxf2firmware_DIR=${axf2firmware_DIR}
-                -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/qemu-app"
-            COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/qemu-app" --target sesame
+                -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/qemu-build"
+            COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/qemu-build"
         INSTALL_COMMAND ""
         BUILD_ALWAYS    TRUE
     )
+
+    ExternalProject_Add_Step(qemu_variants copy_binaries
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/test"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/sesame-qemu.axf" "${CMAKE_BINARY_DIR}/sesame-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/sesame_ram-qemu.axf" "${CMAKE_BINARY_DIR}/sesame_ram-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/sesame_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/sesame_tests-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_crypto_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_crypto_tests-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_ec_raw_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_ec_raw_tests-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_mdns_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_mdns_tests-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_sesame_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_sesame_tests-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_tasmota_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_tasmota_tests-qemu.axf"
+        DEPENDEES build
+    )
+
+    enable_testing()
+    add_test(NAME sesame_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/sesame_tests-qemu.axf -serial none -monitor none)
+    add_test(NAME matter_crypto_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_crypto_tests-qemu.axf -serial none -monitor none)
+    add_test(NAME matter_ec_raw_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_ec_raw_tests-qemu.axf -serial none -monitor none)
+    add_test(NAME matter_mdns_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_mdns_tests-qemu.axf -serial none -monitor none)
+    add_test(NAME matter_sesame_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_sesame_tests-qemu.axf -serial none -monitor none)
+    add_test(NAME matter_tasmota_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_tasmota_tests-qemu.axf -serial none -monitor none)
 endif()
 
 add_custom_command(
