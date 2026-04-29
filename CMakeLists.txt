@@ -532,6 +532,23 @@ endif()
 
 add_subdirectory(test)
 
+include(ExternalProject)
+if(NOT USE_QEMU)
+    ExternalProject_Add(qemu_app
+        SOURCE_DIR      "${CMAKE_SOURCE_DIR}"
+        BINARY_DIR      "${CMAKE_BINARY_DIR}/qemu-app"
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND
+            "${CMAKE_COMMAND}" -G Ninja -DUSE_QEMU=ON -DUSE_BACKTRACE=ON -DCMAKE_BUILD_TYPE=Debug
+                -DCMAKE_TOOLCHAIN_FILE=${CMAKE_SOURCE_DIR}/toolchain.cmake
+                -Daxf2firmware_DIR=${axf2firmware_DIR}
+                -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/qemu-app"
+            COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/qemu-app" --target sesame
+        INSTALL_COMMAND ""
+        BUILD_ALWAYS    TRUE
+    )
+endif()
+
 add_custom_command(
     TARGET ${exe_target} POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E remove "${exe_target}.bin"
