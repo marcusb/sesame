@@ -573,12 +573,18 @@ if(NOT USE_QEMU)
     )
 
     enable_testing()
-    add_test(NAME sesame_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/sesame_tests-qemu.axf -serial none -monitor none)
-    add_test(NAME matter_crypto_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_crypto_tests-qemu.axf -serial none -monitor none)
-    add_test(NAME matter_ec_raw_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_ec_raw_tests-qemu.axf -serial none -monitor none)
-    add_test(NAME matter_mdns_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_mdns_tests-qemu.axf -serial none -monitor none)
-    add_test(NAME matter_sesame_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_sesame_tests-qemu.axf -serial none -monitor none)
-    add_test(NAME matter_tasmota_tests COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel ${CMAKE_BINARY_DIR}/test/matter_tasmota_tests-qemu.axf -serial none -monitor none)
+    set(QEMU_UNIT_TEST_COMMAND qemu-system-arm -M mps2-an386 -nographic -semihosting -serial none -monitor none)
+
+    macro(add_qemu_unit_test name binary)
+        add_test(NAME ${name} COMMAND ${QEMU_UNIT_TEST_COMMAND} -kernel ${CMAKE_BINARY_DIR}/test/${binary})
+    endmacro()
+
+    add_qemu_unit_test(sesame_tests sesame_tests-qemu.axf)
+    add_qemu_unit_test(matter_crypto_tests matter_crypto_tests-qemu.axf)
+    add_qemu_unit_test(matter_ec_raw_tests matter_ec_raw_tests-qemu.axf)
+    add_qemu_unit_test(matter_mdns_tests matter_mdns_tests-qemu.axf)
+    add_qemu_unit_test(matter_sesame_tests matter_sesame_tests-qemu.axf)
+    add_qemu_unit_test(matter_tasmota_tests matter_tasmota_tests-qemu.axf)
 
     add_test(NAME integration_tests
         COMMAND uv run --project "${CMAKE_SOURCE_DIR}/test/integration" pytest -xvs "${CMAKE_SOURCE_DIR}/test/integration"
