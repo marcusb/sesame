@@ -213,6 +213,7 @@ ninja -C build test/sesame_tests.axf
 
 **QEMU (Emulator) Build & Run:**
 ```sh
+cmake -B build -G Ninja -DUSE_QEMU=ON -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake .
 ninja -C build test/sesame_tests.axf
 qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel build/test/sesame_tests.axf -serial none -monitor none
 ```
