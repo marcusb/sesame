@@ -343,8 +343,12 @@ void httpd_task(void* params) {
         Socket_t conn = FreeRTOS_accept(socket, &client, &sz);
         configASSERT(conn != FREERTOS_INVALID_SOCKET);
 
-        xTaskCreate(request_task, "HttpWorker", 2048, (void*)conn,
-                    tskIDLE_PRIORITY, NULL);
+        BaseType_t r = xTaskCreate(request_task, "HttpWorker", 2048,
+                                   (void*)conn, tskIDLE_PRIORITY + 2, NULL);
+        if (r != pdPASS) {
+            LogError(("xTaskCreate HttpWorker failed: %d", (int)r));
+            FreeRTOS_closesocket(conn);
+        }
     }
 
 ret:

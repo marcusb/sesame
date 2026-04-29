@@ -193,3 +193,7 @@ if(USE_QEMU)
         "-Wl,--wrap,UART_TransferReceiveNonBlocking"
         "-Wl,--wrap,UART_TransferAbortReceive")
 endif()
+
+if(USE_QEMU)
+    add_subdirectory(integration)
+endif()

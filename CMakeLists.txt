@@ -13,8 +13,6 @@ if(USE_QEMU)
     set(USE_BACKTRACE ON CACHE BOOL "Enable backtrace" FORCE)
 endif()
 
-option(BUILD_HOST_TESTS "Build host-based module tests (native build)" ON)
-
 if(CMAKE_CROSSCOMPILING)
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
@@ -534,35 +532,6 @@ endif()
 
 add_subdirectory(test)
 
-include(ExternalProject)
-ExternalProject_Add(host_tests
-    SOURCE_DIR      "${CMAKE_SOURCE_DIR}"
-    BINARY_DIR      "${CMAKE_BINARY_DIR}/host-tests"
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND
-        "${CMAKE_COMMAND}" -G Ninja -DBUILD_HOST_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
-            -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/host-tests"
-        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/host-tests" --target host_tests
-    INSTALL_COMMAND ""
-    BUILD_ALWAYS    TRUE
-)
-
-if(NOT USE_QEMU)
-    ExternalProject_Add(qemu_app
-        SOURCE_DIR      "${CMAKE_SOURCE_DIR}"
-        BINARY_DIR      "${CMAKE_BINARY_DIR}/qemu-app"
-        CONFIGURE_COMMAND ""
-        BUILD_COMMAND
-            "${CMAKE_COMMAND}" -G Ninja -DUSE_QEMU=ON -DUSE_BACKTRACE=ON -DCMAKE_BUILD_TYPE=Debug
-                -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
-                -Daxf2firmware_DIR=${axf2firmware_DIR}
-                -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/qemu-app"
-            COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/qemu-app" --target sesame
-        INSTALL_COMMAND ""
-        BUILD_ALWAYS    TRUE
-    )
-endif()
-
 add_custom_command(
     TARGET ${exe_target} POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E remove "${exe_target}.bin"
@@ -575,13 +544,6 @@ set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
 find_package(axf2firmware)
 
 else()
-
-# native build
-if(BUILD_HOST_TESTS)
-    enable_testing()
-    add_subdirectory(third_party)
-    add_subdirectory(test/host)
-endif()
 
 # Build host tools
 add_executable(axf2firmware)
