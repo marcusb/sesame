@@ -36,6 +36,8 @@
 #include "psm.h"
 
 // Application
+#include "board.h"
+#include "board_support.h"
 #include "config_manager.h"
 #include "controller.h"
 #include "dhcp.h"
@@ -90,17 +92,6 @@ void psm_init() {
 #endif
 }
 
-extern void board_init(void);
-extern void configure_netif();
-extern void create_board_tasks();
-extern void reboot();
-extern void notify_board_dhcp_configured();
-extern void notify_board_ipv6_addr_change();
-extern bool is_sta_iface(NetworkInterface_t* iface);
-extern bool is_uap_iface(NetworkInterface_t* iface);
-
-extern void WDT_Refresh(void* base);
-
 void main_task(void* param) {
     board_init();
 
@@ -131,7 +122,7 @@ void main_task(void* param) {
 
     ctrl_msg_t ctrl_msg;
     for (;;) {
-        WDT_Refresh(NULL);
+        board_refresh_watchdog();
 
         if (xQueueReceive(ctrl_queue, &ctrl_msg, 1000) == pdPASS) {
             switch (ctrl_msg.type) {

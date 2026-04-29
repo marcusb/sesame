@@ -19,5 +19,6 @@ void notify_ipv6_addr_change() {}
 void wifi_deinit() {}
 
 void WDT_Refresh(void* base) {}
+void board_refresh_watchdog(void) {}
 
 const char* pcApplicationHostnameHook() { return "sesame-qemu"; }

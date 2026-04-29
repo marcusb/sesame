@@ -21,6 +21,7 @@
 
 // Application
 #include "board.h"
+#include "board_support.h"
 #include "config_manager.h"
 #include "controller.h"
 #include "dhcp.h"
@@ -65,6 +66,8 @@ static void report_boot_flags(void) {
     };
 }
 
+static bool wdt_active = false;
+
 static void init_watchdog() {
     wdt_config_t config;
     WDT_GetDefaultConfig(&config);
@@ -74,6 +77,13 @@ static void init_watchdog() {
     WDT_Init(WDT, &config);
     EnableIRQ(WDT_IRQn);
     WDT_DisableInterrupt(WDT);
+    wdt_active = true;
+}
+
+void board_refresh_watchdog(void) {
+    if (wdt_active) {
+        WDT_Refresh(WDT);
+    }
 }
 
 static status_t aes_lock(void) {
