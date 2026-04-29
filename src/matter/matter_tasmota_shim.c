@@ -24,6 +24,7 @@
 #include "be_vm.h"
 #include "controller.h"
 #include "matter_mdns.h"
+#include "matter_tasmota_shim.h"
 #include "psm.h"
 #include "queue.h"
 #include "task.h"

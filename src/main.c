@@ -49,6 +49,10 @@
 #include "syslog.h"
 #include "time_util.h"
 
+#if SESAME_ENABLE_MATTER
+#include "matter_task.h"
+#endif
+
 #define mainLOGGING_MESSAGE_QUEUE_LENGTH (16)
 
 // the global controller event queue, all tasks write to it
@@ -173,6 +177,9 @@ void main_task(void* param) {
 
                 case CTRL_MSG_DOOR_STATE_UPDATE:
                     publish_state(&ctrl_msg.msg.door_state);
+#if SESAME_ENABLE_MATTER
+                    matter_report_door_state(&ctrl_msg.msg.door_state);
+#endif
                     break;
 
                 case CTRL_MSG_WIFI_BUTTON: {
@@ -277,10 +284,6 @@ BaseType_t xApplicationDNSQueryHook_Multi(struct xNetworkEndPoint* pxEndPoint,
     (void)pcName;
     return pdFALSE;
 }
-
-#if SESAME_ENABLE_MATTER
-extern void matter_init(void);
-#endif
 
 void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
                                           NetworkEndPoint_t* endpoint) {

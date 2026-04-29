@@ -1,3 +1,5 @@
+#include "matter_task.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -8,60 +10,15 @@
 #include "berry.h"
 #include "embedded_be.h"
 #include "matter_mdns.h"
+#include "matter_tasmota_shim.h"
 #include "queue.h"
 #include "semphr.h"
 #include "task.h"
-
-extern void matter_tasmota_tick(bvm* vm);
-extern void matter_tasmota_notify_network_up(bvm* vm);
 
 /* Shared between the matter task and (host-test) cmd handlers. */
 bvm* g_matter_vm;
 SemaphoreHandle_t g_matter_vm_lock;
 static StaticSemaphore_t g_matter_vm_lock_buf;
-
-/* Berry bootstrap: defines the door plugin, registers it, instantiates
- * matter.Device with a hard-coded plugin config, and starts it. We bypass
- * autoconf_device_map (which queries Tasmota-specific light/shutter status
- * via tasmota.cmd) by marking plugins_persist=true with a pre-filled
- * plugins_config — instantiate_plugins_from_config then pushes the plugins
- * without calling autoconf_device_map. */
-static const char matter_bootstrap[] =
-    "import matter\n"
-    "import sesame\n"
-    "class Matter_Door_Plugin : matter.Plugin_Shutter\n"
-    "  static var TYPE = \"sesame_door\"\n"
-    "  static var DISPLAY_NAME = \"Sesame Door\"\n"
-    "  def init(device, endpoint, conf)\n"
-    "    super(self).init(device, endpoint, conf)\n"
-    "    self.shadow_shutter_inverted = 1\n"
-    "  end\n"
-    "  def update_shadow()\n"
-    "  end\n"
-    "  def invoke_request(session, val, ctx)\n"
-    "    var cluster = ctx.cluster\n"
-    "    var command = ctx.command\n"
-    "    if cluster == 0x0102\n"
-    "      if   command == 0x0000 sesame.door_cmd(1) return true\n"
-    "      elif command == 0x0001 sesame.door_cmd(2) return true\n"
-    "      elif command == 0x0002 sesame.door_cmd(0) return true\n"
-    "      end\n"
-    "    end\n"
-    "    return super(self).invoke_request(session, val, ctx)\n"
-    "  end\n"
-    "end\n"
-    /* Matter_Plugin_z_All.be's top-level code (which would populate
-     * matter.plugins_classes on Tasmota) is not included in the sesame
-     * build, so seed the map ourselves with just the classes we need. */
-    "matter.plugins_classes = {\"root\": matter.Plugin_Root,"
-    "\"aggregator\": matter.Plugin_Aggregator,"
-    "\"shutter\": matter.Plugin_Shutter,"
-    "\"sesame_door\": Matter_Door_Plugin}\n"
-    "matter_device = matter.Device()\n"
-    "matter_device.plugins_persist = true\n"
-    "matter_device.plugins_config = {\"0\":{\"type\":\"root\"},"
-    "\"2\":{\"type\":\"sesame_door\"}}\n"
-    "matter_device.start()\n";
 
 static void matter_task(void* pvParameters) {
     (void)pvParameters;
@@ -128,7 +85,22 @@ static void matter_task(void* pvParameters) {
         "import global\nglobal.log = def (m,l) tasmota.log(m, l) end",
         "class Matter_Door_Plugin : matter.Plugin_Shutter\n"
         "  static var TYPE = \"sesame_door\"\n"
+        "  def init(device, endpoint, conf)\n"
+        "    super(self).init(device, endpoint, conf)\n"
+        "    self.shadow_shutter_inverted = 1\n"
+        "  end\n"
         "  def update_shadow() end\n"
+        "  def invoke_request(session, val, ctx)\n"
+        "    var cluster = ctx.cluster\n"
+        "    var command = ctx.command\n"
+        "    if cluster == 0x0102\n"
+        "      if   command == 0x0000 sesame.door_cmd(1) return true\n"
+        "      elif command == 0x0001 sesame.door_cmd(2) return true\n"
+        "      elif command == 0x0002 sesame.door_cmd(0) return true\n"
+        "      end\n"
+        "    end\n"
+        "    return super(self).invoke_request(session, val, ctx)\n"
+        "  end\n"
         "end",
         /* Matter_Profiler and Matter_Autoconf are stripped from the sesame
          * build; provide no-op stubs that Matter_Device.init() and
@@ -236,4 +208,44 @@ void matter_init(void) {
     BaseType_t rc =
         xTaskCreate(matter_task, "matter", 8192, NULL, tskIDLE_PRIORITY, NULL);
     LogInfo(("matter_init: xTaskCreate rc=%ld", (long)rc));
+}
+
+void matter_report_door_state(const door_state_msg_t* msg) {
+    if (!g_matter_vm) return;
+
+    xSemaphoreTakeRecursive(g_matter_vm_lock, portMAX_DELAY);
+
+    /* Map Sesame direction (DCM_DOOR_DIR_*) to Tasmota direction (-1, 0, 1)
+     * DCM_DOOR_DIR_UP (Opening) -> 1
+     * DCM_DOOR_DIR_DOWN (Closing) -> -1
+     * DCM_DOOR_DIR_STOPPED -> 0
+     */
+    int tas_dir = 0;
+    if (msg->direction == DCM_DOOR_DIR_UP) {
+        tas_dir = 1;
+    } else if (msg->direction == DCM_DOOR_DIR_DOWN) {
+        tas_dir = -1;
+    }
+
+    /* Update the Matter plugin shadow state and trigger attribute reports.
+     * Plugin "2" is our sesame_door. parse_sensors updates shadow_shutter_pos
+     * and shadow_shutter_direction, and calls attribute_updated() which
+     * triggers the subscription engine. */
+    char code[160];
+    snprintf(
+        code, sizeof(code),
+        "if global.matter_device\n"
+        "  var p = matter_device.find_plugin_by_endpoint(2)\n"
+        "  if p p.parse_sensors({'Shutter1':{'Position':%d,'Direction':%d}}) "
+        "end\n"
+        "end",
+        (int)msg->pos, tas_dir);
+
+    if (be_dostring(g_matter_vm, code) != 0) {
+        LogError(("[matter] failed to report door state: %s",
+                  be_tostring(g_matter_vm, -1)));
+        be_pop(g_matter_vm, 1);
+    }
+
+    xSemaphoreGiveRecursive(g_matter_vm_lock);
 }

@@ -6,10 +6,13 @@
 
 #include "FreeRTOS.h"
 #include "berry.h"
+#include "matter_tasmota_shim.h"
 #include "matter_test_utils.h"
 #include "psm-v2.h"
 #include "task.h"
 #include "unity.h"
+
+extern bvm* g_matter_vm;
 
 extern void stub_psm_set_data(const uint8_t* data, size_t len);
 extern void stub_psm_get_written(const uint8_t** out, size_t* out_len);
@@ -17,12 +20,10 @@ extern void stub_psm_set_error(int err);
 
 extern psm_hnd_t psm_hnd;
 
-extern void matter_tasmota_tick(bvm* vm);
-
 void setUp(void) {
     matter_test_setup();
     stub_psm_set_data(NULL, 0);
-    be_dostring(vm,
+    be_dostring(g_matter_vm,
                 "_matter_fast_cbs = []\n"
                 "_matter_fast_cbs_once = []\n"
                 "_matter_net_cbs = []\n"
@@ -55,7 +56,7 @@ void test_tasmota_fast_loop_runs(void) {
 
     /* Simulate the application loop calling the tick function. */
     for (int i = 0; i < 5; i++) {
-        matter_tasmota_tick(vm);
+        matter_tasmota_tick(g_matter_vm);
     }
 
     be_assert_success("assert(_c[0] > 0)");
