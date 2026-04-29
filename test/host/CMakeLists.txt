@@ -219,7 +219,6 @@ add_subdirectory(httpd)
 add_subdirectory(mqtt)
 add_subdirectory(ota)
 add_subdirectory(syslog)
-add_subdirectory(matter)
 
 add_custom_target(host_tests
-    DEPENDS host_test_httpd host_test_mqtt host_test_ota host_test_syslog host_test_matter proto_py)
+    DEPENDS host_test_httpd host_test_mqtt host_test_ota host_test_syslog proto_py)

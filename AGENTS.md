@@ -175,11 +175,16 @@ ser.close()
 
 ### Final Validation (Before Commit)
 
-Before committing changes, ensure both host-based and on-device tests pass.
+Before committing changes, ensure that all unit tests pass in both QEMU and on physical hardware.
 
-**1. Run Host-based Tests:**
+**1. Run Unit Tests in QEMU:**
+Build and run the main test suite and all Matter test suites in the emulator. This requires the build to be configured with `-DUSE_QEMU=ON`.
 ```sh
-cd test/host && uv run pytest
+ninja -C build && \
+for t in sesame_tests matter_tasmota_tests matter_mdns_tests matter_sesame_tests; do \
+  echo "Running $t..." && \
+  qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel build/test/$t.axf -serial none -monitor none || exit 1; \
+done
 ```
 
 **2. Run On-device Unit Tests:**
@@ -229,9 +234,10 @@ ninja -C build test/sesame_tests.axf
 **QEMU (Emulator) Build & Run:**
 ```sh
 cmake -B build -G Ninja -DUSE_QEMU=ON -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake .
-ninja -C build test/sesame_tests.axf
+ninja -C build
 qemu-system-arm -M mps2-an386 -nographic -semihosting -kernel build/test/sesame_tests.axf -serial none -monitor none
 ```
+Additional Matter-specific test suites (QEMU-only) include `matter_tasmota_tests`, `matter_mdns_tests`, and `matter_sesame_tests`.
 
 Each test prints immediately as it executes:
 ```
@@ -244,37 +250,6 @@ TEST_RESULT:0
 ```
 
 `TEST_RESULT:0` = all passed. The test sources are in `test/`.
-
-### Host Tests
-
-Board-independent modules can be tested on the host without hardware.
-Tests run FreeRTOS + FreeRTOS-Plus-TCP via the POSIX kernel port and libslirp user-mode NIC,
-driven by pytest from outside the process over real TCP/UDP.
-
-**Prerequisites (Debian/Ubuntu):**
-```sh
-apt install libslirp-dev python3-uv
-```
-
-Host tests build automatically as part of the normal ARM build — `ninja -C build` builds them alongside the firmware via `ExternalProject_Add` into `build/host-tests/`.
-
-To run the tests:
-```sh
-cd test/host && uv run pytest
-```
-
-Or via CTest:
-```sh
-ctest --test-dir build/host-tests --output-on-failure
-```
-
-To configure the host tests standalone (without the ARM toolchain):
-```sh
-cmake -B build-host -G Ninja
-ninja -C build-host host_tests
-```
-
-The test sources are in `test/host/`. Each binary boots a minimal FreeRTOS+TCP stack, starts the module under test, and exposes a real TCP/UDP endpoint via libslirp port forwarding.
 
 ### Integration Testing
 

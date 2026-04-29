@@ -75,7 +75,17 @@ static void run_tests_task(void* params) {
     int len =
         snprintf(sentinel, sizeof(sentinel), "\r\nTEST_RESULT:%d\r\n", result);
     write(1, sentinel, len);
+
+#ifdef QEMU
+    /* Direct semihosting exit to avoid hardfaults in FreeRTOS task context. */
+    register int reg0 __asm__("r0") = 0x18; /* SYS_EXIT */
+    register int reg1 __asm__("r1") =
+        (result == 0) ? 0x20026 : 0x20024; /* ADP_Stopped_ApplicationExit :
+                                             ADP_Stopped_RunTimeError */
+    __asm__ volatile("bkpt 0xab" : : "r"(reg0), "r"(reg1) : "memory");
+#else
     exit(result);
+#endif
 }
 
 /* ---- Entry point ---- */

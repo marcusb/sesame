@@ -51,9 +51,16 @@ void test_sesame_door_stop(void) {
     TEST_ASSERT_EQUAL(DOOR_CMD_STOP, msg.msg.door_control.command);
 }
 
+void test_matter_module_load(void) {
+    be_assert_success(
+        "import matter; assert(matter.Counter != nil); "
+        "assert(matter.Verhoeff != nil); assert(matter.Commissioning != nil)");
+}
+
 void run_tests(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_sesame_door_open);
     RUN_TEST(test_sesame_door_close);
     RUN_TEST(test_sesame_door_stop);
+    RUN_TEST(test_matter_module_load);
 }

@@ -6,15 +6,20 @@
 
 #include "FreeRTOS.h"
 #include "FreeRTOS_DNS_Globals.h"
+#include "berry.h"
 #include "board_support.h"
 #include "logging.h"
 #include "matter_mdns.h"
+#include "matter_test_utils.h"
 #include "task.h"
 #include "unity.h"
 
-void setUp(void) { matter_mdns_init(); }
+void setUp(void) {
+    matter_test_setup();
+    matter_mdns_init();
+}
 
-void tearDown(void) {}
+void tearDown(void) { matter_test_teardown(); }
 
 static UBaseType_t count_records_by_type(uint16_t type) {
     DNSRecord_t* recs = NULL;
@@ -122,6 +127,19 @@ void test_remove_service_removes_records(void) {
     TEST_ASSERT_NULL(find_record(dnsTYPE_TXT, "INST._matterc._udp.local"));
 }
 
+void test_berry_mdns_add_service_populates_snapshot(void) {
+    be_assert_success(
+        "import mdns; mdns.add_hostname('sesame', '', '10.0.2.15')");
+    be_assert_success(
+        "import mdns; mdns.add_service('_matter', '_tcp', 5540, "
+        "{'DN': 'Sesame', 'VP': '65521+32769'}, 'ABCDEF0123456789', 'sesame')");
+
+    DNSRecord_t* srv =
+        find_record(dnsTYPE_SRV, "ABCDEF0123456789._matter._tcp.local");
+    TEST_ASSERT_NOT_NULL_MESSAGE(srv, "expected SRV record from Berry call");
+    TEST_ASSERT_EQUAL_UINT16(5540, srv->xData.xSrvRecord.usPort);
+}
+
 void run_tests(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_add_hostname_registers_both_a_and_aaaa);
@@ -130,4 +148,5 @@ void run_tests(void) {
     RUN_TEST(test_add_service_txt_is_pascal_string_format);
     RUN_TEST(test_add_subtype_registers_ptr);
     RUN_TEST(test_remove_service_removes_records);
+    RUN_TEST(test_berry_mdns_add_service_populates_snapshot);
 }
