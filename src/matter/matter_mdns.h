@@ -24,6 +24,7 @@ int matter_mdns_remove_service(const char* service, const char* proto,
                                const char* instance, const char* hostname);
 
 UBaseType_t matter_mdns_snapshot(DNSRecord_t** out);
+UBaseType_t matter_mdns_get_view(DNSRecord_t** out);
 
 #ifdef __cplusplus
 }

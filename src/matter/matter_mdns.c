@@ -256,6 +256,17 @@ int matter_mdns_remove_service(const char* service, const char* proto,
 
 UBaseType_t matter_mdns_snapshot(DNSRecord_t** out) {
     lock();
+    for (UBaseType_t i = 0; i < s_count; i++) {
+        s_view[i].uxServeRecord = 0; /* dnsRECORD_SERVE_NO */
+    }
+    *out = s_view;
+    UBaseType_t n = s_count;
+    unlock();
+    return n;
+}
+
+UBaseType_t matter_mdns_get_view(DNSRecord_t** out) {
+    lock();
     *out = s_view;
     UBaseType_t n = s_count;
     unlock();
@@ -271,4 +282,48 @@ DNSRecord_t* xApplicationDNSRecordQueryHook_Multi(
     return recs;
 }
 
-void xApplicationDNSRecordsMatchedHook(void) {}
+void xApplicationDNSRecordsMatchedHook(void) {
+    lock();
+    bool changed;
+    do {
+        changed = false;
+        for (UBaseType_t i = 0; i < s_count; i++) {
+            DNSRecord_t* r = &s_view[i];
+            if (r->uxServeRecord == 0) continue;
+
+            /* If we are serving a PTR record, also serve the SRV and TXT
+             * records it points to. */
+            if (r->usRecordType == dnsTYPE_PTR) {
+                for (UBaseType_t j = 0; j < s_count; j++) {
+                    DNSRecord_t* other = &s_view[j];
+                    if (other->uxServeRecord != 0) continue;
+                    if ((other->usRecordType == dnsTYPE_SRV ||
+                         other->usRecordType == dnsTYPE_TXT) &&
+                        strcmp(other->pcName, r->xData.pcPtrRecord) == 0) {
+                        other->uxServeRecord =
+                            1; /* dnsRECORD_SERVE_ADDITIONAL */
+                        changed = true;
+                    }
+                }
+            }
+
+            /* If we are serving an SRV record, also serve the A/AAAA records
+             * for its target host. */
+            if (r->usRecordType == dnsTYPE_SRV) {
+                for (UBaseType_t j = 0; j < s_count; j++) {
+                    DNSRecord_t* other = &s_view[j];
+                    if (other->uxServeRecord != 0) continue;
+                    if ((other->usRecordType == dnsTYPE_A_HOST ||
+                         other->usRecordType == dnsTYPE_AAAA_HOST) &&
+                        strcmp(other->pcName, r->xData.xSrvRecord.pcTarget) ==
+                            0) {
+                        other->uxServeRecord =
+                            1; /* dnsRECORD_SERVE_ADDITIONAL */
+                        changed = true;
+                    }
+                }
+            }
+        }
+    } while (changed);
+    unlock();
+}
