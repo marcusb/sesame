@@ -665,6 +665,67 @@ static int crypto_aes_ccm_deinit(bvm* vm) {
     be_return_nil(vm);
 }
 
+static int aes_ccm_buf_aligned(const void* p) {
+    return (((uintptr_t)p) & 3u) == 0u;
+}
+
+/* Run mbedtls_ccm_encrypt_and_tag / auth_decrypt with an existing context,
+ * bouncing each input/output region through an aligned malloc'd buffer if the
+ * caller-supplied pointer is byte-aligned. */
+static int aes_ccm_run_ctx(mbedtls_ccm_context* ctx, int is_encrypt,
+                           size_t in_len, const unsigned char* n, size_t n_len,
+                           const unsigned char* aad, size_t aad_len,
+                           const unsigned char* in, unsigned char* out,
+                           unsigned char* tag, size_t tag_len) {
+    int need_bounce = !aes_ccm_buf_aligned(n) || !aes_ccm_buf_aligned(aad) ||
+                      !aes_ccm_buf_aligned(in) || !aes_ccm_buf_aligned(out) ||
+                      !aes_ccm_buf_aligned(tag);
+
+    if (!need_bounce) {
+        return is_encrypt
+                   ? mbedtls_ccm_encrypt_and_tag(ctx, in_len, n, n_len, aad,
+                                                 aad_len, in, out, tag, tag_len)
+                   : mbedtls_ccm_auth_decrypt(ctx, in_len, n, n_len, aad,
+                                              aad_len, in, out, tag, tag_len);
+    }
+
+    /* Allocate aligned bounces (n is small + on-stack-aligned; AAD may be
+     * empty). pvPortMalloc returns portBYTE_ALIGNMENT-aligned (>= 4) blocks. */
+    unsigned char* bn = malloc(n_len ? n_len : 1);
+    unsigned char* baad = aad_len ? malloc(aad_len) : NULL;
+    unsigned char* bin = malloc(in_len ? in_len : 1);
+    unsigned char* bout = malloc(in_len ? in_len : 1);
+    unsigned char* btag = malloc(tag_len ? tag_len : 1);
+    int ret = 0;
+
+    if (!bn || (aad_len && !baad) || !bin || !bout || !btag) {
+        ret = MBEDTLS_ERR_CCM_HW_ACCEL_FAILED;
+        goto cleanup;
+    }
+    memcpy(bn, n, n_len);
+    if (aad_len) memcpy(baad, aad, aad_len);
+    memcpy(bin, in, in_len);
+    if (!is_encrypt) memcpy(btag, tag, tag_len);
+
+    ret = is_encrypt
+              ? mbedtls_ccm_encrypt_and_tag(ctx, in_len, bn, n_len, baad,
+                                            aad_len, bin, bout, btag, tag_len)
+              : mbedtls_ccm_auth_decrypt(ctx, in_len, bn, n_len, baad, aad_len,
+                                         bin, bout, btag, tag_len);
+    if (ret == 0) {
+        memcpy(out, bout, in_len);
+        if (is_encrypt) memcpy(tag, btag, tag_len);
+    }
+
+cleanup:
+    free(bn);
+    free(baad);
+    free(bin);
+    free(bout);
+    free(btag);
+    return ret;
+}
+
 static int crypto_aes_ccm_encrypt(bvm* vm) {
     be_getmember(vm, 1, ".p");
     aes_ccm_t* c = (aes_ccm_t*)be_tocomptr(vm, -1);
@@ -673,9 +734,8 @@ static int crypto_aes_ccm_encrypt(bvm* vm) {
     const unsigned char* in = (const unsigned char*)be_tobytes(vm, 2, &in_len);
     if (!c || !in) be_return_nil(vm);
     unsigned char* out = (unsigned char*)be_pushbytes(vm, NULL, in_len);
-    int ret =
-        mbedtls_ccm_encrypt_and_tag(&c->ccm, in_len, c->iv, c->iv_len, c->aad,
-                                    c->aad_len, in, out, c->tag, c->tag_len);
+    int ret = aes_ccm_run_ctx(&c->ccm, 1, in_len, c->iv, c->iv_len, c->aad,
+                              c->aad_len, in, out, c->tag, c->tag_len);
     if (ret != 0) {
         be_pop(vm, 1);
         be_return_nil(vm);
@@ -701,9 +761,8 @@ static int crypto_aes_ccm_decrypt(bvm* vm) {
      *      this plaintext, which tag() will return. */
     unsigned char* out = (unsigned char*)be_pushbytes(vm, NULL, in_len);
     unsigned char throwaway_tag[16];
-    int ret = mbedtls_ccm_encrypt_and_tag(&c->ccm, in_len, c->iv, c->iv_len,
-                                          c->aad, c->aad_len, in, out,
-                                          throwaway_tag, c->tag_len);
+    int ret = aes_ccm_run_ctx(&c->ccm, 1, in_len, c->iv, c->iv_len, c->aad,
+                              c->aad_len, in, out, throwaway_tag, c->tag_len);
     if (ret != 0) {
         be_pop(vm, 1);
         be_return_nil(vm);
@@ -713,9 +772,8 @@ static int crypto_aes_ccm_decrypt(bvm* vm) {
      * stack pressure for larger payloads. */
     unsigned char* scratch = malloc(in_len);
     if (scratch) {
-        mbedtls_ccm_encrypt_and_tag(&c->ccm, in_len, c->iv, c->iv_len, c->aad,
-                                    c->aad_len, out, scratch, c->tag,
-                                    c->tag_len);
+        aes_ccm_run_ctx(&c->ccm, 1, in_len, c->iv, c->iv_len, c->aad,
+                        c->aad_len, out, scratch, c->tag, c->tag_len);
         free(scratch);
     }
     be_return(vm);
@@ -735,21 +793,7 @@ static int crypto_aes_ccm_tag(bvm* vm) {
  *        in_buf, in_off, in_len, tag_buf, tag_off, tag_len)
  * Both calls modify in_buf in place; encrypt1 writes the resulting tag into
  * tag_buf at tag_off; decrypt1 returns true on auth success, false otherwise.
- * Indexes are 1-based in the Berry-method sense (after self), but for static
- * methods Berry passes args at slots 1..N.
- *
- * Matter wire-format messages have a variable-length header (8/16/18 bytes
- * depending on session/source/dest IDs), so payload_idx — and therefore the
- * data/tag offsets — are usually NOT 4-byte aligned.  The MW320 hardware AES
- * driver (fsl_aes.c, AES_ReadWordFromArray) does word-wide loads from the
- * input pointers and faults on Cortex-M4 when given an unaligned address.
- * We bounce through aligned scratch buffers in that case; in the common
- * aligned case we hand the caller's buffers straight to mbedtls so we don't
- * pay for an extra alloc + memcpy on every secure-channel message.
  */
-static int aes_ccm_buf_aligned(const void* p) {
-    return (((uintptr_t)p) & 3u) == 0u;
-}
 
 /* Run mbedtls_ccm_encrypt_and_tag / auth_decrypt, bouncing each input/output
  * region through an aligned malloc'd buffer if the caller-supplied pointer
@@ -760,54 +804,17 @@ static int aes_ccm_run(int is_encrypt, const unsigned char* key, size_t key_len,
                        const unsigned char* aad, size_t aad_len,
                        unsigned char* io, size_t io_len, unsigned char* tag,
                        size_t tag_len) {
-    int need_bounce = !aes_ccm_buf_aligned(n) || !aes_ccm_buf_aligned(aad) ||
-                      !aes_ccm_buf_aligned(io) || !aes_ccm_buf_aligned(tag);
-
     mbedtls_ccm_context ctx;
     mbedtls_ccm_init(&ctx);
     int ret = mbedtls_ccm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, key, key_len * 8);
-    if (ret != 0) goto out;
-
-    if (!need_bounce) {
-        ret = is_encrypt
-                  ? mbedtls_ccm_encrypt_and_tag(&ctx, io_len, n, n_len, aad,
-                                                aad_len, io, io, tag, tag_len)
-                  : mbedtls_ccm_auth_decrypt(&ctx, io_len, n, n_len, aad,
-                                             aad_len, io, io, tag, tag_len);
-        goto out;
+    if (ret != 0) {
+        mbedtls_ccm_free(&ctx);
+        return ret;
     }
 
-    /* Allocate aligned bounces (n is small + on-stack-aligned; AAD may be
-     * empty). pvPortMalloc returns portBYTE_ALIGNMENT-aligned (>= 4) blocks. */
-    unsigned char* bn = malloc(n_len ? n_len : 1);
-    unsigned char* baad = aad_len ? malloc(aad_len) : NULL;
-    unsigned char* bio = malloc(io_len ? io_len : 1);
-    unsigned char* btag = malloc(tag_len ? tag_len : 1);
-    if (!bn || (aad_len && !baad) || !bio || !btag) {
-        ret = MBEDTLS_ERR_CCM_HW_ACCEL_FAILED;
-        goto cleanup;
-    }
-    memcpy(bn, n, n_len);
-    if (aad_len) memcpy(baad, aad, aad_len);
-    memcpy(bio, io, io_len);
-    if (!is_encrypt) memcpy(btag, tag, tag_len);
+    ret = aes_ccm_run_ctx(&ctx, is_encrypt, io_len, n, n_len, aad, aad_len, io,
+                          io, tag, tag_len);
 
-    ret = is_encrypt
-              ? mbedtls_ccm_encrypt_and_tag(&ctx, io_len, bn, n_len, baad,
-                                            aad_len, bio, bio, btag, tag_len)
-              : mbedtls_ccm_auth_decrypt(&ctx, io_len, bn, n_len, baad, aad_len,
-                                         bio, bio, btag, tag_len);
-    if (ret == 0) {
-        memcpy(io, bio, io_len);
-        if (is_encrypt) memcpy(tag, btag, tag_len);
-    }
-
-cleanup:
-    free(bn);
-    free(baad);
-    free(bio);
-    free(btag);
-out:
     mbedtls_ccm_free(&ctx);
     return ret;
 }
