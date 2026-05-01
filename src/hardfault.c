@@ -54,11 +54,20 @@ __attribute__((__used__)) void HardFault_IRQHandler_C(
         exception_return & 0x10 ? FAULT_FRAME_LEN_FP : FAULT_FRAME_LEN_NOFP;
     backtrace_frame_t frame;
     frame.sp = (uint32_t)fault_frame + fault_frame_len;
-    frame.fp = frame.sp;
+    frame.fp = callee_registers->r7;
     frame.lr = fault_frame->LR;
     frame.pc = fault_frame->PC;
 
     int count = _backtrace_unwind(backtrace, BACKTRACE_DEPTH, &frame);
+
+    /* If we only got one frame and it was a leaf function (LR is valid code),
+     * try to hop to LR manually. */
+    if (count == 1 && (fault_frame->LR & 0x1F000000) == 0x1F000000) {
+        frame.pc = fault_frame->LR;
+        /* sp remains the same as no frame was set up by leaf */
+        count += _backtrace_unwind(backtrace + 1, BACKTRACE_DEPTH - 1, &frame);
+    }
+
     for (int i = 0; i < count; ++i) {
         PRINTF("%s@%p\r\n", backtrace[i].name, backtrace[i].address);
     }
