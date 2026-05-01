@@ -7,6 +7,7 @@
 #include "app_crypto.h"
 #include "berry.h"
 #include "matter_test_utils.h"
+#include "mbedtls/ctr_drbg.h"
 #include "mbedtls/ecp.h"
 #include "mbedtls/entropy.h"
 #include "task.h"
@@ -14,6 +15,38 @@
 
 void setUp(void) { matter_test_setup(); }
 void tearDown(void) { matter_test_teardown(); }
+
+void test_mbedtls_ec_p256_mul_raw(void) {
+    mbedtls_ecp_group grp;
+    mbedtls_ecp_point Q;
+    mbedtls_mpi d;
+
+    mbedtls_ecp_group_init(&grp);
+    mbedtls_ecp_point_init(&Q);
+    mbedtls_mpi_init(&d);
+
+    int ret = mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP256R1);
+    TEST_ASSERT_EQUAL(0, ret);
+
+    unsigned char scalar_buf[32] = {0x02}; /* Start with small scalar */
+    mbedtls_mpi_read_binary(&d, scalar_buf, sizeof(scalar_buf));
+
+    ret = mbedtls_ecp_mul(&grp, &Q, &d, &grp.G, mbedtls_ctr_drbg_random,
+                          app_get_global_drbg());
+    TEST_ASSERT_EQUAL(0, ret);
+
+    /* Now try full 256-bit scalar */
+    for (int i = 0; i < 32; i++) scalar_buf[i] = (unsigned char)i;
+    mbedtls_mpi_read_binary(&d, scalar_buf, sizeof(scalar_buf));
+
+    ret = mbedtls_ecp_mul(&grp, &Q, &d, &grp.G, mbedtls_ctr_drbg_random,
+                          app_get_global_drbg());
+    TEST_ASSERT_EQUAL(0, ret);
+
+    mbedtls_ecp_group_free(&grp);
+    mbedtls_ecp_point_free(&Q);
+    mbedtls_mpi_free(&d);
+}
 
 void test_crypto_sha256(void) {
     be_assert_success(
@@ -183,8 +216,34 @@ void test_crypto_aes_ccm_static_unaligned_roundtrip(void) {
         "assert(io[1 .. size(pt)] == pt, 'pt mismatch')");
 }
 
+/* Exercises the AES_CCM constructor/instance methods with unaligned buffers.
+ * This tests the fix for the Matter commissioning crash (PASE phase). */
+void test_crypto_aes_ccm_instance_unaligned_roundtrip(void) {
+    be_assert_success(
+        "var key = bytes('00112233445566778899aabbccddeeff') "
+        "var n   = bytes('0102030405060708090a0b0c0d') "
+        "var aad = bytes('aaaaaaaa') "
+        "var pt  = bytes('48656c6c6f20576f726c64212121') "
+
+        /* Same prefixing strategy to force unaligned buffers */
+        "var n_un   = bytes(-1) + n "
+        "var aad_un = bytes(-1) + aad "
+        "var pt_un  = bytes(-1) + pt "
+
+        "var ccm = crypto.AES_CCM(key, n_un[1..], aad_un[1..], 0, 16) "
+        "var ct_un = ccm.encrypt(pt_un[1..]) "
+        "assert(ct_un.size() == pt.size()) "
+        "var tag = ccm.tag() "
+        "assert(tag.size() == 16) "
+
+        "var pt2_un = ccm.decrypt(ct_un) "
+        "assert(pt2_un == pt) "
+        "assert(ccm.tag() == tag)");
+}
+
 void run_tests(void) {
     UnitySetTestFile(__FILE__);
+    RUN_TEST(test_mbedtls_ec_p256_mul_raw);
     RUN_TEST(test_crypto_sha256);
     RUN_TEST(test_crypto_sha256_oneshot_in_init);
     RUN_TEST(test_crypto_sha256_incremental_matches_oneshot);
@@ -196,4 +255,5 @@ void run_tests(void) {
     RUN_TEST(test_crypto_ec_p256_shared_key);
     RUN_TEST(test_crypto_aes_ccm_static_aligned_roundtrip);
     RUN_TEST(test_crypto_aes_ccm_static_unaligned_roundtrip);
+    RUN_TEST(test_crypto_aes_ccm_instance_unaligned_roundtrip);
 }

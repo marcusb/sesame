@@ -124,7 +124,6 @@ endmacro()
 # so only build these for QEMU.
 if(USE_QEMU)
     add_matter_test_binary(matter_crypto_tests test_matter_crypto.c)
-    add_matter_test_binary(matter_ec_raw_tests test_ec_raw.c)
     add_matter_test_binary(matter_mdns_tests test_matter_mdns.c)
     add_matter_test_binary(matter_mdns_responder_tests test_matter_mdns_responder.c)
     target_link_options(matter_mdns_responder_tests${target_suffix} PRIVATE

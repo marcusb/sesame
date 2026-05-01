@@ -556,7 +556,6 @@ if(NOT USE_QEMU)
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/sesame_ram-qemu.axf" "${CMAKE_BINARY_DIR}/sesame_ram-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/sesame_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/sesame_tests-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_crypto_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_crypto_tests-qemu.axf"
-        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_ec_raw_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_ec_raw_tests-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_mdns_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_mdns_tests-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_mdns_responder_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_mdns_responder_tests-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_sesame_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_sesame_tests-qemu.axf"
@@ -582,7 +581,6 @@ if(NOT USE_QEMU)
 
     add_qemu_unit_test(sesame_tests sesame_tests-qemu.axf)
     add_qemu_unit_test(matter_crypto_tests matter_crypto_tests-qemu.axf)
-    add_qemu_unit_test(matter_ec_raw_tests matter_ec_raw_tests-qemu.axf)
     add_qemu_unit_test(matter_mdns_tests matter_mdns_tests-qemu.axf)
     add_qemu_unit_test(matter_mdns_responder_tests matter_mdns_responder_tests-qemu.axf)
     add_qemu_unit_test(matter_sesame_tests matter_sesame_tests-qemu.axf)
