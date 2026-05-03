@@ -53,7 +53,7 @@ class Matter_Device
     self.events = matter.EventHandler(self)
 
     # tasmota.when_network_up(def () self.start() end)    # start when network is connected
-    self.commissioning.init_basic_commissioning()
+    # self.commissioning.init_basic_commissioning()
   end
 
   #############################################################

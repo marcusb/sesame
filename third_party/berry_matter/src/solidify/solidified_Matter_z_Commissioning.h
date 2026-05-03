@@ -321,7 +321,7 @@ be_local_closure(class_Matter_Commissioning_init_basic_commissioning,   /* name 
     be_str_weak(init_basic_commissioning),
     &be_const_str_solidified,
     ( &(const binstruction[ 9]) {  /* code */
-      0x88040120,  //  0000  GETMBR	R1	R0	K32
+      0x80000000,  //  0000  RET	0
       0x88040321,  //  0001  GETMBR	R1	R1	K33
       0x8C040322,  //  0002  GETMET	R1	R1	K34
       0x7C040200,  //  0003  CALL	R1	1
