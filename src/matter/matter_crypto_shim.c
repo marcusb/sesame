@@ -20,6 +20,7 @@
  *    requested by the VM.
  */
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +36,7 @@
 #include "berry.h"
 #include "mbedtls/ccm.h"
 #include "mbedtls/ctr_drbg.h"
+#include "mbedtls/error.h"
 
 /* The mw320 mbedtls port defines MBEDTLS_CCM_ALT (see
  * include/config/mbedtls_app_config.h) which removes vanilla ccm.c streaming
@@ -51,7 +53,7 @@ int mbedtls_ccm_update(mbedtls_ccm_context* ctx, const unsigned char* input,
     (void)output;
     (void)output_size;
     (void)output_len;
-    return -1;
+    assert(false);
 }
 #endif
 #include "app_crypto.h"
@@ -699,7 +701,7 @@ static int aes_ccm_run_ctx(mbedtls_ccm_context* ctx, int is_encrypt,
     int ret = 0;
 
     if (!bn || (aad_len && !baad) || !bin || !bout || !btag) {
-        ret = MBEDTLS_ERR_CCM_HW_ACCEL_FAILED;
+        ret = MBEDTLS_ERR_PLATFORM_HW_ACCEL_FAILED;
         goto cleanup;
     }
     memcpy(bn, n, n_len);

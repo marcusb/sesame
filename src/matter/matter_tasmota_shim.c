@@ -527,13 +527,13 @@ static int sesame_door_cmd(bvm* vm) {
     msg.type = CTRL_MSG_DOOR_CONTROL;
     switch (op) {
         case 0:
-            msg.msg.door_control.command = DOOR_CMD_STOP;
-            break;
-        case 1:
             msg.msg.door_control.command = DOOR_CMD_OPEN;
             break;
-        case 2:
+        case 1:
             msg.msg.door_control.command = DOOR_CMD_CLOSE;
+            break;
+        case 2:
+            msg.msg.door_control.command = DOOR_CMD_STOP;
             break;
         default:
             be_return_nil(vm);

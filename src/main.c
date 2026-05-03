@@ -36,7 +36,6 @@
 #include "psm.h"
 
 // Application
-#include "board.h"
 #include "board_support.h"
 #include "config_manager.h"
 #include "controller.h"

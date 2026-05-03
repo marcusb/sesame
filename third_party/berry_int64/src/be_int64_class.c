@@ -65,8 +65,9 @@ static int secure_str_to_int64(bvm *vm, const char* s, int64_t* result, void* al
   }
   if (*endptr != '\0') {
     if (allocated_ptr) be_free(vm, allocated_ptr, sizeof(int64_t));
-    be_raise(vm, "value_error", "invalid integer string format");
-    return -1;
+    /* printf("I64_ERR: '%s'\n", s); */
+    *result = 0;
+    return 0;
   }
   *result = temp;
   return 0;

@@ -37,7 +37,10 @@ add_library(test_infra STATIC
     unity_port.c
     test_runner.c)
 target_include_directories(test_infra PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/unity")
-target_link_libraries(test_infra PUBLIC freertos_kernel mw320_sdk logging mw320_mbedtls_port mbedcrypto)
+target_link_libraries(test_infra PUBLIC freertos_kernel logging mbedcrypto)
+if(NOT USE_QEMU)
+    target_link_libraries(test_infra PUBLIC mw320_sdk mw320_mbedtls_port)
+endif()
 
 # ---------------------------------------------------------------------------
 # Hardware stubs
@@ -47,9 +50,10 @@ add_library(test_stubs STATIC
 target_include_directories(test_stubs
     PUBLIC
     stubs
+    "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_SOURCE_DIR}/src"
     "${mw320_sdk_dir}/components/boot2_utils")
-target_link_libraries(test_stubs PRIVATE globals)
+target_link_libraries(test_stubs PRIVATE globals mw320_sdk)
 
 # ---------------------------------------------------------------------------
 # Specialized Matter Shim Tests
@@ -58,19 +62,21 @@ target_link_libraries(test_stubs PRIVATE globals)
 # Object library ensures all shared test code is available to linkers without dropping symbols
 add_library(matter_test_support OBJECT
     matter/matter_test_utils.c
-    stubs/stub_hostname.c
     "${CMAKE_SOURCE_DIR}/src/libc_wrappers.c"
-    "${CMAKE_SOURCE_DIR}/src/pin_mux.c"
     "${CMAKE_SOURCE_DIR}/src/util.c"
     "${CMAKE_SOURCE_DIR}/src/idle_task.c"
     "${CMAKE_SOURCE_DIR}/src/time_util.c")
 
 if(USE_QEMU)
     target_sources(matter_test_support PRIVATE 
-        qemu_vectors.c 
         stubs/stub_fsl_uart.c
         "${CMAKE_SOURCE_DIR}/src/hardfault.c"
-        "${CMAKE_SOURCE_DIR}/src/hardfault_irq.S")
+        "${CMAKE_SOURCE_DIR}/src/hardfault_irq.S"
+        "${CMAKE_SOURCE_DIR}/src/qemu/qemu_stubs.c"
+        "${CMAKE_SOURCE_DIR}/src/qemu/qemu_vectors.c")
+else()
+    target_sources(matter_test_support PRIVATE
+        "${CMAKE_SOURCE_DIR}/src/pin_mux.c")
 endif()
 
 target_include_directories(matter_test_support PUBLIC
@@ -78,9 +84,14 @@ target_include_directories(matter_test_support PUBLIC
     "${CMAKE_SOURCE_DIR}/third_party/berry/src")
 
 target_link_libraries(matter_test_support PUBLIC
-    globals unity logging board mw320_utility_assert
-    mw320_mbedtls_port mw320_drivers_aes mw320_drivers_crc
-    freertos_kernel test_infra test_stubs)
+    globals unity logging proto
+    freertos_kernel freertos_plus_tcp test_infra test_stubs)
+
+if(NOT USE_QEMU)
+    target_link_libraries(matter_test_support PUBLIC
+        board mw320_utility_assert
+        mw320_mbedtls_port mw320_drivers_aes mw320_drivers_crc)
+endif()
 
 if(USE_BACKTRACE)
     target_link_libraries(matter_test_support PUBLIC backtrace)
@@ -91,9 +102,6 @@ if(USE_QEMU)
 else()
     target_link_libraries(matter_test_support PUBLIC mw320_device_startup)
 endif()
-
-target_link_libraries(matter_test_support PUBLIC
-    "LINKER:--start-group" sesame_matter berry_matter berry "LINKER:--end-group")
 
 # Common ARM link options for tests
 add_compile_definitions(SDK_DEBUGCONSOLE=0)
@@ -116,6 +124,18 @@ macro(add_matter_test_binary name source)
         target_link_options(${target_name} PRIVATE
             "-Wl,--wrap,UART_TransferReceiveNonBlocking"
             "-Wl,--wrap,UART_TransferAbortReceive")
+        target_link_libraries(${target_name} PRIVATE
+            "LINKER:--start-group"
+            mbedcrypto
+            qemu_mbedtls_port
+            test_stubs
+            "LINKER:--whole-archive"
+            sesame_matter
+            "LINKER:--no-whole-archive"
+            berry_matter
+            berry
+            freertos_plus_tcp
+            "LINKER:--end-group")
     endif()
 endmacro()
 
@@ -150,10 +170,11 @@ set(SESAME_TEST_SOURCES
 
 if(USE_QEMU)
     list(APPEND SESAME_TEST_SOURCES 
-        qemu_vectors.c 
-        stubs/stub_fsl_uart.c
-        "${CMAKE_SOURCE_DIR}/src/hardfault.c"
-        "${CMAKE_SOURCE_DIR}/src/hardfault_irq.S")
+    stubs/stub_fsl_uart.c
+    "${CMAKE_SOURCE_DIR}/src/hardfault.c"
+    "${CMAKE_SOURCE_DIR}/src/hardfault_irq.S"
+    "${CMAKE_SOURCE_DIR}/src/qemu/qemu_stubs.c"
+    "${CMAKE_SOURCE_DIR}/src/qemu/qemu_vectors.c")
 endif()
 
 set(test_target "sesame_tests${target_suffix}")
@@ -167,7 +188,9 @@ target_include_directories(${test_target}
     "${CMAKE_SOURCE_DIR}/board"
     "${mw320_sdk_dir}/components/boot2_utils"
     "${mw320_sdk_dir}/middleware/wifi/incl"
-    "${mw320_sdk_dir}/middleware/wifi/incl/port/os")
+    "${mw320_sdk_dir}/middleware/wifi/incl/port/os"
+    "${freertos_plus_tcp_SOURCE_DIR}/source/include"
+    "${freertos_plus_tcp_SOURCE_DIR}/source/portable/Compiler/GCC")
 
 target_link_libraries(${test_target}
     PRIVATE
@@ -178,8 +201,15 @@ target_link_libraries(${test_target}
     logging
     proto
     freertos_kernel
-    board
     mw320_utility_assert)
+
+if(NOT USE_QEMU)
+    target_link_libraries(${test_target} PRIVATE board)
+endif()
+
+if(USE_QEMU)
+    target_link_libraries(${test_target} PRIVATE freertos_plus_tcp)
+endif()
 
 if(USE_BACKTRACE)
     target_link_libraries(${test_target} PRIVATE backtrace)
@@ -189,13 +219,25 @@ target_link_options(${test_target}
     PRIVATE
     ${ARM_TEST_LINK_OPTIONS}
     "-Wl,-Map,${test_target}.map"
-    "-T${ARM_TEST_LINKER_SCRIPT}"
-)
+    "-T${ARM_TEST_LINKER_SCRIPT}")
+
 if(USE_QEMU)
     target_link_options(${test_target}
         PRIVATE
         "-Wl,--wrap,UART_TransferReceiveNonBlocking"
         "-Wl,--wrap,UART_TransferAbortReceive")
+    target_link_libraries(${test_target} PRIVATE
+        "LINKER:--start-group"
+        mbedcrypto
+        qemu_mbedtls_port
+        test_stubs
+        "LINKER:--whole-archive"
+        sesame_matter
+        "LINKER:--no-whole-archive"
+        berry_matter
+        berry
+        freertos_plus_tcp
+        "LINKER:--end-group")
 endif()
 
 if(USE_QEMU)

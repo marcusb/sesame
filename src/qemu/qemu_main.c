@@ -27,7 +27,7 @@ static const uint8_t gateway_addr[4] = {10, 0, 2, 2};
 static const uint8_t dns_server_addr[4] = {10, 0, 2, 3};
 static const uint8_t hwaddr[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
 
-static NetworkInterface_t eth_iface;
+NetworkInterface_t eth_iface;
 
 void board_init(void) {
     // No-op for QEMU
@@ -80,7 +80,15 @@ void create_board_tasks() {
     // No board tasks in QEMU
 }
 
+#ifndef QEMU
 #include "fsl_common.h"
+#else
+static void NVIC_SystemReset(void) {
+    /* Standard ARM Cortex-M Reset */
+    *((volatile uint32_t*)0xE000ED0C) = 0x05FA0004UL;
+    while (1);
+}
+#endif
 
 void reboot() {
     LogInfo(("QEMU reboot (NVIC_SystemReset)"));

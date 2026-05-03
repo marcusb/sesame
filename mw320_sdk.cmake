@@ -426,7 +426,6 @@ target_include_directories(mw320_mbedtls_port
 target_sources(mw320_mbedtls_port
     PRIVATE
     "${mw320_sdk_dir}/middleware/mbedtls/port/mw/aes_alt.c"
-    #"${mw320_sdk_dir}/middleware/mbedtls/port/mw/ksdk_mbedtls.c"
     "${mw320_sdk_dir}/middleware/mbedtls/port/mw/ccm_alt.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ksdk_mbedtls.c"
 )

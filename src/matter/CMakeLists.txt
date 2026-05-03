@@ -47,6 +47,9 @@ target_link_libraries(sesame_matter
     globals
     logging
     mbedcrypto
-    mw320_sdk
     proto
 )
+
+if(NOT USE_QEMU)
+    target_link_libraries(sesame_matter PUBLIC mw320_sdk)
+endif()

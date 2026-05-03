@@ -1,5 +1,6 @@
 #include "time_util.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <sys/time.h>
 
@@ -8,7 +9,9 @@
 #include "timers.h"
 
 // mw320
+#ifndef QEMU
 #include "fsl_rtc.h"
+#endif
 
 #define RTC_SIG 0xdeadbeef
 /*
@@ -52,7 +55,7 @@ void setup_rtc() {
 void start_rtc_save(void) {
     // update the stored tick count from the RTC every 10 seconds
     static TimerHandle_t tm;
-    tm = xTimerCreate("rtc", pdMS_TO_TICKS(10000), true, NULL, update_clock);
+    tm = xTimerCreate("rtc", pdMS_TO_TICKS(10000), 1, NULL, update_clock);
     xTimerStart(tm, 0);
 }
 

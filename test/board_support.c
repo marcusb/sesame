@@ -6,11 +6,18 @@
 #include <string.h>
 
 #include "FreeRTOS.h"
+#ifndef QEMU
 #include "board.h"
 #include "clock_config.h"
-#include "ksdk_mbedtls.h"
-#include "mbedtls/entropy.h"
 #include "pin_mux.h"
+#else
+uint32_t SystemCoreClock = 25000000;
+#endif
+#ifndef QEMU
+#include "ksdk_mbedtls.h"
+#else
+extern void mbedtls_hardware_init_hash(uint8_t* entropy, size_t len);
+#endif
 #include "queue.h"
 #include "task.h"
 

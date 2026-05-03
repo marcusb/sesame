@@ -10,14 +10,20 @@
 #include "task.h"
 
 /* mw320 board */
+#ifndef QEMU
 #include "board.h"
 #include "clock_config.h"
 #include "pin_mux.h"
+#endif
 
 /* Application */
 #include "board_support.h"
 #include "logging.h"
+#ifdef QEMU
+#include "psm.h"
+#else
 #include "psm-v2.h"
+#endif
 #include "string_util.h"
 
 /* Unity */

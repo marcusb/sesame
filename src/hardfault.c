@@ -1,9 +1,8 @@
-#include "debug_console.h"
-#ifdef QEMU
 #include "FreeRTOS.h"
-#include "fsl_common.h"
+#include "debug_console.h"
 #include "task.h"
-#else
+#ifndef QEMU
+#include "fsl_common.h"
 #include "wm_os.h"
 #endif
 
@@ -84,6 +83,7 @@ __attribute__((__used__)) void HardFault_IRQHandler_C(
 
     PRINTF("Task name: %s\r\n", pcTaskGetName(NULL));
 
+#ifndef QEMU
     uint32_t hfsr = SCB->HFSR;
     PRINTF("HFSR: 0x%08x\r\n", (unsigned int)hfsr);
     if (hfsr & SCB_HFSR_FORCED_Msk) {
@@ -103,5 +103,6 @@ __attribute__((__used__)) void HardFault_IRQHandler_C(
         }
         PRINTF("UFSR: 0x%04x\r\n", (unsigned int)(hfsr >> 16));
     }
+#endif
     for (;;);
 }

@@ -326,9 +326,9 @@ class Matter_Device
       var f = open(self.FILENAME, "w")
       f.write(j)
       f.close()
-      return j
+      return nil
     except .. as e, m
-      return j
+      return nil
     end
   end
     
@@ -350,6 +350,7 @@ class Matter_Device
       var f = open(self.FILENAME)
       var s = f.read()
       f.close()
+      print(f"MTR: DEBUG load_param FILENAME={self.FILENAME} s='{s}'")
       import json
       var j = json.load(s)
 

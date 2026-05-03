@@ -7,6 +7,7 @@
  */
 
 #include "app_crypto.h"
+#include "app_logging.h"
 #include "entropy_poll.h"
 #include "fsl_common.h"
 #include "mbedtls/build_info.h"
@@ -80,7 +81,7 @@ static int internal_entropy_ctr_drbg_setup(void) {
         if ((ret = mbedtls_ctr_drbg_seed(
                  &s_internalMbedtlsGdata.ctrDrbg, mbedtls_entropy_func,
                  &s_internalMbedtlsGdata.entropy, NULL, 0)) != 0) {
-            PRINTF("mbedtls_ctr_drbg_seed returned, ret = -0x%02X", -ret);
+            LogError(("mbedtls_ctr_drbg_seed returned, ret = -0x%02X", -ret));
             return -1;
         }
 

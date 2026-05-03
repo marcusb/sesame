@@ -84,7 +84,8 @@ target_compile_definitions(globals
     _DEFAULT_SOURCE
     _GNU_SOURCE
     __ASSERT_VERBOSE
-    __FPU_PRESENT)
+    __FPU_PRESENT
+    TASMOTA=1)
 
 # -------------------------------------------------------------------------------------------------
 # Backtrace
@@ -280,10 +281,32 @@ FetchContent_Declare(mbedtls
     GIT_TAG        v3.6.3
 )
 FetchContent_MakeAvailable(mbedtls)
-target_link_libraries(mbedcrypto
-    PUBLIC
-    mw320_mbedtls_port
-)
+
+if(USE_QEMU)
+    add_library(qemu_mbedtls_port STATIC src/qemu/qemu_mbedtls.c)
+    target_include_directories(qemu_mbedtls_port
+        PUBLIC
+        "${mbedtls_SOURCE_DIR}/library"
+        "${mbedtls_SOURCE_DIR}/include"
+        "include"
+        "include/config"
+    )
+    target_link_libraries(qemu_mbedtls_port
+        PUBLIC
+        freertos_config
+        freertos_kernel
+    )
+    target_compile_definitions(qemu_mbedtls_port
+        PUBLIC
+        "MBEDTLS_CONFIG_FILE=\"mbedtls_qemu_config.h\""
+    )
+    target_link_libraries(mbedcrypto PUBLIC qemu_mbedtls_port)
+else()
+    target_link_libraries(mbedcrypto
+        PUBLIC
+        mw320_mbedtls_port
+    )
+endif()
 
 FetchContent_Declare(coreHTTP
     GIT_REPOSITORY https://github.com/FreeRTOS/coreHTTP.git
@@ -341,22 +364,22 @@ target_link_libraries(coreMQTT_agent
 include("mw320_sdk.cmake")
 
 add_library(mw320_sdk INTERFACE)
-target_link_libraries(mw320_sdk
-    INTERFACE
-    mw320_wlcmgr
-    mw320_drivers_aes
-    mw320_drivers_gpio
-    mw320_drivers_rtc
-    mw320_drivers_wdt
-    mw320_utility_assert
-    mw320_utility_debug_console
-    mw320_boot2_psm
-)
 
-if(USE_QEMU)
-    target_link_libraries(mw320_sdk INTERFACE mw320_device_system)
+if(NOT USE_QEMU)
+    target_link_libraries(mw320_sdk
+        INTERFACE
+        mw320_drivers_aes
+        mw320_drivers_gpio
+        mw320_drivers_rtc
+        mw320_drivers_wdt
+        mw320_utility_assert
+        mw320_utility_debug_console
+        mw320_boot2_psm
+        mw320_device_startup
+        mw320_wlcmgr
+    )
 else()
-    target_link_libraries(mw320_sdk INTERFACE mw320_device_startup)
+    target_link_libraries(mw320_sdk INTERFACE mw320_device_system)
 endif()
 
 set(exe_target "sesame${target_suffix}")
@@ -393,44 +416,36 @@ target_link_libraries(board
 add_subdirectory(third_party)
 add_subdirectory(src/matter)
 
+set(app_sources_common
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/dns_hook_default.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mqtt.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/time_util.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c")
+
 if(USE_QEMU)
-    set(app_sources
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/dns_hook_default.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/qemu_main.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/qemu_psm.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/qemu_stubs.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/mqtt.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/time_util.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/test/qemu_vectors.c"
-    )
+    set(app_sources 
+         ${app_sources_common}
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/qemu/qemu_main.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/qemu/qemu_psm.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/qemu/qemu_stubs.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/qemu/qemu_vectors.c")
 else()
     set(app_sources
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/config_manager.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/dhcp.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/dns_hook_default.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/freertos_agent_message.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpio.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/httpd.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
+        ${app_sources_common}
         "${CMAKE_CURRENT_SOURCE_DIR}/src/board_main.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/mqtt.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpio.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/leds.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/network_manager.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/ota.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/ota_client.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/pic_uart.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/pin_mux.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/syslog.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/time_util.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/util.c"
-    )
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/pin_mux.c")
 endif()
 
 add_library(app_deps INTERFACE)
@@ -477,10 +492,6 @@ target_link_options(app_deps
     "-Wl,--gc-sections"
     "-Wl,--nmagic")
 
-set(exe_target "sesame${target_suffix}")
-set(exe_target_ram "sesame_ram${target_suffix}")
-set(CMAKE_EXECUTABLE_SUFFIX ".axf")
-
 if(USE_QEMU)
     set(USE_BACKTRACE ON)
     set(common_exe_sources
@@ -502,16 +513,31 @@ target_sources("${exe_target}" PRIVATE ${app_sources} ${common_exe_sources})
 target_compile_definitions("${exe_target}" PRIVATE SESAME_ENABLE_MATTER=1)
 target_link_libraries("${exe_target}" PRIVATE app_deps sesame_matter berry_matter)
 # Resolve circular deps between berry and sesame_matter/berry_matter port code.
-target_link_options("${exe_target}" PRIVATE
-    "LINKER:--start-group"
-    "$<TARGET_FILE:berry>"
-    "$<TARGET_FILE:berry_matter>"
-    "LINKER:--whole-archive"
-    "$<TARGET_FILE:sesame_matter>"
-    "LINKER:--no-whole-archive"
-    "LINKER:--end-group"
-    "-Wl,-Map,${exe_target}.map"
-)
+if(USE_QEMU)
+    target_link_options("${exe_target}" PRIVATE
+        "LINKER:--start-group"
+        "$<TARGET_FILE:berry>"
+        "$<TARGET_FILE:berry_matter>"
+        "$<TARGET_FILE:mbedcrypto>"
+        "$<TARGET_FILE:qemu_mbedtls_port>"
+        "LINKER:--whole-archive"
+        "$<TARGET_FILE:sesame_matter>"
+        "LINKER:--no-whole-archive"
+        "LINKER:--end-group"
+        "-Wl,-Map,${exe_target}.map"
+    )
+else()
+    target_link_options("${exe_target}" PRIVATE
+        "LINKER:--start-group"
+        "$<TARGET_FILE:berry>"
+        "$<TARGET_FILE:berry_matter>"
+        "LINKER:--whole-archive"
+        "$<TARGET_FILE:sesame_matter>"
+        "LINKER:--no-whole-archive"
+        "LINKER:--end-group"
+        "-Wl,-Map,${exe_target}.map"
+    )
+endif()
 if(USE_QEMU)
     target_link_options("${exe_target}" PRIVATE "-T${CMAKE_CURRENT_SOURCE_DIR}/board/qemu.ld" "--oslib=semihost")
 else()

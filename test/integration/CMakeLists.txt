@@ -43,7 +43,7 @@ macro(add_integration_test name)
         "${CMAKE_SOURCE_DIR}/src/libc_wrappers.c"
         "${CMAKE_SOURCE_DIR}/src/hardfault.c"
         "${CMAKE_SOURCE_DIR}/src/hardfault_irq.S"
-        "${CMAKE_SOURCE_DIR}/test/qemu_vectors.c"
+        "${CMAKE_SOURCE_DIR}/src/qemu/qemu_vectors.c"
     )
 
     target_link_libraries(${target}
