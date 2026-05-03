@@ -363,6 +363,7 @@ class Matter_Session_Store
       var file_json = json.load(file_content)
       file_content = nil
       tasmota.gc()      # clean-up a potential long string
+      if file_json == nil    return end
 
       for v : file_json         # iterate on values
         # read fabric

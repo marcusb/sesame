@@ -270,16 +270,35 @@ void matter_tasmota_notify_network_up(bvm* vm) {
 /* tasmota.wifi(key?) -> map or value */
 static bool get_wifi_info(char* ip_out, char* mac_out, char* ip6_out) {
     NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(NULL);
-    while (ep && ep->bits.bIPv6) {
+    bool found_v4 = false;
+    bool found_v6 = false;
+
+    ip_out[0] = '\0';
+    ip6_out[0] = '\0';
+    mac_out[0] = '\0';
+
+    while (ep) {
+        if (!found_v4 && !ep->bits.bIPv6) {
+            FreeRTOS_inet_ntoa(ep->ipv4_settings.ulIPAddress, ip_out);
+            const uint8_t* mac = ep->xMACAddress.ucBytes;
+            snprintf(mac_out, 18, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0],
+                     mac[1], mac[2], mac[3], mac[4], mac[5]);
+            found_v4 = true;
+        }
+        if (!found_v6 && ep->bits.bIPv6) {
+            /* FreeRTOS-Plus-TCP usually has the Link-Local address as the
+             * primary IPv6 address on the endpoint. */
+            FreeRTOS_inet_ntop6(&ep->ipv6_settings.xIPAddress, ip6_out, 48);
+            if (mac_out[0] == '\0') {
+                const uint8_t* mac = ep->xMACAddress.ucBytes;
+                snprintf(mac_out, 18, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0],
+                         mac[1], mac[2], mac[3], mac[4], mac[5]);
+            }
+            found_v6 = true;
+        }
         ep = FreeRTOS_NextEndPoint(NULL, ep);
     }
-    if (!ep) return false;
-    FreeRTOS_inet_ntoa(ep->ipv4_settings.ulIPAddress, ip_out);
-    const uint8_t* mac = ep->xMACAddress.ucBytes;
-    snprintf(mac_out, 18, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1],
-             mac[2], mac[3], mac[4], mac[5]);
-    ip6_out[0] = '\0';
-    return true;
+    return found_v4 || found_v6;
 }
 
 static int tas_wifi(bvm* vm) {
@@ -293,6 +312,8 @@ static int tas_wifi(bvm* vm) {
             be_pushstring(vm, ok ? ip : "");
         } else if (!strcmp(key, "mac")) {
             be_pushstring(vm, ok ? mac : "");
+        } else if (!strcmp(key, "ip6local")) {
+            be_pushstring(vm, ok ? ip6 : "");
         } else {
             be_pushnil(vm);
         }
@@ -309,6 +330,10 @@ static int tas_wifi(bvm* vm) {
     be_pop(vm, 2);
     be_pushstring(vm, "mac");
     be_pushstring(vm, ok ? mac : "");
+    be_data_insert(vm, -3);
+    be_pop(vm, 2);
+    be_pushstring(vm, "ip6local");
+    be_pushstring(vm, ok ? ip6 : "");
     be_data_insert(vm, -3);
     be_pop(vm, 2);
     be_pop(vm, 1);

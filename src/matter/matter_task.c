@@ -146,6 +146,7 @@ static void matter_task(void* pvParameters) {
         "matter_device.plugins_persist = true",
         "matter_device.plugins_config = {\"0\":{\"type\":\"root\"},"
         "\"2\":{\"type\":\"sesame_door\"}}",
+#ifdef QEMU
         /* Reseed with the canonical Matter test pair (discriminator 3840,
          * passcode 20202021) and reopen commissioning with the new SPAKE2+
          * verifier so chip-tool can pair without us decoding the random
@@ -156,6 +157,7 @@ static void matter_task(void* pvParameters) {
         "matter_device.commissioning.start_root_basic_commissioning()\n"
         "log('MTR: discriminator=' + str(matter_device.root_discriminator) "
         "+ ' passcode=' + str(matter_device.root_passcode), 2)",
+#endif
         /* start() is fired from tasmota.when_network_up (registered from
          * init_basic_commissioning); the callback runs in _matter_net_cbs,
          * which matter_tasmota_notify_network_up drains after bootstrap.
@@ -169,24 +171,6 @@ static void matter_task(void* pvParameters) {
         "  _s = '_start_udp'\n"
         "  matter_device._start_udp(matter_device.UDP_PORT)\n"
         "  print('[matter] _start_udp ok')\n"
-        "  _s = 'patch_device'\n"
-        "  def _mtr_device_received_ack_fixed(self, msg)\n"
-        "    var id = msg.ack_message_counter\n"
-        "    var exch = msg.exchange_id\n"
-        "    if id == nil return end\n"
-        "    var ps = self.udp_server.packets_sent\n"
-        "    var idx = 0\n"
-        "    while idx < size(ps)\n"
-        "      var packet = ps[idx]\n"
-        "      if packet.msg_id == id && (packet.exchange_id & 0xFFFF) == "
-        "(exch & 0xFFFF)\n"
-        "        ps.remove(idx)\n"
-        "      else\n"
-        "        idx += 1\n"
-        "      end\n"
-        "    end\n"
-        "  end\n"
-        "  matter_device.received_ack = _mtr_device_received_ack_fixed\n"
         "  _s = 'start_mdns'\n"
         "  matter_device.commissioning.start_mdns_announce_hostnames()\n"
         "  print('[matter] start_mdns ok')\n"
