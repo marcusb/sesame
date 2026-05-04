@@ -87,6 +87,12 @@ static void deliver_packet_above(uint8_t iface, const uint8_t* data,
     buf->pxInterface = interfaces[iface];
     buf->pxEndPoint =
         FreeRTOS_MatchingEndpoint(buf->pxInterface, buf->pucEthernetBuffer);
+    if (buf->pxEndPoint == NULL) {
+        /* For multicast packets (like mDNS), MatchingEndpoint might return
+         * NULL. Pick the first endpoint of the interface so the stack can
+         * process it. */
+        buf->pxEndPoint = FreeRTOS_FirstEndPoint(buf->pxInterface);
+    }
 
     IPStackEvent_t xRxEvent = {eNetworkRxEvent, buf};
     if (xSendEventStructToIPTask(&xRxEvent, pdMS_TO_TICKS(250)) == pdFAIL) {
