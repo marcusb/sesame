@@ -539,14 +539,14 @@ static int path_rename(bvm* vm) {
     const char* oldname = be_tostring(vm, 1);
     const char* newname = be_tostring(vm, 2);
     // PSM doesn't have rename, so copy and delete
-    char* buf = malloc(4096);
+    char* buf = pvPortMalloc(4096);
     if (buf) {
         int ret = psm_get_variable(psm_hnd, oldname, buf, 4096);
         if (ret > 0) {
             psm_set_variable(psm_hnd, newname, buf, ret);
             psm_object_delete(psm_hnd, oldname);
         }
-        free(buf);
+        vPortFree(buf);
     }
     be_return_nil(vm);
 }
@@ -845,7 +845,11 @@ void* be_fopen(const char* filename, const char* modes) {
     strncpy(f->name, filename, sizeof(f->name) - 1);
     f->write = (strchr(modes, 'w') != NULL);
 
-    char* buf = malloc(4096);
+    char* buf = pvPortMalloc(4096);
+    if (!buf) {
+        vPortFree(f);
+        return NULL;
+    }
     int ret = psm_get_variable(psm_hnd, filename, buf, 4096);
     if (ret > 0) {
         f->data = buf;

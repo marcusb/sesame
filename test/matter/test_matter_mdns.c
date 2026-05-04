@@ -131,11 +131,11 @@ void test_berry_mdns_add_service_populates_snapshot(void) {
     be_assert_success(
         "import mdns; mdns.add_hostname('sesame', '', '10.0.2.15')");
     be_assert_success(
-        "import mdns; mdns.add_service('_matter', '_tcp', 5540, "
+        "import mdns; mdns.add_service('_matter', '_udp', 5540, "
         "{'DN': 'Sesame', 'VP': '65521+32769'}, 'ABCDEF0123456789', 'sesame')");
 
     DNSRecord_t* srv =
-        find_record(dnsTYPE_SRV, "ABCDEF0123456789._matter._tcp.local");
+        find_record(dnsTYPE_SRV, "ABCDEF0123456789._matter._udp.local");
     TEST_ASSERT_NOT_NULL_MESSAGE(srv, "expected SRV record from Berry call");
     TEST_ASSERT_EQUAL_UINT16(5540, srv->xData.xSrvRecord.usPort);
 }
