@@ -407,16 +407,20 @@ void matter_mdns_announce(void) {
     if (answers > 0) {
         size_t packet_len = (size_t)(pucWrite - pucBuffer);
 
-        for (int retry = 0; retry < 2; retry++) {
+        for (int retry = 0; retry < 3; retry++) {
             /* Send to IPv4 multicast */
             xSocket = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM,
                                       ipPROTOCOL_UDP);
             if (xSocket != FREERTOS_INVALID_SOCKET) {
+                memset(&xAddress, 0, sizeof(xAddress));
+                xAddress.sin_family = FREERTOS_AF_INET;
                 xAddress.sin_port = FreeRTOS_htons(5353);
                 xAddress.sin_address.ulIP_IPv4 =
                     FreeRTOS_inet_addr("224.0.0.251");
-                FreeRTOS_sendto(xSocket, pucBuffer, packet_len, 0, &xAddress,
-                                sizeof(xAddress));
+                if (FreeRTOS_sendto(xSocket, pucBuffer, packet_len, 0,
+                                    &xAddress, sizeof(xAddress)) < 0) {
+                    LogError(("mdns: v4 send failed"));
+                }
                 FreeRTOS_closesocket(xSocket);
             }
 
@@ -424,15 +428,18 @@ void matter_mdns_announce(void) {
             xSocket = FreeRTOS_socket(FREERTOS_AF_INET6, FREERTOS_SOCK_DGRAM,
                                       ipPROTOCOL_UDP);
             if (xSocket != FREERTOS_INVALID_SOCKET) {
-                xAddress.sin_port = FreeRTOS_htons(5353);
+                memset(&xAddress, 0, sizeof(xAddress));
                 xAddress.sin_family = FREERTOS_AF_INET6;
+                xAddress.sin_port = FreeRTOS_htons(5353);
                 FreeRTOS_inet_pton(FREERTOS_AF_INET6, "ff02::fb",
                                    xAddress.sin_address.xIP_IPv6.ucBytes);
-                FreeRTOS_sendto(xSocket, pucBuffer, packet_len, 0, &xAddress,
-                                sizeof(xAddress));
+                if (FreeRTOS_sendto(xSocket, pucBuffer, packet_len, 0,
+                                    &xAddress, sizeof(xAddress)) < 0) {
+                    LogError(("mdns: v6 send failed"));
+                }
                 FreeRTOS_closesocket(xSocket);
             }
-            if (retry == 0) vTaskDelay(pdMS_TO_TICKS(100));
+            vTaskDelay(pdMS_TO_TICKS(200 * (retry + 1)));
         }
     }
 
