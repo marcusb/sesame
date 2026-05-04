@@ -369,6 +369,12 @@ static int tas_cmd(bvm* vm) {
     const char* hostname = pcApplicationHostnameHook();
     if (!hostname) hostname = "sesame";
 
+    if (!strcmp(name, "MdnsAnnounce")) {
+        extern void matter_mdns_announce(void);
+        matter_mdns_announce();
+        be_return_nil(vm);
+    }
+
     be_newobject(vm, "map");
 
     if (!strcmp(name, "DeviceName")) {
@@ -569,6 +575,13 @@ static int sesame_door_cmd(bvm* vm) {
 
 /* mdns module — backed by matter_mdns.c */
 static int mdns_start(bvm* vm) { be_return_nil(vm); }
+
+static int mdns_announce(bvm* vm) {
+    (void)vm;
+    extern void matter_mdns_announce(void);
+    matter_mdns_announce();
+    be_return_nil(vm);
+}
 
 static int mdns_add_hostname(bvm* vm) {
     const char* hostname = be_tostring(vm, 1);
@@ -993,6 +1006,7 @@ module sesame (scope: global, name: sesame) {
 
 module mdns (scope: global, name: mdns) {
     start, func(mdns_start)
+    announce, func(mdns_announce)
     add_hostname, func(mdns_add_hostname)
     add_service, func(mdns_add_service)
     add_subtype, func(mdns_add_subtype)

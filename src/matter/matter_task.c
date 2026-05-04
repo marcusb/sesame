@@ -186,6 +186,7 @@ static void matter_task(void* pvParameters) {
         "  _s = 'start_mdns'\n"
         "  matter_device.commissioning.start_mdns_announce_hostnames()\n"
         "  print('[matter] start_mdns ok')\n"
+        "  tasmota.defer(/-> tasmota.cmd('MdnsAnnounce'))\n"
         "except .. as e, m\n"
         "  print('[matter] start fail at', _s, ':', e, '|', m)\n"
         "end",
