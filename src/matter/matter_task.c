@@ -137,6 +137,18 @@ static void matter_task(void* pvParameters) {
         "\"aggregator\": matter.Plugin_Aggregator,"
         "\"shutter\": matter.Plugin_Shutter,"
         "\"sesame_door\": Matter_Door_Plugin}",
+        /* Ensure fabrics file exists and is not empty to avoid a solidified
+         * bug where json.load(nil) throws 'nil' value is not callable. */
+        "try\n"
+        "  var f = open('/_matter_fabrics.json', 'r')\n"
+        "  var s = ''\n"
+        "  if f != nil s = f.read() f.close() end\n"
+        "  if s == ''\n"
+        "    f = open('/_matter_fabrics.json', 'w')\n"
+        "    f.write('[]')\n"
+        "    f.close()\n"
+        "  end\n"
+        "except .. end",
         "matter_device = matter.Device()\n"
         /* Solidified Matter_Device.init() does NOT copy
          * matter.plugins_classes to the instance slot (it's only set when
