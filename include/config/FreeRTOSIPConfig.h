@@ -297,4 +297,8 @@ extern void vLoggingPrintf(const char* pcFormatString, ...);
 
 #define portINLINE __inline
 
+#define ipconfigREUSE_UDP_REGISTRATION 1
+#define ipconfigUDP_PASS_ALL_RECV_PACKETS 1
+#define ipconfigDNSQuery_MULTI 1
+
 #endif /* FREERTOS_IP_CONFIG_H */

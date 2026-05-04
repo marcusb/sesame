@@ -274,214 +274,200 @@ DNSRecord_t* xApplicationDNSRecordQueryHook_Multi(
     return recs;
 }
 
-void matter_mdns_announce(void) {
-    LogInfo(("mdns: sending proactive announcement"));
+typedef struct {
+    uint8_t* buf;
+    size_t len;
+} announce_params_t;
+
+static void announce_task(void* pvParameters) {
+    announce_params_t* p = (announce_params_t*)pvParameters;
     Socket_t xSocket;
     struct freertos_sockaddr xAddress;
-    uint8_t* pucBuffer;
-    size_t uxBufferLength = 1024;
 
-    pucBuffer = malloc(uxBufferLength);
-    if (!pucBuffer) {
-        return;
+    for (int retry = 0; retry < 5; retry++) {
+        lock();
+        for (NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(NULL); ep != NULL;
+             ep = FreeRTOS_NextEndPoint(NULL, ep)) {
+            if (!ep->pxNetworkInterface ||
+                !ep->pxNetworkInterface->bits.bInterfaceUp)
+                continue;
+            if (!ep->bits.bEndPointUp) continue;
+
+            if (!ep->bits.bIPv6) {
+                /* IPv4 announcement */
+                xSocket = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM,
+                                          ipPROTOCOL_UDP);
+                if (xSocket != FREERTOS_INVALID_SOCKET) {
+                    memset(&xAddress, 0, sizeof(xAddress));
+                    xAddress.sin_len = (uint8_t)sizeof(xAddress);
+                    xAddress.sin_family = FREERTOS_AF_INET;
+                    xAddress.sin_port = FreeRTOS_htons(5353);
+                    FreeRTOS_bind(xSocket, &xAddress, sizeof(xAddress));
+                    xAddress.sin_address.ulIP_IPv4 =
+                        FreeRTOS_inet_addr("224.0.0.251");
+                    FreeRTOS_sendto(xSocket, p->buf, p->len, 0, &xAddress,
+                                    sizeof(xAddress));
+                    FreeRTOS_closesocket(xSocket);
+                }
+            } else {
+                /* IPv6 announcement */
+                xSocket = FreeRTOS_socket(FREERTOS_AF_INET6,
+                                          FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
+                if (xSocket != FREERTOS_INVALID_SOCKET) {
+                    memset(&xAddress, 0, sizeof(xAddress));
+                    xAddress.sin_len = (uint8_t)sizeof(xAddress);
+                    xAddress.sin_family = FREERTOS_AF_INET6;
+                    xAddress.sin_port = FreeRTOS_htons(5353);
+                    FreeRTOS_bind(xSocket, &xAddress, sizeof(xAddress));
+                    FreeRTOS_inet_pton(FREERTOS_AF_INET6, "ff02::fb",
+                                       xAddress.sin_address.xIP_IPv6.ucBytes);
+                    FreeRTOS_sendto(xSocket, p->buf, p->len, 0, &xAddress,
+                                    sizeof(xAddress));
+                    FreeRTOS_closesocket(xSocket);
+                }
+            }
+        }
+        unlock();
+        vTaskDelay(pdMS_TO_TICKS(500 * (1 << retry)));
     }
-    memset(pucBuffer, 0, uxBufferLength);
 
+    vPortFree(p->buf);
+    vPortFree(p);
+    vTaskDelete(NULL);
+}
+
+void matter_mdns_announce(void) {
+    LogInfo(("mdns: starting proactive discovery broadcast"));
+
+    uint8_t* pucBuffer = pvPortMalloc(1024);
+    if (!pucBuffer) return;
+
+    lock();
     DNSMessage_t* pxDNSMessage = (DNSMessage_t*)pucBuffer;
-    pxDNSMessage->usFlags =
-        FreeRTOS_htons(0x8400); /* Response, Authoritative */
+    memset(pucBuffer, 0, 1024);
+    pxDNSMessage->usFlags = FreeRTOS_htons(0x8400);
 
     uint8_t* pucWrite = pucBuffer + sizeof(DNSMessage_t);
     int answers = 0;
 
-    lock();
-    for (NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(NULL); ep != NULL;
-         ep = FreeRTOS_NextEndPoint(NULL, ep)) {
-        /* Ensure the interface and endpoint are actually up */
-        if (!ep->pxNetworkInterface ||
-            !ep->pxNetworkInterface->bits.bInterfaceUp)
-            continue;
-        if (!ep->bits.bEndPointUp) continue;
+    for (UBaseType_t i = 0; i < s_count; i++) {
+        matter_mdns_entry_t* e = &s_entries[i];
+        DNSRecord_t* r = &e->rec;
 
-        memset(pucBuffer, 0, uxBufferLength);
-        pxDNSMessage = (DNSMessage_t*)pucBuffer;
-        pxDNSMessage->usFlags = FreeRTOS_htons(0x8400);
-
-        uint8_t* pucWrite = pucBuffer + sizeof(DNSMessage_t);
-        int answers = 0;
-
-        for (UBaseType_t i = 0; i < s_count; i++) {
-            matter_mdns_entry_t* e = &s_entries[i];
-            DNSRecord_t* r = &e->rec;
-
-            /* Write record name */
-            const char* name = r->pcName;
-            const char* p = name;
-            while (p && *p) {
-                const char* next = strchr(p, '.');
-                int len = next ? (next - p) : strlen(p);
-                *pucWrite++ = (uint8_t)len;
-                memcpy(pucWrite, p, len);
-                pucWrite += len;
-                if (!next) break;
-                p = next + 1;
-            }
-            *pucWrite++ = 0;
-
-            /* Type */
-            pucWrite[0] = (uint8_t)(r->usRecordType >> 8);
-            pucWrite[1] = (uint8_t)(r->usRecordType & 0xff);
-            pucWrite += 2;
-
-            /* Class (IN) */
-            uint16_t dns_class = dnsCLASS_IN;
-            if (r->usRecordType != dnsTYPE_PTR) {
-                dns_class |= 0x8000; /* Flush cache bit for unique records */
-            }
-            pucWrite[0] = (uint8_t)(dns_class >> 8);
-            pucWrite[1] = (uint8_t)(dns_class & 0xff);
-            pucWrite += 2;
-
-            /* TTL */
-            uint32_t ttl = (r->usRecordType == dnsTYPE_PTR) ? 4500 : 120;
-            pucWrite[0] = (uint8_t)(ttl >> 24);
-            pucWrite[1] = (uint8_t)(ttl >> 16);
-            pucWrite[2] = (uint8_t)(ttl >> 8);
-            pucWrite[3] = (uint8_t)(ttl & 0xff);
-            pucWrite += 4;
-
-            uint8_t* pucDataLen = pucWrite;
-            pucWrite += 2;
-            uint8_t* pucDataStart = pucWrite;
-
-            switch (r->usRecordType) {
-                case dnsTYPE_PTR:
-                    p = r->xData.pcPtrRecord;
-                    while (p && *p) {
-                        const char* next = strchr(p, '.');
-                        int len = next ? (next - p) : strlen(p);
-                        *pucWrite++ = (uint8_t)len;
-                        memcpy(pucWrite, p, len);
-                        pucWrite += len;
-                        if (!next) break;
-                        p = next + 1;
-                    }
-                    *pucWrite++ = 0;
-                    break;
-                case dnsTYPE_SRV:
-                    /* Priority & Weight */
-                    memset(pucWrite, 0, 4);
-                    pucWrite += 4;
-                    /* Port */
-                    pucWrite[0] = (uint8_t)(r->xData.xSrvRecord.usPort >> 8);
-                    pucWrite[1] = (uint8_t)(r->xData.xSrvRecord.usPort & 0xff);
-                    pucWrite += 2;
-                    /* Target */
-                    p = r->xData.xSrvRecord.pcTarget;
-                    while (p && *p) {
-                        const char* next = strchr(p, '.');
-                        int len = next ? (next - p) : strlen(p);
-                        *pucWrite++ = (uint8_t)len;
-                        memcpy(pucWrite, p, len);
-                        pucWrite += len;
-                        if (!next) break;
-                        p = next + 1;
-                    }
-                    *pucWrite++ = 0;
-                    break;
-                case dnsTYPE_TXT: {
-                    size_t txt_len = strlen(r->xData.pcTxtRecord);
-                    memcpy(pucWrite, r->xData.pcTxtRecord, txt_len);
-                    pucWrite += txt_len;
-                } break;
-                case dnsTYPE_A_HOST:
-                    if (ep && !ep->bits.bIPv6) {
-                        uint32_t ip =
-                            FreeRTOS_ntohl(ep->ipv4_settings.ulIPAddress);
-                        pucWrite[0] = (uint8_t)(ip >> 24);
-                        pucWrite[1] = (uint8_t)(ip >> 16);
-                        pucWrite[2] = (uint8_t)(ip >> 8);
-                        pucWrite[3] = (uint8_t)(ip & 0xff);
-                        pucWrite += 4;
-                    }
-                    break;
-                case dnsTYPE_AAAA_HOST:
-                    if (ep && ep->bits.bIPv6) {
-                        memcpy(pucWrite, ep->ipv6_settings.xIPAddress.ucBytes,
-                               16);
-                        pucWrite += 16;
-                    }
-                    break;
-            }
-            uint16_t dlen = (uint16_t)(pucWrite - pucDataStart);
-            if (dlen == 0 && (r->usRecordType == dnsTYPE_A_HOST ||
-                              r->usRecordType == dnsTYPE_AAAA_HOST)) {
-                /* Skip address records that don't match the current endpoint */
-                pucWrite = pucDataLen - (pucDataLen - pucDataStart) - 10;
-                /* Wait, backtracking is hard. Just check before writing the
-                 * record. */
-                continue;
-            }
-            pucDataLen[0] = (uint8_t)(dlen >> 8);
-            pucDataLen[1] = (uint8_t)(dlen & 0xff);
-            answers++;
-            if (pucWrite - pucBuffer > 900) break;
+        /* Write record name */
+        const char* name = r->pcName;
+        const char* p = name;
+        while (p && *p) {
+            const char* next = strchr(p, '.');
+            int len = next ? (next - p) : (int)strlen(p);
+            *pucWrite++ = (uint8_t)len;
+            memcpy(pucWrite, p, (size_t)len);
+            pucWrite += len;
+            if (!next) break;
+            p = next + 1;
         }
+        *pucWrite++ = 0;
 
-        pxDNSMessage->usAnswers = FreeRTOS_htons((uint16_t)answers);
-        if (answers > 0) {
-            size_t packet_len = (size_t)(pucWrite - pucBuffer);
+        /* Type */
+        pucWrite[0] = (uint8_t)(r->usRecordType >> 8);
+        pucWrite[1] = (uint8_t)(r->usRecordType & 0xff);
+        pucWrite += 2;
 
-            for (int retry = 0; retry < 3; retry++) {
-                if (!ep->bits.bIPv6) {
-                    /* IPv4 announcement */
-                    xSocket = FreeRTOS_socket(
-                        FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
-                    if (xSocket != FREERTOS_INVALID_SOCKET) {
-                        memset(&xAddress, 0, sizeof(xAddress));
-                        xAddress.sin_family = FREERTOS_AF_INET;
-                        xAddress.sin_port = FreeRTOS_htons(5353);
-                        if (FreeRTOS_bind(xSocket, &xAddress,
-                                          sizeof(xAddress)) == 0) {
-                            LogDebug(("mdns: bound v4 socket to 5353"));
-                        }
-                        xAddress.sin_address.ulIP_IPv4 =
-                            FreeRTOS_inet_addr("224.0.0.251");
-                        if (FreeRTOS_sendto(xSocket, pucBuffer, packet_len, 0,
-                                            &xAddress, sizeof(xAddress)) < 0) {
-                            LogError(("mdns: v4 send failed"));
-                        }
-                        FreeRTOS_closesocket(xSocket);
-                    }
-                } else {
-                    /* IPv6 announcement */
-                    xSocket = FreeRTOS_socket(
-                        FREERTOS_AF_INET6, FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
-                    if (xSocket != FREERTOS_INVALID_SOCKET) {
-                        memset(&xAddress, 0, sizeof(xAddress));
-                        xAddress.sin_family = FREERTOS_AF_INET6;
-                        xAddress.sin_port = FreeRTOS_htons(5353);
-                        if (FreeRTOS_bind(xSocket, &xAddress,
-                                          sizeof(xAddress)) == 0) {
-                            LogDebug(("mdns: bound v6 socket to 5353"));
-                        }
-                        FreeRTOS_inet_pton(
-                            FREERTOS_AF_INET6, "ff02::fb",
-                            xAddress.sin_address.xIP_IPv6.ucBytes);
-                        if (FreeRTOS_sendto(xSocket, pucBuffer, packet_len, 0,
-                                            &xAddress, sizeof(xAddress)) < 0) {
-                            LogError(("mdns: v6 send failed"));
-                        }
-                        FreeRTOS_closesocket(xSocket);
-                    }
+        /* Class (IN) */
+        uint16_t dns_class = dnsCLASS_IN;
+        if (r->usRecordType != dnsTYPE_PTR) {
+            dns_class |= 0x8000; /* Flush cache bit for unique records */
+        }
+        pucWrite[0] = (uint8_t)(dns_class >> 8);
+        pucWrite[1] = (uint8_t)(dns_class & 0xff);
+        pucWrite += 2;
+
+        /* TTL */
+        uint32_t ttl = (r->usRecordType == dnsTYPE_PTR) ? 4500 : 120;
+        pucWrite[0] = (uint8_t)(ttl >> 24);
+        pucWrite[1] = (uint8_t)(ttl >> 16);
+        pucWrite[2] = (uint8_t)(ttl >> 8);
+        pucWrite[3] = (uint8_t)(ttl & 0xff);
+        pucWrite += 4;
+
+        uint8_t* pucDataLen = pucWrite;
+        pucWrite += 2;
+        uint8_t* pucDataStart = pucWrite;
+
+        switch (r->usRecordType) {
+            case dnsTYPE_PTR:
+                p = r->xData.pcPtrRecord;
+                while (p && *p) {
+                    const char* next = strchr(p, '.');
+                    int len = next ? (next - p) : (int)strlen(p);
+                    *pucWrite++ = (uint8_t)len;
+                    memcpy(pucWrite, p, (size_t)len);
+                    pucWrite += len;
+                    if (!next) break;
+                    p = next + 1;
                 }
-                vTaskDelay(pdMS_TO_TICKS(200 * (retry + 1)));
-            }
+                *pucWrite++ = 0;
+                break;
+            case dnsTYPE_SRV:
+                /* Priority & Weight */
+                memset(pucWrite, 0, 4);
+                pucWrite += 4;
+                /* Port */
+                pucWrite[0] = (uint8_t)(r->xData.xSrvRecord.usPort >> 8);
+                pucWrite[1] = (uint8_t)(r->xData.xSrvRecord.usPort & 0xff);
+                pucWrite += 2;
+                /* Target */
+                p = r->xData.xSrvRecord.pcTarget;
+                while (p && *p) {
+                    const char* next = strchr(p, '.');
+                    int len = next ? (next - p) : (int)strlen(p);
+                    *pucWrite++ = (uint8_t)len;
+                    memcpy(pucWrite, p, (size_t)len);
+                    pucWrite += len;
+                    if (!next) break;
+                    p = next + 1;
+                }
+                *pucWrite++ = 0;
+                break;
+            case dnsTYPE_TXT: {
+                size_t txt_len = strlen(r->xData.pcTxtRecord);
+                memcpy(pucWrite, r->xData.pcTxtRecord, txt_len);
+                pucWrite += txt_len;
+            } break;
+            case dnsTYPE_A_HOST:
+                /* Dummy write, will be patched in announce_task per interface
+                 */
+                memset(pucWrite, 0, 4);
+                pucWrite += 4;
+                break;
+            case dnsTYPE_AAAA_HOST:
+                /* Dummy write */
+                memset(pucWrite, 0, 16);
+                pucWrite += 16;
+                break;
         }
+        uint16_t dlen = (uint16_t)(pucWrite - pucDataStart);
+        pucDataLen[0] = (uint8_t)(dlen >> 8);
+        pucDataLen[1] = (uint8_t)(dlen & 0xff);
+        answers++;
+        if (pucWrite - pucBuffer > 900) break;
     }
     unlock();
 
-    free(pucBuffer);
+    pxDNSMessage->usAnswers = FreeRTOS_htons((uint16_t)answers);
+
+    announce_params_t* params = pvPortMalloc(sizeof(announce_params_t));
+    if (params) {
+        params->buf = pucBuffer;
+        params->len = (size_t)(pucWrite - pucBuffer);
+        if (xTaskCreate(announce_task, "mdns_ann", 1024, params,
+                        tskIDLE_PRIORITY, NULL) != pdPASS) {
+            vPortFree(pucBuffer);
+            vPortFree(params);
+        }
+    } else {
+        vPortFree(pucBuffer);
+    }
 }
 
 void xApplicationDNSRecordsMatchedHook(void) {
