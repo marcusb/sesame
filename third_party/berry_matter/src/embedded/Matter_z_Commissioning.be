@@ -418,17 +418,17 @@ class Matter_Commissioning
       # mdns
       if (tasmota.eth().find("up"))
         log(format("MTR: adding mDNS on %s '%s' ptr to `%s.local`", "eth", op_node, self.hostname_eth), 3)
-        mdns.add_service("_matter","_tcp", 5540, services, op_node, self.hostname_eth)
+        mdns.add_service("_matter","_udp", 5540, services, op_node, self.hostname_eth)
         var subtype = "_I" + k_fabric.tohex()
         log("MTR: adding subtype: "+subtype, 3)
-        mdns.add_subtype("_matter", "_tcp", op_node, self.hostname_eth, subtype)
+        mdns.add_subtype("_matter", "_udp", op_node, self.hostname_eth, subtype)
       end
       if (tasmota.wifi().find("up"))
         log(format("MTR: adding mDNS on %s '%s' ptr to `%s.local`", "wifi", op_node, self.hostname_wifi), 3)
-        mdns.add_service("_matter","_tcp", 5540, services, op_node, self.hostname_wifi)
+        mdns.add_service("_matter","_udp", 5540, services, op_node, self.hostname_wifi)
         var subtype = "_I" + k_fabric.tohex()
         log("MTR: adding subtype: "+subtype, 3)
-        mdns.add_subtype("_matter", "_tcp", op_node, self.hostname_wifi, subtype)
+        mdns.add_subtype("_matter", "_udp", op_node, self.hostname_wifi, subtype)
       end
     except .. as e, m
       log("MTR: Exception" + str(e) + "|" + str(m), 2)
@@ -457,11 +457,11 @@ class Matter_Commissioning
       # mdns
       if (tasmota.eth().find("up"))
         log(format("MTR: remove mDNS on %s '%s'", "eth", op_node), 3)
-        mdns.remove_service("_matter", "_tcp", op_node, self.hostname_eth)
+        mdns.remove_service("_matter", "_udp", op_node, self.hostname_eth)
       end
       if (tasmota.wifi().find("up"))
         log(format("MTR: remove mDNS on %s '%s'", "wifi", op_node), 3)
-        mdns.remove_service("_matter", "_tcp", op_node, self.hostname_wifi)
+        mdns.remove_service("_matter", "_udp", op_node, self.hostname_wifi)
       end
     except .. as e, m
       log("MTR: Exception" + str(e) + "|" + str(m), 2)
