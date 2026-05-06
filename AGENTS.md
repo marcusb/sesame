@@ -422,6 +422,14 @@ sesame/
 - **Error handling** – Check return codes from WiFi/MQTT/HTTP APIs; many return status enums
 - **Comments** – Omit obvious comments; clarify non-obvious logic
 
+### Code style
+
+Follow Google C/C++ code style for Sesame code.
+Exceptions:
+- Use snake_case for variable and function names.
+
+For library code, follow the style of the library (eg FreeRTOS)
+
 ## Tools & IDE Support
 
 - **Language server**: `.ccls` configured for ARM includes and cross-compilation flags
