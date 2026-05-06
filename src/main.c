@@ -303,6 +303,10 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event,
 #if SESAME_ENABLE_MATTER
                 matter_init();
 #endif
+            } else {
+#if SESAME_ENABLE_MATTER
+                matter_schedule_network_up();
+#endif
             }
         } else if (is_uap_iface(endpoint->pxNetworkInterface)) {
             static dhcp_task_params_t dhcp_params;

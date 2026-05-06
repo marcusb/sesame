@@ -9,6 +9,11 @@
 void matter_init(void);
 
 /**
+ * Notify the Matter task that the network is up (can be called safely from IP task).
+ */
+void matter_schedule_network_up(void);
+
+/**
  * Report door state change to Matter.
  * 
  * @param msg The door state message from the controller.
