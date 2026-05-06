@@ -24,6 +24,7 @@
 
 #define TAG "matter_mdns"
 #define MATTER_MDNS_MAX_RECORDS 64
+#define MATTER_MDNS_VIEW_BUFFERS 4
 
 typedef struct {
     DNSRecord_t rec;
@@ -34,20 +35,21 @@ typedef struct {
 } matter_mdns_entry_t;
 
 static matter_mdns_entry_t s_entries[MATTER_MDNS_MAX_RECORDS];
-static DNSRecord_t s_view[MATTER_MDNS_MAX_RECORDS];
-static UBaseType_t s_count;
+static DNSRecord_t s_view_buffers[MATTER_MDNS_VIEW_BUFFERS]
+                                 [MATTER_MDNS_MAX_RECORDS];
+static DNSRecord_t* volatile s_current_view = s_view_buffers[0];
+static UBaseType_t s_view_index = 0;
+static UBaseType_t s_count = 0;
 static SemaphoreHandle_t s_lock;
 static StaticSemaphore_t s_lock_buf;
 
+static const char* const s_services_name = "_services._dns-sd._udp.local";
+
 static char* dup_str(const char* s) {
-    if (!s) {
-        return NULL;
-    }
+    if (!s) return NULL;
     size_t n = strlen(s) + 1;
     char* r = pvPortMalloc(n);
-    if (r) {
-        memcpy(r, s, n);
-    }
+    if (r) memcpy(r, s, n);
     return r;
 }
 
@@ -60,8 +62,14 @@ static void entry_free(matter_mdns_entry_t* e) {
 }
 
 void matter_mdns_init(void) {
-    s_lock = xSemaphoreCreateRecursiveMutexStatic(&s_lock_buf);
+    if (s_lock == NULL) {
+        s_lock = xSemaphoreCreateRecursiveMutexStatic(&s_lock_buf);
+    }
     s_count = 0;
+    s_view_index = 0;
+    memset(s_entries, 0, sizeof(s_entries));
+    memset(s_view_buffers, 0, sizeof(s_view_buffers));
+    s_current_view = s_view_buffers[0];
 }
 
 static void lock(void) {
@@ -88,19 +96,22 @@ static matter_mdns_entry_t* find_entry(uint16_t type, const char* name,
 }
 
 static matter_mdns_entry_t* new_entry(void) {
-    if (s_count >= MATTER_MDNS_MAX_RECORDS) {
-        return NULL;
-    }
-    return &s_entries[s_count++];
+    if (s_count >= MATTER_MDNS_MAX_RECORDS) return NULL;
+    matter_mdns_entry_t* e = &s_entries[s_count++];
+    memset(e, 0, sizeof(matter_mdns_entry_t));
+    return e;
 }
 
 static void rebuild_view(void) {
-    s_count = 0;
-    for (int i = 0; i < MATTER_MDNS_MAX_RECORDS; i++) {
-        if (s_entries[i].rec.usRecordType != 0) {
-            s_view[s_count++] = s_entries[i].rec;
-        }
+    /* Write to the next buffer in a cyclic pool to avoid race with IP task. */
+    UBaseType_t next_index = (s_view_index + 1) % MATTER_MDNS_VIEW_BUFFERS;
+    DNSRecord_t* next_view = s_view_buffers[next_index];
+    for (UBaseType_t i = 0; i < s_count; i++) {
+        next_view[i] = s_entries[i].rec;
+        next_view[i].uxServeRecord = 0;
     }
+    s_view_index = next_index;
+    s_current_view = next_view;
 }
 
 int matter_mdns_add_hostname(const char* hostname, const char* ipv4_or_ipv6,
@@ -134,7 +145,7 @@ int matter_mdns_add_hostname(const char* hostname, const char* ipv4_or_ipv6,
 int matter_mdns_add_service(const char* service, const char* proto, int port,
                             const char* txt_record, const char* instance,
                             const char* hostname) {
-    (void)instance; /* Enforce stable instance name */
+    (void)instance;
     char service_name[64];
     char instance_fqdn[96];
     char host_fqdn[64];
@@ -143,11 +154,10 @@ int matter_mdns_add_service(const char* service, const char* proto, int port,
              service, proto);
     snprintf(host_fqdn, sizeof(host_fqdn), "%s.local", hostname);
     lock();
-    if (!find_entry(dnsTYPE_PTR, "_services._dns-sd._udp.local",
-                    service_name)) {
+    if (!find_entry(dnsTYPE_PTR, s_services_name, service_name)) {
         matter_mdns_entry_t* e = new_entry();
         if (e) {
-            e->owned_name = dup_str("_services._dns-sd._udp.local");
+            e->owned_name = dup_str(s_services_name);
             e->owned_ptr = dup_str(service_name);
             e->rec.usRecordType = dnsTYPE_PTR;
             e->rec.pcName = e->owned_name;
@@ -193,7 +203,7 @@ int matter_mdns_add_service(const char* service, const char* proto, int port,
 int matter_mdns_add_subtype(const char* service, const char* proto,
                             const char* instance, const char* hostname,
                             const char* subtype) {
-    (void)instance; /* Enforce stable instance name */
+    (void)instance;
     char sub_name[96];
     char instance_fqdn[96];
     snprintf(sub_name, sizeof(sub_name), "%s._sub.%s.%s.local", subtype,
@@ -228,17 +238,15 @@ int matter_mdns_remove_service(const char* service, const char* proto,
         matter_mdns_entry_t* e = &s_entries[r];
         bool remove = false;
         if (e->rec.usRecordType == dnsTYPE_PTR && e->owned_ptr &&
-            strcmp(e->owned_ptr, instance_fqdn) == 0) {
+            strcmp(e->owned_ptr, instance_fqdn) == 0)
             remove = true;
-        } else if ((e->rec.usRecordType == dnsTYPE_SRV ||
-                    e->rec.usRecordType == dnsTYPE_TXT) &&
-                   strcmp(e->owned_name ? e->owned_name : "", instance_fqdn) ==
-                       0) {
+        else if ((e->rec.usRecordType == dnsTYPE_SRV ||
+                  e->rec.usRecordType == dnsTYPE_TXT) &&
+                 strcmp(e->owned_name ? e->owned_name : "", instance_fqdn) == 0)
             remove = true;
-        }
-        if (remove) {
+        if (remove)
             entry_free(e);
-        } else {
+        else {
             if (w != r) s_entries[w] = *e;
             w++;
         }
@@ -249,30 +257,11 @@ int matter_mdns_remove_service(const char* service, const char* proto,
     return 0;
 }
 
-UBaseType_t matter_mdns_snapshot(DNSRecord_t** out) {
-    lock();
-    *out = s_view;
-    UBaseType_t n = s_count;
-    unlock();
-    return n;
-}
-
-UBaseType_t matter_mdns_get_view(DNSRecord_t** out) {
-    lock();
-    *out = s_view;
-    UBaseType_t n = s_count;
-    unlock();
-    return n;
-}
-
-/* Hooks pulled in by FreeRTOS-Plus-TCP's mDNS responder. */
 DNSRecord_t* xApplicationDNSRecordQueryHook_Multi(
     struct xNetworkEndPoint* pxEndPoint, UBaseType_t* outLen) {
-    lock();
+    (void)pxEndPoint;
     *outLen = s_count;
-    DNSRecord_t* recs = s_view;
-    unlock();
-    return recs;
+    return s_current_view;
 }
 
 static void serialize_announce_packet(NetworkEndPoint_t* ep, uint8_t* buf,
@@ -280,54 +269,31 @@ static void serialize_announce_packet(NetworkEndPoint_t* ep, uint8_t* buf,
     DNSMessage_t* pxDNSMessage = (DNSMessage_t*)buf;
     memset(buf, 0, 1024);
     pxDNSMessage->usFlags = FreeRTOS_htons(0x8400);
-
     uint8_t* pucWrite = buf + sizeof(DNSMessage_t);
     int answers = 0;
-
-    for (UBaseType_t i = 0; i < s_count; i++) {
-        DNSRecord_t* r = &s_view[i];
-
-        /* Filter address records by endpoint family */
+    lock();
+    UBaseType_t count = s_count;
+    DNSRecord_t* view = s_current_view;
+    for (UBaseType_t i = 0; i < count; i++) {
+        DNSRecord_t* r = &view[i];
         if (r->usRecordType == dnsTYPE_A_HOST && ep->bits.bIPv6) continue;
         if (r->usRecordType == dnsTYPE_AAAA_HOST && !ep->bits.bIPv6) continue;
-
-        /* Estimate size needed for this record: name + header (10) + max data
-         */
-        size_t estimated_size = strlen(r->pcName ? r->pcName : "") + 2 + 10;
-        switch (r->usRecordType) {
-            case dnsTYPE_PTR:
-                estimated_size +=
-                    strlen(r->xData.pcPtrRecord ? r->xData.pcPtrRecord : "") +
-                    2;
-                break;
-            case dnsTYPE_SRV:
-                estimated_size += 6 +
-                                  strlen(r->xData.xSrvRecord.pcTarget
-                                             ? r->xData.xSrvRecord.pcTarget
-                                             : "") +
-                                  2;
-                break;
-            case dnsTYPE_TXT:
-                estimated_size +=
-                    strlen(r->xData.pcTxtRecord ? r->xData.pcTxtRecord : "");
-                break;
-            case dnsTYPE_A_HOST:
-                estimated_size += 4;
-                break;
-            case dnsTYPE_AAAA_HOST:
-                estimated_size += 16;
-                break;
-        }
-
-        /* If adding this record would exceed our 1024 buffer (leaving some
-         * margin), stop adding answers */
-        if ((pucWrite - buf) + estimated_size > 1000) {
-            break;
-        }
-
-        /* Write record name */
-        const char* name = r->pcName;
-        const char* p = name;
+        size_t est = strlen(r->pcName ? r->pcName : "") + 12;
+        if (r->usRecordType == dnsTYPE_PTR)
+            est += strlen(r->xData.pcPtrRecord ? r->xData.pcPtrRecord : "") + 2;
+        else if (r->usRecordType == dnsTYPE_SRV)
+            est += strlen(r->xData.xSrvRecord.pcTarget
+                              ? r->xData.xSrvRecord.pcTarget
+                              : "") +
+                   8;
+        else if (r->usRecordType == dnsTYPE_TXT)
+            est += strlen(r->xData.pcTxtRecord ? r->xData.pcTxtRecord : "");
+        else if (r->usRecordType == dnsTYPE_A_HOST)
+            est += 4;
+        else if (r->usRecordType == dnsTYPE_AAAA_HOST)
+            est += 16;
+        if ((pucWrite - buf) + est > 1000) break;
+        const char* p = r->pcName;
         while (p && *p) {
             const char* next = strchr(p, '.');
             int len = next ? (next - p) : (int)strlen(p);
@@ -338,33 +304,23 @@ static void serialize_announce_packet(NetworkEndPoint_t* ep, uint8_t* buf,
             p = next + 1;
         }
         *pucWrite++ = 0;
-
-        /* Type */
         pucWrite[0] = (uint8_t)(r->usRecordType >> 8);
         pucWrite[1] = (uint8_t)(r->usRecordType & 0xff);
         pucWrite += 2;
-
-        /* Class (IN) */
-        uint16_t dns_class = dnsCLASS_IN;
-        if (r->usRecordType != dnsTYPE_PTR) {
-            dns_class |= 0x8000; /* Flush cache bit for unique records */
-        }
-        pucWrite[0] = (uint8_t)(dns_class >> 8);
-        pucWrite[1] = (uint8_t)(dns_class & 0xff);
+        uint16_t cls =
+            dnsCLASS_IN | (r->usRecordType != dnsTYPE_PTR ? 0x8000 : 0);
+        pucWrite[0] = (uint8_t)(cls >> 8);
+        pucWrite[1] = (uint8_t)(cls & 0xff);
         pucWrite += 2;
-
-        /* TTL */
         uint32_t ttl = (r->usRecordType == dnsTYPE_PTR) ? 4500 : 120;
         pucWrite[0] = (uint8_t)(ttl >> 24);
         pucWrite[1] = (uint8_t)(ttl >> 16);
         pucWrite[2] = (uint8_t)(ttl >> 8);
         pucWrite[3] = (uint8_t)(ttl & 0xff);
         pucWrite += 4;
-
-        uint8_t* pucDataLen = pucWrite;
+        uint8_t* pLen = pucWrite;
         pucWrite += 2;
-        uint8_t* pucDataStart = pucWrite;
-
+        uint8_t* pStart = pucWrite;
         switch (r->usRecordType) {
             case dnsTYPE_PTR:
                 p = r->xData.pcPtrRecord;
@@ -380,14 +336,11 @@ static void serialize_announce_packet(NetworkEndPoint_t* ep, uint8_t* buf,
                 *pucWrite++ = 0;
                 break;
             case dnsTYPE_SRV:
-                /* Priority & Weight */
                 memset(pucWrite, 0, 4);
                 pucWrite += 4;
-                /* Port */
                 pucWrite[0] = (uint8_t)(r->xData.xSrvRecord.usPort >> 8);
                 pucWrite[1] = (uint8_t)(r->xData.xSrvRecord.usPort & 0xff);
                 pucWrite += 2;
-                /* Target */
                 p = r->xData.xSrvRecord.pcTarget;
                 while (p && *p) {
                     const char* next = strchr(p, '.');
@@ -401,13 +354,12 @@ static void serialize_announce_packet(NetworkEndPoint_t* ep, uint8_t* buf,
                 *pucWrite++ = 0;
                 break;
             case dnsTYPE_TXT: {
-                size_t txt_len = strlen(r->xData.pcTxtRecord);
-                if (txt_len == 0) {
-                    *pucWrite++ = 0; /* Empty TXT is a single 0 length label */
-                } else {
-                    memcpy(pucWrite, r->xData.pcTxtRecord, txt_len);
-                    pucWrite += txt_len;
-                }
+                size_t tl = strlen(r->xData.pcTxtRecord);
+                if (tl > 0)
+                    memcpy(pucWrite, r->xData.pcTxtRecord, tl);
+                else
+                    *pucWrite = 0;
+                pucWrite += (tl > 0 ? tl : 1);
             } break;
             case dnsTYPE_A_HOST: {
                 uint32_t ip = FreeRTOS_ntohl(ep->ipv4_settings.ulIPAddress);
@@ -422,11 +374,12 @@ static void serialize_announce_packet(NetworkEndPoint_t* ep, uint8_t* buf,
                 pucWrite += 16;
                 break;
         }
-        uint16_t dlen = (uint16_t)(pucWrite - pucDataStart);
-        pucDataLen[0] = (uint8_t)(dlen >> 8);
-        pucDataLen[1] = (uint8_t)(dlen & 0xff);
+        uint16_t dlen = (uint16_t)(pucWrite - pStart);
+        pLen[0] = (uint8_t)(dlen >> 8);
+        pLen[1] = (uint8_t)(dlen & 0xff);
         answers++;
     }
+    unlock();
     pxDNSMessage->usAnswers = FreeRTOS_htons((uint16_t)answers);
     *outLen = (size_t)(pucWrite - buf);
 }
@@ -434,74 +387,41 @@ static void serialize_announce_packet(NetworkEndPoint_t* ep, uint8_t* buf,
 typedef struct {
     uint8_t* buf;
 } announce_params_t;
-
 static void announce_task(void* pvParameters) {
     announce_params_t* p = (announce_params_t*)pvParameters;
-    struct freertos_sockaddr xAddress;
-
+    struct freertos_sockaddr xAddr;
     for (int retry = 0; retry < 5; retry++) {
         for (NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(NULL); ep != NULL;
              ep = FreeRTOS_NextEndPoint(NULL, ep)) {
-            lock();
             if (!ep->pxNetworkInterface ||
-                !ep->pxNetworkInterface->bits.bInterfaceUp) {
-                unlock();
+                !ep->pxNetworkInterface->bits.bInterfaceUp ||
+                !ep->bits.bEndPointUp)
                 continue;
-            }
-            if (!ep->bits.bEndPointUp) {
-                unlock();
-                continue;
-            }
-
-            size_t packet_len;
-            serialize_announce_packet(ep, p->buf, &packet_len);
-            unlock();
-
-            int32_t rc = 0;
-
-            if (!ep->bits.bIPv6) {
-                /* IPv4 announcement */
-                Socket_t xSocket = FreeRTOS_socket(
-                    FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
-                if (xSocket != FREERTOS_INVALID_SOCKET) {
-                    /* Do not explicitly bind to 5353 to avoid conflicts. */
-                    memset(&xAddress, 0, sizeof(xAddress));
-                    xAddress.sin_len = (uint8_t)sizeof(xAddress);
-                    xAddress.sin_family = FREERTOS_AF_INET;
-                    xAddress.sin_port = FreeRTOS_htons(5353);
-                    xAddress.sin_address.ulIP_IPv4 =
+            size_t plen;
+            serialize_announce_packet(ep, p->buf, &plen);
+            Socket_t s = FreeRTOS_socket(
+                ep->bits.bIPv6 ? FREERTOS_AF_INET6 : FREERTOS_AF_INET,
+                FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
+            if (s != FREERTOS_INVALID_SOCKET) {
+                memset(&xAddr, 0, sizeof(xAddr));
+                xAddr.sin_len = (uint8_t)sizeof(xAddr);
+                xAddr.sin_port = FreeRTOS_htons(5353);
+                if (!ep->bits.bIPv6) {
+                    xAddr.sin_family = FREERTOS_AF_INET;
+                    xAddr.sin_address.ulIP_IPv4 =
                         FreeRTOS_inet_addr("224.0.0.251");
-
-                    /* Wait for ARP/ND if necessary? Multicast is direct. */
-                    rc = FreeRTOS_sendto(xSocket, p->buf, packet_len, 0,
-                                         &xAddress, sizeof(xAddress));
-                    FreeRTOS_closesocket(xSocket);
-                }
-                LogInfo(("mdns: announce IPv4 len=%zu rc=%ld", packet_len,
-                         (long)rc));
-            } else {
-                /* IPv6 announcement */
-                Socket_t xSocket = FreeRTOS_socket(
-                    FREERTOS_AF_INET6, FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
-                if (xSocket != FREERTOS_INVALID_SOCKET) {
-                    memset(&xAddress, 0, sizeof(xAddress));
-                    xAddress.sin_len = (uint8_t)sizeof(xAddress);
+                } else {
                     xAddress.sin_family = FREERTOS_AF_INET6;
-                    xAddress.sin_port = FreeRTOS_htons(5353);
                     FreeRTOS_inet_pton(FREERTOS_AF_INET6, "ff02::fb",
                                        xAddress.sin_address.xIP_IPv6.ucBytes);
-                    rc = FreeRTOS_sendto(xSocket, p->buf, packet_len, 0,
-                                         &xAddress, sizeof(xAddress));
-                    FreeRTOS_closesocket(xSocket);
                 }
-                LogInfo(("mdns: announce IPv6 len=%zu rc=%ld", packet_len,
-                         (long)rc));
+                FreeRTOS_sendto(s, p->buf, plen, 0, &xAddr, sizeof(xAddr));
+                FreeRTOS_closesocket(s);
             }
             vTaskDelay(pdMS_TO_TICKS(10));
         }
         vTaskDelay(pdMS_TO_TICKS(500 * (1 << retry)));
     }
-
     vPortFree(p->buf);
     vPortFree(p);
     vTaskDelete(NULL);
@@ -527,36 +447,31 @@ void xApplicationDNSRecordsMatchedHook(void) {
     lock();
     bool changed;
     int iterations = 0;
+    DNSRecord_t* view = s_current_view;
     do {
         changed = false;
         iterations++;
-        for (UBaseType_t i = 0; i < s_count; i++) {
-            DNSRecord_t* r = &s_view[i];
+        UBaseType_t count = s_count;
+        for (UBaseType_t i = 0; i < count; i++) {
+            DNSRecord_t* r = &view[i];
             if (r->uxServeRecord == 0) continue;
-
-            /* If we are serving a PTR record, also serve the SRV and TXT
-             * records it points to. */
             if (r->usRecordType == dnsTYPE_PTR) {
-                for (UBaseType_t j = 0; j < s_count; j++) {
-                    DNSRecord_t* other = &s_view[j];
+                for (UBaseType_t j = 0; j < count; j++) {
+                    DNSRecord_t* other = &view[j];
                     if (other->uxServeRecord != 0) continue;
                     if ((other->usRecordType == dnsTYPE_SRV ||
                          other->usRecordType == dnsTYPE_TXT) &&
                         strcmp(other->pcName ? other->pcName : "",
                                r->xData.pcPtrRecord ? r->xData.pcPtrRecord
                                                     : "") == 0) {
-                        other->uxServeRecord =
-                            1; /* dnsRECORD_SERVE_ADDITIONAL */
+                        other->uxServeRecord = 1;
                         changed = true;
                     }
                 }
             }
-
-            /* If we are serving an SRV record, also serve the A/AAAA records
-             * for its target host. */
             if (r->usRecordType == dnsTYPE_SRV) {
-                for (UBaseType_t j = 0; j < s_count; j++) {
-                    DNSRecord_t* other = &s_view[j];
+                for (UBaseType_t j = 0; j < count; j++) {
+                    DNSRecord_t* other = &view[j];
                     if (other->uxServeRecord != 0) continue;
                     if ((other->usRecordType == dnsTYPE_A_HOST ||
                          other->usRecordType == dnsTYPE_AAAA_HOST) &&
@@ -564,8 +479,7 @@ void xApplicationDNSRecordsMatchedHook(void) {
                                r->xData.xSrvRecord.pcTarget
                                    ? r->xData.xSrvRecord.pcTarget
                                    : "") == 0) {
-                        other->uxServeRecord =
-                            1; /* dnsRECORD_SERVE_ADDITIONAL */
+                        other->uxServeRecord = 1;
                         changed = true;
                     }
                 }
