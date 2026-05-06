@@ -48,12 +48,12 @@ extern void vLoggingPrintf(const char* pcFormatString, ...);
 #define ipconfigIPv4_BACKWARD_COMPATIBLE 0
 #define ipconfigCOMPATIBLE_WITH_SINGLE 0
 
-#define ipconfigHAS_DEBUG_PRINTF 0
+#define ipconfigHAS_DEBUG_PRINTF 1
 #if (ipconfigHAS_DEBUG_PRINTF == 1)
 #define FreeRTOS_debug_printf(X) vLoggingPrintf X
 #endif
 
-#define ipconfigHAS_PRINTF 0
+#define ipconfigHAS_PRINTF 1
 #if (ipconfigHAS_PRINTF == 1)
 #define FreeRTOS_printf(X) vLoggingPrintf X
 #endif

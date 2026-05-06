@@ -8,8 +8,9 @@ dependencies = [
     "protobuf>=4.0",
     "requests>=2.31",
     "paho-mqtt>=1.6,<3",
+    "zeroconf>=0.130",
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["httpd", "mqtt", "ota", "syslog"]
+testpaths = ["httpd", "matter", "mqtt", "ota", "syslog"]
 addopts = "-ra"

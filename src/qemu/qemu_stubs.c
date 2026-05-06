@@ -1,6 +1,11 @@
 #include <stdint.h>
 #include <stdio.h>
 
+// FreeRTOS
+#include "FreeRTOS_IP.h"
+#include "NetworkInterface.h"
+
+// Application
 #include "leds.h"
 #include "ota.h"
 
@@ -21,15 +26,14 @@ void wifi_deinit() {}
 void WDT_Refresh(void* base) {}
 void board_refresh_watchdog(void) {}
 
-const char* pcApplicationHostnameHook() { return "sesame-qemu"; }
+__attribute__((weak)) const char* pcApplicationHostnameHook(void) {
+    return "sesame-qemu";
+}
 
 /* WiFi Stubs */
 typedef struct {
     uint8_t mac[6];
 } wifi_mac_addr_t;
-
-#include "FreeRTOS_IP.h"
-#include "NetworkInterface.h"
 
 int wifi_get_device_mac_addr(wifi_mac_addr_t* mac_addr) {
     /* Retrieve the MAC address from the first FreeRTOS endpoint.

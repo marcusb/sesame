@@ -46,6 +46,38 @@ ninja -C build sesame_ram          # Build hardware RAM version
 ninja -C build sesame_ram-qemu     # Build QEMU RAM version
 ```
 
+**Iterating on QEMU-only sources (e.g. `test/integration/**`):**
+
+The QEMU artifacts are produced by an `ExternalProject_Add(qemu_variants ...)`
+that drives a separate inner build in `build/qemu-build/`. The *outer*
+`ninja -C build qemu_variants` step always reports success because of
+`BUILD_ALWAYS TRUE`, but only re-invokes the inner ninja — it does not show
+the inner build's compile lines if nothing changed.
+
+When changing a source that only the QEMU build consumes (anything under
+`test/integration/`, `src/qemu/`, etc.), run the inner ninja directly so the
+build lines are visible and you can confirm the binary actually rebuilt:
+
+```sh
+ninja -C build/qemu-build test/integration/<module>/<module>_it-qemu.axf
+cp build/qemu-build/test/integration/<module>/<module>_it-qemu.axf \
+   build/test/integration/<module>/<module>_it-qemu.axf
+```
+
+**Verifying you ran the binary you just built — not a stale log:**
+
+When debugging by re-running QEMU and grepping a log file, always confirm:
+1. `stat -c '%Y %n' /path/to/binary /path/to/log` — the log mtime must be
+   *after* the binary mtime.
+2. The QEMU process exited cleanly: capture `$?` after `kill $QEMU_PID;
+   wait $QEMU_PID` and check `pgrep -af qemu-system` is empty before
+   the next run.
+
+Most subtle "the change had no effect" bugs in this project are not stale
+binaries — they are stale log files left behind when a `pkill`/`kill` chain
+in a shell one-liner aborted before the new QEMU launch. Treat the log
+contents as suspect until you have proven its mtime is fresh.
+
 **Build outputs:**
 
 - `sesame.axf`, `sesame.bin` – Hardware flash version

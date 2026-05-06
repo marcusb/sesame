@@ -30,18 +30,21 @@ uint32_t SystemCoreClock = 25000000;
 /* Globals the SUT expects from the embedded firmware. */
 QueueHandle_t ctrl_queue;
 
-/* Strong stubs for DNS hooks required by FreeRTOS+TCP */
-DNSRecord_t* xApplicationDNSRecordQueryHook_Multi(
+/* Weak default DNS hooks. SUTs that need real mDNS publication (e.g. the
+ * Matter integration test) link `sesame_matter` whose strong definitions
+ * override these. */
+__attribute__((weak)) DNSRecord_t* xApplicationDNSRecordQueryHook_Multi(
     struct xNetworkEndPoint* pxEndPoint, UBaseType_t* outLen) {
     (void)pxEndPoint;
     *outLen = 0;
     return NULL;
 }
-DNSRecord_t* xApplicationDNSRecordQueryHook(UBaseType_t* outLen) {
+__attribute__((weak)) DNSRecord_t* xApplicationDNSRecordQueryHook(
+    UBaseType_t* outLen) {
     *outLen = 0;
     return NULL;
 }
-void xApplicationDNSRecordsMatchedHook(void) {}
+__attribute__((weak)) void xApplicationDNSRecordsMatchedHook(void) {}
 
 static harness_net_up_cb net_up_cb;
 static harness_cmd_handler_t cmd_handler;
@@ -193,7 +196,7 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t eNetworkEvent,
     }
 }
 
-void configure_netif() {
+__attribute__((weak)) void configure_netif() {
     static NetworkEndPoint_t eps[1];
     extern NetworkInterface_t* pxMPS2_FillInterfaceDescriptor(
         BaseType_t xEMACIndex, NetworkInterface_t * pxInterface);
@@ -249,7 +252,9 @@ uint32_t ulApplicationGetNextSequenceNumber(uint32_t ulSourceAddress,
     (void)usDestinationPort;
     return (uint32_t)rand();
 }
-const char* pcApplicationHostnameHook(void) { return "sesame-it"; }
+__attribute__((weak)) const char* pcApplicationHostnameHook(void) {
+    return "sesame-it";
+}
 void vApplicationIPNetworkEventHook(eIPCallbackEvent_t eNetworkEvent) {
     vApplicationIPNetworkEventHook_Multi(eNetworkEvent, NULL);
 }

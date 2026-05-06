@@ -17,9 +17,16 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional
 
 import pytest
+
+
+@dataclass
+class TapConfig:
+    name: str
+    host_ip: str
+    guest_ip: str
 
 # SUT prints this when network is up.
 # In QEMU integration mode, ports/inspector fields are placeholders (0).
@@ -79,7 +86,13 @@ class Harness:
         self.proc.stdin.flush()
 
 
-def _run_harness(binary_name: str, guest_port: int | None = None) -> Iterator[Harness]:
+def _run_harness(
+    binary_name: str,
+    guest_port: int | None = None,
+    *,
+    net_mode: str = "user",
+    tap: Optional[TapConfig] = None,
+) -> Iterator[Harness]:
     binary = _find_build_artifact(f"{binary_name}/{binary_name}_it.axf")
 
     host_port = _free_port() if guest_port else 0
@@ -100,10 +113,18 @@ def _run_harness(binary_name: str, guest_port: int | None = None) -> Iterator[Ha
         "nic,model=lan9118",
     ]
 
-    net_user = "user"
-    if guest_port:
-        net_user += f",hostfwd=tcp:127.0.0.1:{host_port}-:{guest_port}"
-    qemu_cmd.extend(["-net", net_user])
+    if net_mode == "tap":
+        if tap is None:
+            pytest.fail("net_mode='tap' requires a TapConfig")
+        qemu_cmd.extend([
+            "-net",
+            f"tap,ifname={tap.name},script=no,downscript=no",
+        ])
+    else:
+        net_user = "user"
+        if guest_port:
+            net_user += f",hostfwd=tcp:127.0.0.1:{host_port}-:{guest_port}"
+        qemu_cmd.extend(["-net", net_user])
 
     proc = subprocess.Popen(
         qemu_cmd,

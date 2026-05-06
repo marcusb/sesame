@@ -350,7 +350,6 @@ static int tas_wifi(bvm* vm) {
  * VendorID/ProductID/RegulatoryConfig unanswered during chip-tool's
  * ReadCommissioningInfo and surfaces as "Key not found" on the controller.
  */
-extern const char* pcApplicationHostnameHook(void);
 static void map_put_str(bvm* vm, const char* key, const char* val) {
     be_pushstring(vm, key);
     be_pushstring(vm, val);

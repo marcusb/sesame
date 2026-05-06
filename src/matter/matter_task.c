@@ -8,6 +8,7 @@
 #include "be_mapping.h"
 #include "be_vm.h"
 #include "berry.h"
+#include "debug_console.h"
 #include "embedded_be.h"
 #include "matter_mdns.h"
 #include "matter_tasmota_shim.h"
@@ -220,8 +221,11 @@ void matter_init(void) {
     matter_mdns_init();
     g_matter_vm_lock =
         xSemaphoreCreateRecursiveMutexStatic(&g_matter_vm_lock_buf);
-    BaseType_t rc =
-        xTaskCreate(matter_task, "matter", 8192, NULL, tskIDLE_PRIORITY, NULL);
+    /* Priority 1 (not strict idle): integration tests run a host-command
+     * task that uses blocking semihosting read which would otherwise starve
+     * matter at idle priority. */
+    BaseType_t rc = xTaskCreate(matter_task, "matter", 3072, NULL,
+                                tskIDLE_PRIORITY + 1, NULL);
     LogInfo(("matter_init: xTaskCreate rc=%ld", (long)rc));
 }
 

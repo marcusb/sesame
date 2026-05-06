@@ -6,10 +6,7 @@
 #include "FreeRTOS_IP_Utils.h"
 #include "FreeRTOS_Sockets.h"
 
-extern const char* pcApplicationHostnameHook(void);
-
 // Application
-
 #include "app_config.pb.h"
 #include "logging.h"
 #include "syslog.h"

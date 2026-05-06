@@ -219,6 +219,24 @@ if(_patch_result GREATER 1)
     message(FATAL_ERROR "Failed to apply FreeRTOS-Plus-TCP mDNS cross-family patch (exit ${_patch_result})")
 endif()
 
+# MPS2_AN385 RX path fixes:
+#   1. Strip 4-byte FCS that the SMSC9220 RX_STATUS reports as part of
+#      packet length (otherwise every IPv6 packet is dropped by
+#      xCheckIPv6SizeFields at location 4).
+#   2. Honor the result of FreeRTOS_MatchingEndpoint instead of forcing
+#      every received packet to the first endpoint — the original code
+#      had a single-endpoint hack that broke IPv6 NS handling whenever a
+#      separate IPv6 endpoint existed alongside the IPv4 one.
+execute_process(
+    COMMAND patch -p1 -N
+        -i "${CMAKE_SOURCE_DIR}/patches/freertos_plus_tcp_mps2_an385_rx.patch"
+    WORKING_DIRECTORY "${freertos_plus_tcp_SOURCE_DIR}"
+    RESULT_VARIABLE _patch_result
+    OUTPUT_QUIET ERROR_QUIET)
+if(_patch_result GREATER 1)
+    message(FATAL_ERROR "Failed to apply FreeRTOS-Plus-TCP MPS2_AN385 RX patch (exit ${_patch_result})")
+endif()
+
 target_sources(freertos_kernel
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/idle_task.c")
@@ -588,6 +606,8 @@ if(NOT USE_QEMU)
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_tasmota_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_tasmota_tests-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/test/integration/httpd"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/integration/httpd/httpd_it-qemu.axf" "${CMAKE_BINARY_DIR}/test/integration/httpd/httpd_it-qemu.axf"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/test/integration/matter"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/integration/matter/matter_it-qemu.axf" "${CMAKE_BINARY_DIR}/test/integration/matter/matter_it-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/test/integration/mqtt"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/integration/mqtt/mqtt_it-qemu.axf" "${CMAKE_BINARY_DIR}/test/integration/mqtt/mqtt_it-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/test/integration/ota"

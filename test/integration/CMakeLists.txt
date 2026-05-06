@@ -71,6 +71,7 @@ add_custom_target(integration_tests)
 add_dependencies(integration_tests it_proto_py)
 
 add_subdirectory(httpd)
+add_subdirectory(matter)
 add_subdirectory(mqtt)
 add_subdirectory(ota)
 add_subdirectory(syslog)
