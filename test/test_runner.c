@@ -71,7 +71,7 @@ static void run_tests_task(void* params) {
     (void)params;
 
     register_log_backend(capture_backend);
-    init_logging(1024, tskIDLE_PRIORITY, 16);
+    init_logging(1024, configMAX_PRIORITIES - 1, 16);
 
     UNITY_BEGIN();
     run_tests();

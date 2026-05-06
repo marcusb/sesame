@@ -96,7 +96,8 @@ void main_task(void* param) {
 
     register_log_backend(log_console);
     register_log_backend(log_syslog);
-    init_logging(512, tskIDLE_PRIORITY, mainLOGGING_MESSAGE_QUEUE_LENGTH);
+    init_logging(512, configMAX_PRIORITIES - 1,
+                 mainLOGGING_MESSAGE_QUEUE_LENGTH);
 
     check_ota_test_image();
     psm_init();

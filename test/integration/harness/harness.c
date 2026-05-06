@@ -217,7 +217,7 @@ void harness_init(void) {
     ctrl_queue = xQueueCreate(16, sizeof(ctrl_msg_t));
     configASSERT(ctrl_queue);
 
-    init_logging(2048, tskIDLE_PRIORITY + 1, 32);
+    init_logging(2048, configMAX_PRIORITIES - 1, 32);
     register_log_backend(log_stdout_backend);
 
     xTaskCreate(inspector_task, "Inspector", 2048, NULL, tskIDLE_PRIORITY + 1,
