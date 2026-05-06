@@ -124,7 +124,8 @@ void main_task(void* param) {
     for (;;) {
         board_refresh_watchdog();
 
-        if (xQueueReceive(ctrl_queue, &ctrl_msg, 1000) == pdPASS) {
+        if (xQueueReceive(ctrl_queue, &ctrl_msg, pdMS_TO_TICKS(1000)) ==
+            pdPASS) {
             switch (ctrl_msg.type) {
                 case CTRL_MSG_OTA_UPGRADE: {
                     if (ota_queue) {

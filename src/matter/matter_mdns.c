@@ -95,8 +95,11 @@ static matter_mdns_entry_t* new_entry(void) {
 }
 
 static void rebuild_view(void) {
-    for (UBaseType_t i = 0; i < s_count; i++) {
-        s_view[i] = s_entries[i].rec;
+    s_count = 0;
+    for (int i = 0; i < MATTER_MDNS_MAX_RECORDS; i++) {
+        if (s_entries[i].rec.usRecordType != 0) {
+            s_view[s_count++] = s_entries[i].rec;
+        }
     }
 }
 
@@ -131,11 +134,12 @@ int matter_mdns_add_hostname(const char* hostname, const char* ipv4_or_ipv6,
 int matter_mdns_add_service(const char* service, const char* proto, int port,
                             const char* txt_record, const char* instance,
                             const char* hostname) {
+    (void)instance; /* Enforce stable instance name */
     char service_name[64];
     char instance_fqdn[96];
     char host_fqdn[64];
     snprintf(service_name, sizeof(service_name), "%s.%s.local", service, proto);
-    snprintf(instance_fqdn, sizeof(instance_fqdn), "%s.%s.%s.local", instance,
+    snprintf(instance_fqdn, sizeof(instance_fqdn), "%s.%s.%s.local", hostname,
              service, proto);
     snprintf(host_fqdn, sizeof(host_fqdn), "%s.local", hostname);
     lock();
@@ -189,12 +193,12 @@ int matter_mdns_add_service(const char* service, const char* proto, int port,
 int matter_mdns_add_subtype(const char* service, const char* proto,
                             const char* instance, const char* hostname,
                             const char* subtype) {
-    (void)hostname;
+    (void)instance; /* Enforce stable instance name */
     char sub_name[96];
     char instance_fqdn[96];
     snprintf(sub_name, sizeof(sub_name), "%s._sub.%s.%s.local", subtype,
              service, proto);
-    snprintf(instance_fqdn, sizeof(instance_fqdn), "%s.%s.%s.local", instance,
+    snprintf(instance_fqdn, sizeof(instance_fqdn), "%s.%s.%s.local", hostname,
              service, proto);
     lock();
     if (!find_entry(dnsTYPE_PTR, sub_name, instance_fqdn)) {
@@ -281,12 +285,45 @@ static void serialize_announce_packet(NetworkEndPoint_t* ep, uint8_t* buf,
     int answers = 0;
 
     for (UBaseType_t i = 0; i < s_count; i++) {
-        matter_mdns_entry_t* e = &s_entries[i];
-        DNSRecord_t* r = &e->rec;
+        DNSRecord_t* r = &s_view[i];
 
         /* Filter address records by endpoint family */
         if (r->usRecordType == dnsTYPE_A_HOST && ep->bits.bIPv6) continue;
         if (r->usRecordType == dnsTYPE_AAAA_HOST && !ep->bits.bIPv6) continue;
+
+        /* Estimate size needed for this record: name + header (10) + max data
+         */
+        size_t estimated_size = strlen(r->pcName ? r->pcName : "") + 2 + 10;
+        switch (r->usRecordType) {
+            case dnsTYPE_PTR:
+                estimated_size +=
+                    strlen(r->xData.pcPtrRecord ? r->xData.pcPtrRecord : "") +
+                    2;
+                break;
+            case dnsTYPE_SRV:
+                estimated_size += 6 +
+                                  strlen(r->xData.xSrvRecord.pcTarget
+                                             ? r->xData.xSrvRecord.pcTarget
+                                             : "") +
+                                  2;
+                break;
+            case dnsTYPE_TXT:
+                estimated_size +=
+                    strlen(r->xData.pcTxtRecord ? r->xData.pcTxtRecord : "");
+                break;
+            case dnsTYPE_A_HOST:
+                estimated_size += 4;
+                break;
+            case dnsTYPE_AAAA_HOST:
+                estimated_size += 16;
+                break;
+        }
+
+        /* If adding this record would exceed our 1024 buffer (leaving some
+         * margin), stop adding answers */
+        if ((pucWrite - buf) + estimated_size > 1000) {
+            break;
+        }
 
         /* Write record name */
         const char* name = r->pcName;
@@ -389,7 +426,6 @@ static void serialize_announce_packet(NetworkEndPoint_t* ep, uint8_t* buf,
         pucDataLen[0] = (uint8_t)(dlen >> 8);
         pucDataLen[1] = (uint8_t)(dlen & 0xff);
         answers++;
-        if (pucWrite - buf > 768) break;
     }
     pxDNSMessage->usAnswers = FreeRTOS_htons((uint16_t)answers);
     *outLen = (size_t)(pucWrite - buf);
@@ -404,16 +440,23 @@ static void announce_task(void* pvParameters) {
     struct freertos_sockaddr xAddress;
 
     for (int retry = 0; retry < 5; retry++) {
-        lock();
         for (NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(NULL); ep != NULL;
              ep = FreeRTOS_NextEndPoint(NULL, ep)) {
+            lock();
             if (!ep->pxNetworkInterface ||
-                !ep->pxNetworkInterface->bits.bInterfaceUp)
+                !ep->pxNetworkInterface->bits.bInterfaceUp) {
+                unlock();
                 continue;
-            if (!ep->bits.bEndPointUp) continue;
+            }
+            if (!ep->bits.bEndPointUp) {
+                unlock();
+                continue;
+            }
 
             size_t packet_len;
             serialize_announce_packet(ep, p->buf, &packet_len);
+            unlock();
+
             int32_t rc = 0;
 
             if (!ep->bits.bIPv6) {
@@ -456,7 +499,6 @@ static void announce_task(void* pvParameters) {
             }
             vTaskDelay(pdMS_TO_TICKS(10));
         }
-        unlock();
         vTaskDelay(pdMS_TO_TICKS(500 * (1 << retry)));
     }
 
@@ -474,8 +516,8 @@ void matter_mdns_announce(void) {
         vPortFree(params);
         return;
     }
-    if (xTaskCreate(announce_task, "mdns_ann", 2048, params, tskIDLE_PRIORITY,
-                    NULL) != pdPASS) {
+    if (xTaskCreate(announce_task, "mdns_ann", 2048, params,
+                    tskIDLE_PRIORITY + 1, NULL) != pdPASS) {
         vPortFree(params->buf);
         vPortFree(params);
     }

@@ -77,6 +77,9 @@ int net_get_if_ipv6_addr(struct wlan_ip_config* addr, void* intrfc_handle) {
 
 static void deliver_packet_above(uint8_t iface, const uint8_t* data,
                                  const uint16_t len) {
+    if (iface >= NUM_INTERFACES || interfaces[iface] == NULL) {
+        return;
+    }
     NetworkBufferDescriptor_t* buf =
         pxGetNetworkBufferWithDescriptor(len, pdMS_TO_TICKS(250));
     if (buf == NULL) {

@@ -311,8 +311,8 @@ class Matter_Commissioning
       # Since we're a simple SIT device without LITS, we don't advertise ICD key
     }
 
-    self.commissioning_instance_wifi = crypto.random(8).tohex()    # 16 characters random hostname
-    self.commissioning_instance_eth = crypto.random(8).tohex()    # 16 characters random hostname
+    self.commissioning_instance_wifi = self.hostname_wifi
+    self.commissioning_instance_eth = self.hostname_eth
 
     try
       if self.hostname_eth
