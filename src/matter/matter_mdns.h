@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include "FreeRTOS.h"
 #include "FreeRTOS_DNS_Globals.h"
 
@@ -25,6 +27,12 @@ int matter_mdns_remove_service(const char* service, const char* proto,
 
 UBaseType_t matter_mdns_snapshot(DNSRecord_t** out);
 UBaseType_t matter_mdns_get_view(DNSRecord_t** out);
+
+void matter_mdns_announce(void);
+
+/* Returns true if a service add/remove since the last call requested a
+ * proactive re-announce. Used by matter_task to debounce announce spawns. */
+bool matter_mdns_take_announce_pending(void);
 
 #ifdef __cplusplus
 }

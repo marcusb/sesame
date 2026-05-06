@@ -220,7 +220,6 @@ static void matter_task(void* pvParameters) {
             g_matter_network_up_pending = false;
             xSemaphoreTakeRecursive(g_matter_vm_lock, portMAX_DELAY);
             matter_tasmota_notify_network_up(vm);
-            extern void matter_mdns_announce(void);
             matter_mdns_announce();
             xSemaphoreGiveRecursive(g_matter_vm_lock);
         }
@@ -228,6 +227,14 @@ static void matter_task(void* pvParameters) {
         xSemaphoreTakeRecursive(g_matter_vm_lock, portMAX_DELAY);
         matter_tasmota_tick(vm);
         xSemaphoreGiveRecursive(g_matter_vm_lock);
+
+        /* Service add/remove (e.g. operational discovery after commissioning)
+         * must trigger a fresh mDNS announcement so commissioners pick up the
+         * new instance without waiting for a query. */
+        if (matter_mdns_take_announce_pending()) {
+            matter_mdns_announce();
+        }
+
         vTaskDelayUntil(&last, pdMS_TO_TICKS(50));
     }
 }

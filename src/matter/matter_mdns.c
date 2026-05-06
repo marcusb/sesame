@@ -25,6 +25,7 @@
 #define TAG "matter_mdns"
 #define MATTER_MDNS_MAX_RECORDS 64
 #define MATTER_MDNS_VIEW_BUFFERS 4
+#define MATTER_MDNS_ANNOUNCE_BUF 1400
 
 typedef struct {
     DNSRecord_t rec;
@@ -42,6 +43,7 @@ static UBaseType_t s_view_index = 0;
 static UBaseType_t s_count = 0;
 static SemaphoreHandle_t s_lock;
 static StaticSemaphore_t s_lock_buf;
+static volatile bool s_announce_pending = false;
 
 static const char* const s_services_name = "_services._dns-sd._udp.local";
 
@@ -138,6 +140,7 @@ int matter_mdns_add_hostname(const char* hostname, const char* ipv4_or_ipv6,
         }
     }
     rebuild_view();
+    s_announce_pending = true;
     unlock();
     return 0;
 }
@@ -145,12 +148,11 @@ int matter_mdns_add_hostname(const char* hostname, const char* ipv4_or_ipv6,
 int matter_mdns_add_service(const char* service, const char* proto, int port,
                             const char* txt_record, const char* instance,
                             const char* hostname) {
-    (void)instance;
     char service_name[64];
     char instance_fqdn[96];
     char host_fqdn[64];
     snprintf(service_name, sizeof(service_name), "%s.%s.local", service, proto);
-    snprintf(instance_fqdn, sizeof(instance_fqdn), "%s.%s.%s.local", hostname,
+    snprintf(instance_fqdn, sizeof(instance_fqdn), "%s.%s.%s.local", instance,
              service, proto);
     snprintf(host_fqdn, sizeof(host_fqdn), "%s.local", hostname);
     lock();
@@ -196,6 +198,7 @@ int matter_mdns_add_service(const char* service, const char* proto, int port,
         }
     }
     rebuild_view();
+    s_announce_pending = true;
     unlock();
     return 0;
 }
@@ -203,12 +206,12 @@ int matter_mdns_add_service(const char* service, const char* proto, int port,
 int matter_mdns_add_subtype(const char* service, const char* proto,
                             const char* instance, const char* hostname,
                             const char* subtype) {
-    (void)instance;
+    (void)hostname;
     char sub_name[96];
-    char instance_fqdn[96];
+    char instance_fqdn[128];
     snprintf(sub_name, sizeof(sub_name), "%s._sub.%s.%s.local", subtype,
              service, proto);
-    snprintf(instance_fqdn, sizeof(instance_fqdn), "%s.%s.%s.local", hostname,
+    snprintf(instance_fqdn, sizeof(instance_fqdn), "%s.%s.%s.local", instance,
              service, proto);
     lock();
     if (!find_entry(dnsTYPE_PTR, sub_name, instance_fqdn)) {
@@ -222,6 +225,7 @@ int matter_mdns_add_subtype(const char* service, const char* proto,
         }
     }
     rebuild_view();
+    s_announce_pending = true;
     unlock();
     return 0;
 }
@@ -253,6 +257,7 @@ int matter_mdns_remove_service(const char* service, const char* proto,
     }
     s_count = w;
     rebuild_view();
+    s_announce_pending = true;
     unlock();
     return 0;
 }
@@ -264,10 +269,25 @@ DNSRecord_t* xApplicationDNSRecordQueryHook_Multi(
     return s_current_view;
 }
 
+UBaseType_t matter_mdns_get_view(DNSRecord_t** out) {
+    *out = s_current_view;
+    return s_count;
+}
+
+UBaseType_t matter_mdns_snapshot(DNSRecord_t** out) {
+    return matter_mdns_get_view(out);
+}
+
+bool matter_mdns_take_announce_pending(void) {
+    if (!s_announce_pending) return false;
+    s_announce_pending = false;
+    return true;
+}
+
 static void serialize_announce_packet(NetworkEndPoint_t* ep, uint8_t* buf,
                                       size_t* outLen) {
     DNSMessage_t* pxDNSMessage = (DNSMessage_t*)buf;
-    memset(buf, 0, 1024);
+    memset(buf, 0, MATTER_MDNS_ANNOUNCE_BUF);
     pxDNSMessage->usFlags = FreeRTOS_htons(0x8400);
     uint8_t* pucWrite = buf + sizeof(DNSMessage_t);
     int answers = 0;
@@ -292,7 +312,7 @@ static void serialize_announce_packet(NetworkEndPoint_t* ep, uint8_t* buf,
             est += 4;
         else if (r->usRecordType == dnsTYPE_AAAA_HOST)
             est += 16;
-        if ((pucWrite - buf) + est > 1000) break;
+        if ((pucWrite - buf) + est > MATTER_MDNS_ANNOUNCE_BUF - 24) break;
         const char* p = r->pcName;
         while (p && *p) {
             const char* next = strchr(p, '.');
@@ -411,9 +431,9 @@ static void announce_task(void* pvParameters) {
                     xAddr.sin_address.ulIP_IPv4 =
                         FreeRTOS_inet_addr("224.0.0.251");
                 } else {
-                    xAddress.sin_family = FREERTOS_AF_INET6;
+                    xAddr.sin_family = FREERTOS_AF_INET6;
                     FreeRTOS_inet_pton(FREERTOS_AF_INET6, "ff02::fb",
-                                       xAddress.sin_address.xIP_IPv6.ucBytes);
+                                       xAddr.sin_address.xIP_IPv6.ucBytes);
                 }
                 FreeRTOS_sendto(s, p->buf, plen, 0, &xAddr, sizeof(xAddr));
                 FreeRTOS_closesocket(s);
@@ -431,7 +451,7 @@ void matter_mdns_announce(void) {
     LogInfo(("mdns: spawning proactive discovery task"));
     announce_params_t* params = pvPortMalloc(sizeof(announce_params_t));
     if (!params) return;
-    params->buf = pvPortMalloc(1024);
+    params->buf = pvPortMalloc(MATTER_MDNS_ANNOUNCE_BUF);
     if (!params->buf) {
         vPortFree(params);
         return;

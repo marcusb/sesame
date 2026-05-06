@@ -32,6 +32,14 @@ QEMU_PASSCODE = 20202021
 MATTER_NODE_ID = 1
 SESAME_DOOR_ENDPOINT = 2
 MATTER_UDP_PORT = 5540
+# Deterministic IPv6 link-local derived from the test MAC 00:11:22:33:44:55 in
+# main_matter.c. chip-tool's minmDNS resolver doesn't browse tap-sesame, so we
+# skip mDNS discovery and pair via the SUT's known link-local address.
+QEMU_LINK_LOCAL = "fe80::211:22ff:fe33:4455"
+
+
+def _qemu_link_local(tap_iface: str) -> str:
+    return f"{QEMU_LINK_LOCAL}%{tap_iface}"
 
 
 class _Collector(ServiceListener):
@@ -50,7 +58,19 @@ class _Collector(ServiceListener):
         self.services.pop(name, None)
 
 
-def _browse(service: str, timeout: float = 20.0) -> dict[str, object]:
+def _browse(
+    service: str,
+    timeout: float = 20.0,
+    predicate=None,
+) -> dict[str, object]:
+    """Browse mDNS for `service`.
+
+    If `predicate` is None, returns as soon as any service is seen (or after
+    `timeout`). If `predicate` is given (called with a ServiceInfo), returns
+    as soon as some collected service matches; otherwise keeps waiting until
+    timeout. This lets callers select a specific instance on a LAN that may
+    have several advertisers of the same service type.
+    """
     zc = Zeroconf()
     listener = _Collector()
     ServiceBrowser(zc, service, listener)
@@ -58,11 +78,18 @@ def _browse(service: str, timeout: float = 20.0) -> dict[str, object]:
     try:
         while time.monotonic() < deadline:
             if listener.services:
-                return dict(listener.services)
+                if predicate is None:
+                    return dict(listener.services)
+                if any(predicate(i) for i in listener.services.values()):
+                    return dict(listener.services)
             time.sleep(0.25)
         return dict(listener.services)
     finally:
         zc.close()
+
+
+def _has_qemu_addr(info) -> bool:
+    return "10.20.30.2" in info.parsed_addresses(version=zeroconf.IPVersion.V4Only)
 
 
 def _run_chip_tool(
@@ -75,14 +102,32 @@ def _run_chip_tool(
 
 
 def test_mdns_advertises_commissionable_service(matter_harness: Harness) -> None:
-    services = _browse("_matterc._udp.local.")
+    services = _browse("_matterc._udp.local.", timeout=30.0, predicate=_has_qemu_addr)
     assert services, (
-        "no _matterc._udp service found via mDNS within 20s — "
+        "no _matterc._udp service found via mDNS within 30s — "
         "matter_mdns publication is broken (host can reach guest? avahi-browse "
         "from host should also see it)"
     )
 
-    info = next(iter(services.values()))
+    # The host LAN may have other Matter commissioners (e.g. a real Sesame
+    # device on the network) advertising _matterc._udp. Filter to the SUT by
+    # IP — our QEMU guest binds the static 10.20.30.2.
+    info = next((i for i in services.values() if _has_qemu_addr(i)), None)
+    # Re-resolve so we pick up A and AAAA records that may have arrived after
+    # the SRV/TXT triggered the predicate.
+    if info is not None:
+        zc = Zeroconf()
+        try:
+            from zeroconf import ServiceInfo
+            refreshed = ServiceInfo(info.type, info.name)
+            if refreshed.request(zc, timeout=3000):
+                info = refreshed
+        finally:
+            zc.close()
+    assert info is not None, (
+        f"no _matterc._udp instance at 10.20.30.2 found among "
+        f"{[(s, list(i.parsed_addresses())) for s, i in services.items()]}"
+    )
     txt = {
         k.decode(): (v.decode() if isinstance(v, bytes) else v)
         for k, v in info.properties.items()
@@ -115,6 +160,7 @@ def test_chip_tool_pairs_and_drives_door(
     matter_harness: Harness,
     chip_tool_path: str,
     tmp_path: Path,
+    qemu_tap,
 ) -> None:
     storage = tmp_path / "chip_kvs"
     storage.mkdir()
@@ -122,14 +168,17 @@ def test_chip_tool_pairs_and_drives_door(
     # Drain any boot-time CTRL events before pairing.
     matter_harness.drain()
 
-    # Pairing onnetwork: discover via mDNS, complete PASE then CASE.
+    # Pair using the SUT's known IPv6 link-local. chip-tool's minmDNS resolver
+    # doesn't browse tap-sesame, so onnetwork discovery times out — bypass it.
     pair = _run_chip_tool(
         chip_tool_path,
         storage,
         "pairing",
-        "onnetwork",
+        "already-discovered",
         str(MATTER_NODE_ID),
         str(QEMU_PASSCODE),
+        _qemu_link_local(qemu_tap.name),
+        str(MATTER_UDP_PORT),
         timeout=120.0,
     )
     assert pair.returncode == 0, (
@@ -187,6 +236,7 @@ def test_door_state_report_round_trip(
     matter_harness: Harness,
     chip_tool_path: str,
     tmp_path: Path,
+    qemu_tap,
 ) -> None:
     storage = tmp_path / "chip_kvs"
     storage.mkdir()
@@ -195,9 +245,11 @@ def test_door_state_report_round_trip(
         chip_tool_path,
         storage,
         "pairing",
-        "onnetwork",
+        "already-discovered",
         str(MATTER_NODE_ID),
         str(QEMU_PASSCODE),
+        _qemu_link_local(qemu_tap.name),
+        str(MATTER_UDP_PORT),
         timeout=120.0,
     )
     assert pair.returncode == 0, pair.stderr
