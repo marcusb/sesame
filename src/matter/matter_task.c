@@ -21,6 +21,10 @@ bvm* g_matter_vm;
 SemaphoreHandle_t g_matter_vm_lock;
 static StaticSemaphore_t g_matter_vm_lock_buf;
 
+volatile bool g_matter_network_up_pending = false;
+
+void matter_schedule_network_up(void) { g_matter_network_up_pending = true; }
+
 static void matter_task(void* pvParameters) {
     (void)pvParameters;
     LogInfo(("[matter] entry"));
@@ -159,6 +163,11 @@ static void matter_task(void* pvParameters) {
         "matter_device.plugins_persist = true",
         "matter_device.plugins_config = {\"0\":{\"type\":\"root\"},"
         "\"2\":{\"type\":\"sesame_door\"}}",
+        "if matter_device.sessions.count_active_fabrics() == 0\n"
+        "  matter_device.commissioning.start_root_basic_commissioning(900)\n"
+        "end\n"
+        "log('MTR: discriminator=' + str(matter_device.root_discriminator) "
+        "+ ' passcode=' + str(matter_device.root_passcode), 2)",
 #ifdef QEMU
         /* Reseed with the canonical Matter test pair (discriminator 3840,
          * passcode 20202021) and reopen commissioning with the new SPAKE2+
@@ -207,6 +216,15 @@ static void matter_task(void* pvParameters) {
 
     TickType_t last = xTaskGetTickCount();
     for (;;) {
+        if (g_matter_network_up_pending) {
+            g_matter_network_up_pending = false;
+            xSemaphoreTakeRecursive(g_matter_vm_lock, portMAX_DELAY);
+            matter_tasmota_notify_network_up(vm);
+            extern void matter_mdns_announce(void);
+            matter_mdns_announce();
+            xSemaphoreGiveRecursive(g_matter_vm_lock);
+        }
+
         xSemaphoreTakeRecursive(g_matter_vm_lock, portMAX_DELAY);
         matter_tasmota_tick(vm);
         xSemaphoreGiveRecursive(g_matter_vm_lock);

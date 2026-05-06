@@ -389,7 +389,7 @@ static void serialize_announce_packet(NetworkEndPoint_t* ep, uint8_t* buf,
         pucDataLen[0] = (uint8_t)(dlen >> 8);
         pucDataLen[1] = (uint8_t)(dlen & 0xff);
         answers++;
-        if (pucWrite - buf > 900) break;
+        if (pucWrite - buf > 768) break;
     }
     pxDNSMessage->usAnswers = FreeRTOS_htons((uint16_t)answers);
     *outLen = (size_t)(pucWrite - buf);
@@ -401,7 +401,6 @@ typedef struct {
 
 static void announce_task(void* pvParameters) {
     announce_params_t* p = (announce_params_t*)pvParameters;
-    Socket_t xSocket;
     struct freertos_sockaddr xAddress;
 
     for (int retry = 0; retry < 5; retry++) {
@@ -415,40 +414,47 @@ static void announce_task(void* pvParameters) {
 
             size_t packet_len;
             serialize_announce_packet(ep, p->buf, &packet_len);
+            int32_t rc = 0;
 
             if (!ep->bits.bIPv6) {
                 /* IPv4 announcement */
-                xSocket = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM,
-                                          ipPROTOCOL_UDP);
+                Socket_t xSocket = FreeRTOS_socket(
+                    FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
                 if (xSocket != FREERTOS_INVALID_SOCKET) {
+                    /* Do not explicitly bind to 5353 to avoid conflicts. */
                     memset(&xAddress, 0, sizeof(xAddress));
                     xAddress.sin_len = (uint8_t)sizeof(xAddress);
                     xAddress.sin_family = FREERTOS_AF_INET;
                     xAddress.sin_port = FreeRTOS_htons(5353);
-                    FreeRTOS_bind(xSocket, &xAddress, sizeof(xAddress));
                     xAddress.sin_address.ulIP_IPv4 =
                         FreeRTOS_inet_addr("224.0.0.251");
-                    FreeRTOS_sendto(xSocket, p->buf, packet_len, 0, &xAddress,
-                                    sizeof(xAddress));
+
+                    /* Wait for ARP/ND if necessary? Multicast is direct. */
+                    rc = FreeRTOS_sendto(xSocket, p->buf, packet_len, 0,
+                                         &xAddress, sizeof(xAddress));
                     FreeRTOS_closesocket(xSocket);
                 }
+                LogInfo(("mdns: announce IPv4 len=%zu rc=%ld", packet_len,
+                         (long)rc));
             } else {
                 /* IPv6 announcement */
-                xSocket = FreeRTOS_socket(FREERTOS_AF_INET6,
-                                          FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
+                Socket_t xSocket = FreeRTOS_socket(
+                    FREERTOS_AF_INET6, FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
                 if (xSocket != FREERTOS_INVALID_SOCKET) {
                     memset(&xAddress, 0, sizeof(xAddress));
                     xAddress.sin_len = (uint8_t)sizeof(xAddress);
                     xAddress.sin_family = FREERTOS_AF_INET6;
                     xAddress.sin_port = FreeRTOS_htons(5353);
-                    FreeRTOS_bind(xSocket, &xAddress, sizeof(xAddress));
                     FreeRTOS_inet_pton(FREERTOS_AF_INET6, "ff02::fb",
                                        xAddress.sin_address.xIP_IPv6.ucBytes);
-                    FreeRTOS_sendto(xSocket, p->buf, packet_len, 0, &xAddress,
-                                    sizeof(xAddress));
+                    rc = FreeRTOS_sendto(xSocket, p->buf, packet_len, 0,
+                                         &xAddress, sizeof(xAddress));
                     FreeRTOS_closesocket(xSocket);
                 }
+                LogInfo(("mdns: announce IPv6 len=%zu rc=%ld", packet_len,
+                         (long)rc));
             }
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
         unlock();
         vTaskDelay(pdMS_TO_TICKS(500 * (1 << retry)));
