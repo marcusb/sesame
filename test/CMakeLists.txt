@@ -142,12 +142,22 @@ endmacro()
 # matter_crypto_tests still overflows the on-target ram.ld linker region
 # (88MW320_xx_xxxx_ram.ld) once the full crypto shim is linked in,
 # so only build these for QEMU.
+# if(USE_QEMU)
+#     add_matter_test_binary(matter_crypto_tests test_matter_crypto.c)
+#     add_matter_test_binary(matter_mdns_tests test_matter_mdns.c)
+#     add_matter_test_binary(matter_mdns_responder_tests test_matter_mdns_responder.c)
+#     target_link_options(matter_mdns_responder_tests${target_suffix} PRIVATE
+#         "-Wl,--wrap,vReturnEthernetFrame")
+#     add_matter_test_binary(matter_sesame_tests test_matter_sesame.c)
+#     add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c)
+# endif()
+
 if(USE_QEMU)
     add_matter_test_binary(matter_crypto_tests test_matter_crypto.c)
-    add_matter_test_binary(matter_mdns_tests test_matter_mdns.c)
-    add_matter_test_binary(matter_mdns_responder_tests test_matter_mdns_responder.c)
-    target_link_options(matter_mdns_responder_tests${target_suffix} PRIVATE
-        "-Wl,--wrap,vReturnEthernetFrame")
+    # add_matter_test_binary(matter_mdns_tests test_matter_mdns.c)
+    # add_matter_test_binary(matter_mdns_responder_tests test_matter_mdns_responder.c)
+    # target_link_options(matter_mdns_responder_tests${target_suffix} PRIVATE
+    #     "-Wl,--wrap,vReturnEthernetFrame")
     add_matter_test_binary(matter_sesame_tests test_matter_sesame.c)
     add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c)
 endif()

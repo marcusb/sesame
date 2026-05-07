@@ -112,7 +112,7 @@ void main_task(void* param) {
     configASSERT(ctrl_queue);
 
     create_board_tasks();
-    xTaskCreate(httpd_task, "HTTPd", 512, NULL, tskIDLE_PRIORITY, NULL);
+    xTaskCreate(httpd_task, "HTTPd", 1024, NULL, tskIDLE_PRIORITY + 1, NULL);
 
     if (ota_status == OTA_STATUS_TESTING) {
         set_ota_led_pattern(LED_BLUE, LED_OFF, LED_BLUE, LED_OFF);

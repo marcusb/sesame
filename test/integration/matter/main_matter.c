@@ -18,6 +18,7 @@
 #include "controller.h"
 #include "harness.h"
 #include "matter_mdns.h"
+#include "matter_mdns_internal.h"
 #include "matter_task.h"
 #include "psm.h"
 #include "queue.h"
@@ -72,23 +73,6 @@ void configure_netif(void) {
     configASSERT(res);
 }
 
-static const char* dns_type_name(uint16_t t) {
-    switch (t) {
-        case dnsTYPE_A_HOST:
-            return "A";
-        case dnsTYPE_AAAA_HOST:
-            return "AAAA";
-        case dnsTYPE_PTR:
-            return "PTR";
-        case dnsTYPE_SRV:
-            return "SRV";
-        case dnsTYPE_TXT:
-            return "TXT";
-        default:
-            return "?";
-    }
-}
-
 static void dump_endpoints(void) {
     char line[200];
     NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(NULL);
@@ -112,42 +96,55 @@ static void dump_endpoints(void) {
 }
 
 static void dump_mdns(void) {
-    DNSRecord_t* recs;
-    UBaseType_t n = matter_mdns_snapshot(&recs);
+    size_t count;
+    matter_mdns_lock();
+    const matter_mdns_service_t* services = matter_mdns_locked_services(&count);
+    const char* hostname = matter_mdns_locked_hostname();
+
     char line[320];
-    snprintf(line, sizeof(line), "MDNS count=%u", (unsigned)n);
+
+    int total_recs = 0;
+    if (hostname) total_recs += 2;
+    for (size_t i = 0; i < count; i++) {
+        total_recs += 3 + (int)services[i].subtype_count;
+    }
+
+    snprintf(line, sizeof(line), "MDNS count=%d", total_recs);
     host_inspector_emit(line);
-    for (UBaseType_t i = 0; i < n; i++) {
-        DNSRecord_t* r = &recs[i];
-        const char* extra = "";
-        char extra_buf[160];
-        switch (r->usRecordType) {
-            case dnsTYPE_PTR:
-                snprintf(extra_buf, sizeof(extra_buf), " ->%s",
-                         r->xData.pcPtrRecord ? r->xData.pcPtrRecord : "");
-                extra = extra_buf;
-                break;
-            case dnsTYPE_SRV:
-                snprintf(extra_buf, sizeof(extra_buf), " port=%u target=%s",
-                         (unsigned)r->xData.xSrvRecord.usPort,
-                         r->xData.xSrvRecord.pcTarget
-                             ? r->xData.xSrvRecord.pcTarget
-                             : "");
-                extra = extra_buf;
-                break;
-            case dnsTYPE_TXT:
-                snprintf(extra_buf, sizeof(extra_buf), " txtlen=%u",
-                         (unsigned)(r->xData.pcTxtRecord
-                                        ? strlen(r->xData.pcTxtRecord)
-                                        : 0));
-                extra = extra_buf;
-                break;
-        }
-        snprintf(line, sizeof(line), "MDNS [%u] %s %s%s", (unsigned)i,
-                 dns_type_name(r->usRecordType),
-                 r->pcName ? r->pcName : "(null)", extra);
+
+    int idx = 0;
+    if (hostname) {
+        snprintf(line, sizeof(line), "MDNS [%d] A %s", idx++, hostname);
+        host_inspector_emit(line);
+        snprintf(line, sizeof(line), "MDNS [%d] AAAA %s", idx++, hostname);
         host_inspector_emit(line);
     }
+
+    for (size_t i = 0; i < count; i++) {
+        const matter_mdns_service_t* s = &services[i];
+        char sn[64], in[128];
+        snprintf(sn, sizeof(sn), "%s.%s.local", s->service, s->proto);
+        snprintf(in, sizeof(in), "%s.%s.%s.local", s->instance, s->service,
+                 s->proto);
+
+        snprintf(line, sizeof(line), "MDNS [%d] PTR %s ->%s", idx++, sn, in);
+        host_inspector_emit(line);
+
+        snprintf(line, sizeof(line), "MDNS [%d] SRV %s port=%u target=%s",
+                 idx++, in, (unsigned)s->port, s->hostname);
+        host_inspector_emit(line);
+
+        snprintf(line, sizeof(line), "MDNS [%d] TXT %s txtlen=%u", idx++, in,
+                 (unsigned)s->txt_len);
+        host_inspector_emit(line);
+
+        for (size_t j = 0; j < s->subtype_count; j++) {
+            snprintf(line, sizeof(line), "MDNS [%d] PTR %s._sub.%s ->%s", idx++,
+                     s->subtypes[j], sn, in);
+            host_inspector_emit(line);
+        }
+    }
+    matter_mdns_unlock();
 }
 
 static void on_cmd(const char* line) {

@@ -30,21 +30,13 @@ uint32_t SystemCoreClock = 25000000;
 /* Globals the SUT expects from the embedded firmware. */
 QueueHandle_t ctrl_queue;
 
-/* Weak default DNS hooks. SUTs that need real mDNS publication (e.g. the
- * Matter integration test) link `sesame_matter` whose strong definitions
- * override these. */
-__attribute__((weak)) DNSRecord_t* xApplicationDNSRecordQueryHook_Multi(
-    struct xNetworkEndPoint* pxEndPoint, UBaseType_t* outLen) {
+/* Weak default DNS hooks. */
+__attribute__((weak)) BaseType_t xApplicationDNSQueryHook_Multi(
+    struct xNetworkEndPoint* pxEndPoint, const char* pcName) {
     (void)pxEndPoint;
-    *outLen = 0;
-    return NULL;
+    (void)pcName;
+    return pdFALSE;
 }
-__attribute__((weak)) DNSRecord_t* xApplicationDNSRecordQueryHook(
-    UBaseType_t* outLen) {
-    *outLen = 0;
-    return NULL;
-}
-__attribute__((weak)) void xApplicationDNSRecordsMatchedHook(void) {}
 
 static harness_net_up_cb net_up_cb;
 static harness_cmd_handler_t cmd_handler;

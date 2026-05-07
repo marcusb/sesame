@@ -184,41 +184,6 @@ if(_patch_result GREATER 1)
     message(FATAL_ERROR "Failed to apply FreeRTOS-Plus-TCP DNS fallback patch (exit ${_patch_result})")
 endif()
 
-# mDNS/DNS-SD support: https://github.com/FreeRTOS/FreeRTOS-Plus-TCP/pull/1326
-execute_process(
-    COMMAND patch -p1 -N
-        -i "${CMAKE_SOURCE_DIR}/patches/freertos_plus_tcp_mdns.patch"
-    WORKING_DIRECTORY "${freertos_plus_tcp_SOURCE_DIR}"
-    RESULT_VARIABLE _patch_result
-    OUTPUT_QUIET ERROR_QUIET)
-if(_patch_result GREATER 1)
-    message(FATAL_ERROR "Failed to apply FreeRTOS-Plus-TCP mDNS patch (exit ${_patch_result})")
-endif()
-
-# Fix TXT rdata format from the mDNS backport (don't double-wrap pascal-string).
-execute_process(
-    COMMAND patch -p1 -N
-        -i "${CMAKE_SOURCE_DIR}/patches/freertos_plus_tcp_mdns_txt.patch"
-    WORKING_DIRECTORY "${freertos_plus_tcp_SOURCE_DIR}"
-    RESULT_VARIABLE _patch_result
-    OUTPUT_QUIET ERROR_QUIET)
-if(_patch_result GREATER 1)
-    message(FATAL_ERROR "Failed to apply FreeRTOS-Plus-TCP mDNS TXT patch (exit ${_patch_result})")
-endif()
-
-# Cross-family A/AAAA answers: respond to A queries on IPv6 endpoints and
-# AAAA queries on IPv4 endpoints by sourcing the address from any matching
-# endpoint instead of skipping the record.
-execute_process(
-    COMMAND patch -p1 -N
-        -i "${CMAKE_SOURCE_DIR}/patches/freertos_plus_tcp_mdns_cross_family.patch"
-    WORKING_DIRECTORY "${freertos_plus_tcp_SOURCE_DIR}"
-    RESULT_VARIABLE _patch_result
-    OUTPUT_QUIET ERROR_QUIET)
-if(_patch_result GREATER 1)
-    message(FATAL_ERROR "Failed to apply FreeRTOS-Plus-TCP mDNS cross-family patch (exit ${_patch_result})")
-endif()
-
 # MPS2_AN385 RX path fixes:
 #   1. Strip 4-byte FCS that the SMSC9220 RX_STATUS reports as part of
 #      packet length (otherwise every IPv6 packet is dropped by

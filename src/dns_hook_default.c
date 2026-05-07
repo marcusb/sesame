@@ -1,26 +1,19 @@
 /*
- * Default (weak) implementations of FreeRTOS-Plus-TCP mDNS responder hooks.
- *
- * ipconfigUSE_MDNS=1 makes FreeRTOS_DNS_Parser reference these hooks in every
- * build. Matter provides a strong xApplicationDNSRecordQueryHook_Multi in
- * matter_mdns.c; when Matter is disabled (RAM build), the weak defaults here
- * respond with an empty record set.
+ * Default (weak) implementations of FreeRTOS-Plus-TCP DNS hooks.
  */
 
 #include "FreeRTOS.h"
-#include "FreeRTOS_DNS_Globals.h"
+#include "FreeRTOS_IP.h"
 
-__attribute__((weak)) DNSRecord_t* xApplicationDNSRecordQueryHook_Multi(
-    struct xNetworkEndPoint* pxEndPoint, UBaseType_t* outLen) {
+/*
+ * xApplicationDNSQueryHook_Multi is called by FreeRTOS-Plus-TCP when
+ * ipconfigDNSQuery_MULTI is enabled. We return pdFALSE as we don't handle
+ * generic DNS queries here (the bespoke mDNS responder handles 5353 via
+ * its own socket).
+ */
+__attribute__((weak)) BaseType_t xApplicationDNSQueryHook_Multi(
+    struct xNetworkEndPoint* pxEndPoint, const char* pcName) {
     (void)pxEndPoint;
-    *outLen = 0;
-    return NULL;
+    (void)pcName;
+    return pdFALSE;
 }
-
-__attribute__((weak)) DNSRecord_t* xApplicationDNSRecordQueryHook(
-    UBaseType_t* outLen) {
-    *outLen = 0;
-    return NULL;
-}
-
-__attribute__((weak)) void xApplicationDNSRecordsMatchedHook(void) {}

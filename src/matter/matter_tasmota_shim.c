@@ -369,8 +369,7 @@ static int tas_cmd(bvm* vm) {
     if (!hostname) hostname = "sesame";
 
     if (!strcmp(name, "MdnsAnnounce")) {
-        extern void matter_mdns_announce(void);
-        matter_mdns_announce();
+        matter_mdns_request_announce();
         be_return_nil(vm);
     }
 
@@ -577,8 +576,7 @@ static int mdns_start(bvm* vm) { be_return_nil(vm); }
 
 static int mdns_announce(bvm* vm) {
     (void)vm;
-    extern void matter_mdns_announce(void);
-    matter_mdns_announce();
+    matter_mdns_request_announce();
     be_return_nil(vm);
 }
 
@@ -596,7 +594,7 @@ static int mdns_add_hostname(bvm* vm) {
  * DNS-SD TXT record format: a sequence of <len:byte><chars> chunks, each
  * chunk being "KEY=VALUE". Walks the Berry map at stack idx and emits.
  */
-static void serialize_txt_map(bvm* vm, int idx, char* out, size_t outsz) {
+static int serialize_txt_map(bvm* vm, int idx, char* out, size_t outsz) {
     size_t pos = 0;
     out[0] = 0;
     int iter_idx;
@@ -610,12 +608,12 @@ static void serialize_txt_map(bvm* vm, int idx, char* out, size_t outsz) {
             LogError(
                 ("mdns: .p not a map (type=%s)", be_typename(vm, iter_idx)));
             be_pop(vm, 1);
-            return;
+            return 0;
         }
     } else {
         LogError(("mdns: serialize_txt_map not map/instance (type=%s)",
                   be_typename(vm, idx)));
-        return;
+        return 0;
     }
     be_pushiter(vm, iter_idx);
     while (be_iter_hasnext(vm, iter_idx)) {
@@ -652,17 +650,19 @@ static void serialize_txt_map(bvm* vm, int idx, char* out, size_t outsz) {
         be_pop(vm, 1); /* pop the .p we pushed */
     }
     out[pos] = 0;
+    return pos;
 }
 
 static int mdns_add_service(bvm* vm) {
     const char* service = be_tostring(vm, 1);
     const char* proto = be_tostring(vm, 2);
     int port = be_toint(vm, 3);
-    char txt[512];
-    serialize_txt_map(vm, 4, txt, sizeof(txt));
+    uint8_t txt[512];
+    int txt_len = serialize_txt_map(vm, 4, (char*)txt, sizeof(txt));
     const char* instance = be_tostring(vm, 5);
     const char* hostname = be_tostring(vm, 6);
-    matter_mdns_add_service(service, proto, port, txt, instance, hostname);
+    matter_mdns_add_service(service, proto, (uint16_t)port, txt,
+                            (size_t)txt_len, instance, hostname);
     be_return_nil(vm);
 }
 

@@ -1,9 +1,8 @@
 #pragma once
 
 #include <stdbool.h>
-
-#include "FreeRTOS.h"
-#include "FreeRTOS_DNS_Globals.h"
+#include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,8 +13,9 @@ void matter_mdns_init(void);
 int matter_mdns_add_hostname(const char* hostname, const char* ipv6,
                              const char* ipv4);
 
-int matter_mdns_add_service(const char* service, const char* proto, int port,
-                            const char* txt_record, const char* instance,
+int matter_mdns_add_service(const char* service, const char* proto,
+                            uint16_t port, const uint8_t* txt_bytes,
+                            size_t txt_len, const char* instance,
                             const char* hostname);
 
 int matter_mdns_add_subtype(const char* service, const char* proto,
@@ -25,10 +25,7 @@ int matter_mdns_add_subtype(const char* service, const char* proto,
 int matter_mdns_remove_service(const char* service, const char* proto,
                                const char* instance, const char* hostname);
 
-UBaseType_t matter_mdns_snapshot(DNSRecord_t** out);
-UBaseType_t matter_mdns_get_view(DNSRecord_t** out);
-
-void matter_mdns_announce(void);
+void matter_mdns_request_announce(void);
 
 /* Returns true if a service add/remove since the last call requested a
  * proactive re-announce. Used by matter_task to debounce announce spawns. */
