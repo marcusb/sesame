@@ -219,6 +219,7 @@ int main(void) {
     BOARD_GetHash(hash, &len);
     configASSERT(len > 0U);
     mbedtls_hardware_init_hash(hash, len);
+    srand(((uint32_t*)hash)[0]);
 
     setup_heap();
     if (xTaskCreate(main_task, "main", configMINIMAL_STACK_SIZE + 896, NULL,

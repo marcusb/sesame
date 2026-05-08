@@ -1,3 +1,7 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "FreeRTOS.h"
 #include "FreeRTOS_IP.h"
 #include "FreeRTOS_ND.h"
@@ -131,6 +135,7 @@ int main(void) {
         0xee, 0xff, 0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe,
     };
     mbedtls_hardware_init_hash(qemu_seed_entropy, sizeof(qemu_seed_entropy));
+    srand(((uint32_t*)qemu_seed_entropy)[0]);
 
     if (xTaskCreate(main_task, "main", configMINIMAL_STACK_SIZE + 896, NULL,
                     tskIDLE_PRIORITY + 3, NULL) != pdPASS) {

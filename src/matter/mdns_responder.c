@@ -316,24 +316,45 @@ static void process_query(mdns_resp_ctx_t* ctx, const char* name,
 
 static void mdns_responder_task(void* pvParameters) {
     BaseType_t family = (BaseType_t)pvParameters;
-    Socket_t s = FreeRTOS_socket(family, FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
-    if (s == FREERTOS_INVALID_SOCKET) {
-        LogError(("mdns: failed to create %s socket",
-                  family == FREERTOS_AF_INET ? "v4" : "v6"));
-        goto err;
-    }
-
+    Socket_t s = FREERTOS_INVALID_SOCKET;
     struct freertos_sockaddr bind_addr;
     memset(&bind_addr, 0, sizeof(bind_addr));
     bind_addr.sin_port = FreeRTOS_htons(MDNS_PORT);
     bind_addr.sin_family = family;
 
-    /* Using specific ANY address bytes to help FreeRTOS-Plus-TCP port reuse
-     * logic. */
-    if (family == FREERTOS_AF_INET6) {
-        memset(bind_addr.sin_address.xIP_IPv6.ucBytes, 0, 16);
-    } else {
-        bind_addr.sin_address.ulIP_IPv4 = 0;
+    /* Wait for network to be configured and bind to specific endpoint address
+     * to avoid port conflict in the stack's simple port registry. */
+    LogInfo(("mdns: waiting for %s network...",
+             family == FREERTOS_AF_INET ? "v4" : "v6"));
+    while (1) {
+        NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(NULL);
+        while (ep != NULL) {
+            if (ep->bits.bIPv6 == (family == FREERTOS_AF_INET6) &&
+                ep->bits.bEndPointUp) {
+                if (family == FREERTOS_AF_INET) {
+                    if (ep->ipv4_settings.ulIPAddress != 0) {
+                        bind_addr.sin_address.ulIP_IPv4 =
+                            ep->ipv4_settings.ulIPAddress;
+                        goto ready;
+                    }
+                } else {
+                    /* Any IPv6 address (even link-local) is fine. */
+                    memcpy(bind_addr.sin_address.xIP_IPv6.ucBytes,
+                           ep->ipv6_settings.xIPAddress.ucBytes, 16);
+                    goto ready;
+                }
+            }
+            ep = FreeRTOS_NextEndPoint(NULL, ep);
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+ready:
+    s = FreeRTOS_socket(family, FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
+    if (s == FREERTOS_INVALID_SOCKET) {
+        LogError(("mdns: failed to create %s socket",
+                  family == FREERTOS_AF_INET ? "v4" : "v6"));
+        goto err;
     }
 
     if (FreeRTOS_bind(s, &bind_addr, sizeof(bind_addr)) != 0) {
@@ -342,6 +363,9 @@ static void mdns_responder_task(void* pvParameters) {
         FreeRTOS_closesocket(s);
         goto err;
     }
+
+    LogInfo(("mdns: %s responder started on port %d",
+             family == FREERTOS_AF_INET ? "v4" : "v6", MDNS_PORT));
 
     TickType_t timeout = pdMS_TO_TICKS(100);
     FreeRTOS_setsockopt(s, 0, FREERTOS_SO_RCVTIMEO, &timeout, sizeof(timeout));
