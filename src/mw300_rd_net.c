@@ -240,13 +240,11 @@ static BaseType_t netif_init(NetworkInterface_t* netif) {
     add_mcast_filter(&ip6_allnodes);
 #endif
 
-#if ipconfigUSE_MDNS
     uint8_t mdns_ipv4_mac[6] = {0x01, 0x00, 0x5e, 0x00, 0x00, 0xfb};
     wifi_add_mcast_filter(mdns_ipv4_mac);
 #if ipconfigUSE_IPv6
     uint8_t mdns_ipv6_mac[6] = {0x33, 0x33, 0x00, 0x00, 0x00, 0xfb};
     wifi_add_mcast_filter(mdns_ipv6_mac);
-#endif
 #endif
 
     enum wlan_connection_state state;

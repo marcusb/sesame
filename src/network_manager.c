@@ -36,7 +36,7 @@ static QueueHandle_t nm_queue;
 static struct wlan_network ap_network;
 static char hostname[33] = "sesame";
 
-const char *pcApplicationHostnameHook() { return hostname; }
+const char* pcApplicationHostnameHook() { return hostname; }
 
 static void connect_attempt_failed() {
     set_wifi_led_pattern(LED_OFF, LED_OFF, LED_OFF, LED_OFF);
@@ -49,7 +49,7 @@ static int init_sta_network(void) {
     strcpy(client_network.name, "client");
     stpncpy(client_network.ssid, app_config.network_config.ssid,
             sizeof(client_network.ssid));
-    char *p =
+    char* p =
         stpncpy(client_network.security.psk, app_config.network_config.password,
                 sizeof(client_network.security.psk));
     int pass_len = p - client_network.security.psk;
@@ -118,8 +118,8 @@ void start_ap() {
     }
 }
 
-static int wlan_event_callback(enum wlan_event_reason event, void *data) {
-    const char *msg;
+static int wlan_event_callback(enum wlan_event_reason event, void* data) {
+    const char* msg;
     switch (event) {
         case WLAN_REASON_INITIALIZED: {
             init_ap_network();
@@ -135,6 +135,7 @@ static int wlan_event_callback(enum wlan_event_reason event, void *data) {
         case WLAN_REASON_SUCCESS:
             msg = "wifi connected";
             set_wifi_led_pattern(LED_GREEN, LED_GREEN, LED_GREEN, LED_GREEN);
+            wlan_stop_network("ap");
             break;
         case WLAN_REASON_CONNECT_FAILED:
             msg = "wifi connect failed (invalid arg)";
@@ -183,11 +184,11 @@ static int wlan_event_callback(enum wlan_event_reason event, void *data) {
 
 int init_wifi_driver() {
     short history = 0;
-    struct partition_entry *p1 =
+    struct partition_entry* p1 =
         part_get_layout_by_id(FC_COMP_WLAN_FW, &history);
-    struct partition_entry *p2 =
+    struct partition_entry* p2 =
         part_get_layout_by_id(FC_COMP_WLAN_FW, &history);
-    struct partition_entry *p;
+    struct partition_entry* p;
     if (p1 && p2) {
         p = part_get_active_partition(p1, p2);
     } else if (!p1 && p2) {
@@ -201,7 +202,7 @@ int init_wifi_driver() {
 
     flash_desc_t fl;
     part_to_flash_desc(p, &fl);
-    uint32_t *wififw = (uint32_t *)mflash_drv_phys2log(fl.fl_start, fl.fl_size);
+    uint32_t* wififw = (uint32_t*)mflash_drv_phys2log(fl.fl_start, fl.fl_size);
     configASSERT(wififw != NULL);
     /* First word in WIFI firmware is magic number. */
     configASSERT(*wififw ==
@@ -210,10 +211,10 @@ int init_wifi_driver() {
     /* Initialize WIFI Driver */
     /* Second word in WIFI firmware is WIFI firmware length in bytes. */
     /* Real WIFI binary starts from 3rd word. */
-    return wlan_init((const uint8_t *)(wififw + 2U), *(wififw + 1U));
+    return wlan_init((const uint8_t*)(wififw + 2U), *(wififw + 1U));
 }
 
-void network_manager_task(void *params) {
+void network_manager_task(void* params) {
     nm_queue = (QueueHandle_t)params;
 
     int res = wlan_start(wlan_event_callback);

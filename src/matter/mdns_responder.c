@@ -9,6 +9,7 @@
 #include "FreeRTOS_Sockets.h"
 #include "app_logging.h"
 #include "backoff_algorithm.h"
+#include "matter/mdns_mcast_join.h"
 #include "matter_mdns_internal.h"
 
 #define TAG "mdns_resp"
@@ -41,8 +42,7 @@ typedef struct __attribute__((packed)) {
     uint16_t usAdditional;
 } DNSHeader_t;
 
-static TaskHandle_t s_v4_task = NULL;
-static TaskHandle_t s_v6_task = NULL;
+static TaskHandle_t s_task = NULL;
 
 /* -------------------------------------------------------------------------- */
 /* Wire Helpers                                                               */
@@ -314,58 +314,45 @@ static void process_query(mdns_resp_ctx_t* ctx, const char* name,
 /* Task                                                                       */
 /* -------------------------------------------------------------------------- */
 
+static bool wait_any_endpoint_up(void) {
+    while (1) {
+        for (NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(NULL); ep != NULL;
+             ep = FreeRTOS_NextEndPoint(NULL, ep)) {
+            if (ep->bits.bEndPointUp) return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+static void send_announcement(Socket_t s, uint8_t* tx_buf, BaseType_t family);
+
 static void mdns_responder_task(void* pvParameters) {
-    BaseType_t family = (BaseType_t)pvParameters;
+    (void)pvParameters;
     Socket_t s = FREERTOS_INVALID_SOCKET;
     struct freertos_sockaddr bind_addr;
     memset(&bind_addr, 0, sizeof(bind_addr));
     bind_addr.sin_port = FreeRTOS_htons(MDNS_PORT);
-    bind_addr.sin_family = family;
+    bind_addr.sin_family = FREERTOS_AF_INET6;
+    /* in6addr_any (all zeros) — the UDP demux is port-only, so a single v6
+     * ANY socket receives both v4 and v6 mDNS traffic on port 5353. */
 
-    /* Wait for network to be configured and bind to specific endpoint address
-     * to avoid port conflict in the stack's simple port registry. */
-    LogInfo(("mdns: waiting for %s network...",
-             family == FREERTOS_AF_INET ? "v4" : "v6"));
-    while (1) {
-        NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(NULL);
-        while (ep != NULL) {
-            if (ep->bits.bIPv6 == (family == FREERTOS_AF_INET6) &&
-                ep->bits.bEndPointUp) {
-                if (family == FREERTOS_AF_INET) {
-                    if (ep->ipv4_settings.ulIPAddress != 0) {
-                        bind_addr.sin_address.ulIP_IPv4 =
-                            ep->ipv4_settings.ulIPAddress;
-                        goto ready;
-                    }
-                } else {
-                    /* Any IPv6 address (even link-local) is fine. */
-                    memcpy(bind_addr.sin_address.xIP_IPv6.ucBytes,
-                           ep->ipv6_settings.xIPAddress.ucBytes, 16);
-                    goto ready;
-                }
-            }
-            ep = FreeRTOS_NextEndPoint(NULL, ep);
-        }
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
+    LogInfo(("mdns: waiting for network..."));
+    wait_any_endpoint_up();
 
-ready:
-    s = FreeRTOS_socket(family, FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
+    s = FreeRTOS_socket(FREERTOS_AF_INET6, FREERTOS_SOCK_DGRAM, ipPROTOCOL_UDP);
     if (s == FREERTOS_INVALID_SOCKET) {
-        LogError(("mdns: failed to create %s socket",
-                  family == FREERTOS_AF_INET ? "v4" : "v6"));
+        LogError(("mdns: failed to create socket"));
         goto err;
     }
 
     if (FreeRTOS_bind(s, &bind_addr, sizeof(bind_addr)) != 0) {
-        LogError(("mdns: failed to bind %s socket to port %d",
-                  family == FREERTOS_AF_INET ? "v4" : "v6", MDNS_PORT));
+        LogError(("mdns: failed to bind socket to port %d", MDNS_PORT));
         FreeRTOS_closesocket(s);
         goto err;
     }
 
-    LogInfo(("mdns: %s responder started on port %d",
-             family == FREERTOS_AF_INET ? "v4" : "v6", MDNS_PORT));
+    LogInfo(("mdns: responder started on port %d", MDNS_PORT));
+    mdns_mcast_join_all();
 
     TickType_t timeout = pdMS_TO_TICKS(100);
     FreeRTOS_setsockopt(s, 0, FREERTOS_SO_RCVTIMEO, &timeout, sizeof(timeout));
@@ -399,7 +386,8 @@ ready:
                                        .end = tx_buf + MDNS_MAX_PACKET,
                                        .ancount = 0};
                 const uint8_t* curr = rx_buf + sizeof(DNSHeader_t);
-                bool unicast_response = false;
+                bool unicast_response =
+                    FreeRTOS_ntohs(from.sin_port) != MDNS_PORT;
 
                 matter_mdns_lock();
                 for (int j = 0; j < qdcount; j++) {
@@ -430,9 +418,10 @@ ready:
                     if (unicast_response) {
                         dest = from;
                     } else {
+                        memset(&dest, 0, sizeof(dest));
                         dest.sin_port = FreeRTOS_htons(MDNS_PORT);
-                        dest.sin_family = family;
-                        if (family == FREERTOS_AF_INET) {
+                        dest.sin_family = from.sin_family;
+                        if (from.sin_family == FREERTOS_AF_INET) {
                             dest.sin_address.ulIP_IPv4 =
                                 FreeRTOS_inet_addr(MDNS_V4_ADDR);
                         } else {
@@ -449,58 +438,15 @@ ready:
 
         uint32_t notify_val = 0;
         if (xTaskNotifyWait(0, 0xffffffff, &notify_val, 0) == pdTRUE) {
-            LogInfo(("mdns: starting announcement sequence (%s)",
-                     family == FREERTOS_AF_INET ? "v4" : "v6"));
+            LogInfo(("mdns: starting announcement sequence"));
+            mdns_mcast_join_all();
             BackoffAlgorithm_InitializeParams(&retry_ctx, 250, 4000, 2);
             BackoffAlgorithmStatus_t retry_status = BackoffAlgorithmSuccess;
             uint16_t next_backoff = 0;
 
             do {
-                mdns_resp_ctx_t ctx = {.buf = tx_buf,
-                                       .p = tx_buf + sizeof(DNSHeader_t),
-                                       .end = tx_buf + MDNS_MAX_PACKET,
-                                       .ancount = 0};
-                matter_mdns_lock();
-                size_t count;
-                const matter_mdns_service_t* services =
-                    matter_mdns_locked_services(&count);
-                const char* hostname = matter_mdns_locked_hostname();
-                for (size_t i = 0; i < count; i++) {
-                    char sn[64];
-                    snprintf(sn, sizeof(sn), "%s.%s.local", services[i].service,
-                             services[i].proto);
-                    add_service_records(&ctx, &services[i], true, sn);
-                    dns_add_ptr(&ctx, "_services._dns-sd._udp.local", sn,
-                                false);
-                }
-                if (hostname) {
-                    dns_add_a(&ctx, hostname);
-                    dns_add_aaaa(&ctx, hostname);
-                }
-                matter_mdns_unlock();
-
-                if (ctx.ancount > 0) {
-                    DNSHeader_t* h = (DNSHeader_t*)tx_buf;
-                    h->usID = 0;
-                    h->usFlags = FreeRTOS_htons(DNS_FLAGS_RESPONSE);
-                    h->usQuestions = 0;
-                    h->usAnswers = FreeRTOS_htons(ctx.ancount);
-                    h->usAuthoritative = 0;
-                    h->usAdditional = 0;
-
-                    struct freertos_sockaddr dest;
-                    dest.sin_port = FreeRTOS_htons(MDNS_PORT);
-                    dest.sin_family = family;
-                    if (family == FREERTOS_AF_INET) {
-                        dest.sin_address.ulIP_IPv4 =
-                            FreeRTOS_inet_addr(MDNS_V4_ADDR);
-                    } else {
-                        FreeRTOS_inet_pton(FREERTOS_AF_INET6, MDNS_V6_ADDR,
-                                           dest.sin_address.xIP_IPv6.ucBytes);
-                    }
-                    FreeRTOS_sendto(s, tx_buf, (size_t)(ctx.p - tx_buf), 0,
-                                    &dest, sizeof(dest));
-                }
+                send_announcement(s, tx_buf, FREERTOS_AF_INET6);
+                send_announcement(s, tx_buf, FREERTOS_AF_INET);
 
                 retry_status = BackoffAlgorithm_GetNextBackoff(
                     &retry_ctx, (uint32_t)rand(), &next_backoff);
@@ -512,25 +458,63 @@ ready:
     }
 
 err:
-    if (family == FREERTOS_AF_INET)
-        s_v4_task = NULL;
-    else
-        s_v6_task = NULL;
+    s_task = NULL;
     vTaskDelete(NULL);
 }
 
-void mdns_responder_init(void) {
-    if (!s_v4_task) {
-        xTaskCreate(mdns_responder_task, "mdns_v4", MDNS_TASK_STACK,
-                    (void*)FREERTOS_AF_INET, tskIDLE_PRIORITY + 1, &s_v4_task);
+static void send_announcement(Socket_t s, uint8_t* tx_buf, BaseType_t family) {
+    mdns_resp_ctx_t ctx = {.buf = tx_buf,
+                           .p = tx_buf + sizeof(DNSHeader_t),
+                           .end = tx_buf + MDNS_MAX_PACKET,
+                           .ancount = 0};
+    matter_mdns_lock();
+    size_t count;
+    const matter_mdns_service_t* services = matter_mdns_locked_services(&count);
+    const char* hostname = matter_mdns_locked_hostname();
+    for (size_t i = 0; i < count; i++) {
+        char sn[64];
+        snprintf(sn, sizeof(sn), "%s.%s.local", services[i].service,
+                 services[i].proto);
+        add_service_records(&ctx, &services[i], true, sn);
+        dns_add_ptr(&ctx, "_services._dns-sd._udp.local", sn, false);
     }
-    if (!s_v6_task) {
-        xTaskCreate(mdns_responder_task, "mdns_v6", MDNS_TASK_STACK,
-                    (void*)FREERTOS_AF_INET6, tskIDLE_PRIORITY + 1, &s_v6_task);
+    if (hostname) {
+        dns_add_a(&ctx, hostname);
+        dns_add_aaaa(&ctx, hostname);
+    }
+    matter_mdns_unlock();
+
+    if (ctx.ancount == 0) return;
+
+    DNSHeader_t* h = (DNSHeader_t*)tx_buf;
+    h->usID = 0;
+    h->usFlags = FreeRTOS_htons(DNS_FLAGS_RESPONSE);
+    h->usQuestions = 0;
+    h->usAnswers = FreeRTOS_htons(ctx.ancount);
+    h->usAuthoritative = 0;
+    h->usAdditional = 0;
+
+    struct freertos_sockaddr dest;
+    memset(&dest, 0, sizeof(dest));
+    dest.sin_port = FreeRTOS_htons(MDNS_PORT);
+    dest.sin_family = family;
+    if (family == FREERTOS_AF_INET) {
+        dest.sin_address.ulIP_IPv4 = FreeRTOS_inet_addr(MDNS_V4_ADDR);
+    } else {
+        FreeRTOS_inet_pton(FREERTOS_AF_INET6, MDNS_V6_ADDR,
+                           dest.sin_address.xIP_IPv6.ucBytes);
+    }
+    FreeRTOS_sendto(s, tx_buf, (size_t)(ctx.p - tx_buf), 0, &dest,
+                    sizeof(dest));
+}
+
+void mdns_responder_init(void) {
+    if (!s_task) {
+        xTaskCreate(mdns_responder_task, "mdns", MDNS_TASK_STACK, NULL,
+                    tskIDLE_PRIORITY + 1, &s_task);
     }
 }
 
 void mdns_responder_request_announce(void) {
-    if (s_v4_task) xTaskNotify(s_v4_task, 1, eSetBits);
-    if (s_v6_task) xTaskNotify(s_v6_task, 1, eSetBits);
+    if (s_task) xTaskNotify(s_task, 1, eSetBits);
 }

@@ -9,6 +9,7 @@ add_library(sesame_matter STATIC
     matter_berry_port.c
     matter_mdns.c
     mdns_responder.c
+    mdns_mcast_join.c
 )
 
 # Embed Berry sources we run at startup as C string constants. The upstream
