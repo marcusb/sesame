@@ -369,7 +369,19 @@ static void mdns_responder_task(void* pvParameters) {
     BackoffAlgorithmContext_t retry_ctx;
     BackoffAlgorithm_InitializeParams(&retry_ctx, 250, 4000, 2);
 
+    /* Re-issue IGMP/MLD membership reports periodically — IGMP-snooping APs
+     * age out group membership after ~2x General Query interval (RFC 2236
+     * §8.2 default 260s). Refresh well within that. */
+    const TickType_t mcast_refresh_interval = pdMS_TO_TICKS(60 * 1000);
+    TickType_t last_mcast_refresh = xTaskGetTickCount();
+
     while (1) {
+        if ((xTaskGetTickCount() - last_mcast_refresh) >=
+            mcast_refresh_interval) {
+            mdns_mcast_join_all();
+            last_mcast_refresh = xTaskGetTickCount();
+        }
+
         struct freertos_sockaddr from;
         socklen_t from_len = sizeof(from);
         int n =
