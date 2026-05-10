@@ -33,7 +33,12 @@
 
 // wmsdk
 #include "debug_console.h"
+#include "fsl_common.h"
 #include "psm.h"
+
+#ifdef USE_BACKTRACE
+#include "backtrace.h"
+#endif
 
 // Application
 #include "board_support.h"
@@ -257,10 +262,32 @@ void print_ip_config(NetworkEndPoint_t* endpoint) {
 }
 
 void vApplicationMallocFailedHook() {
-    PRINTF("ERROR: Malloc failed to allocate memory\r\n");
-    taskDISABLE_INTERRUPTS();
-    for (;;) {
+    /* Log heap state and (when available) a backtrace before resetting.
+     * Hanging forever requires a manual power cycle and gives the controller
+     * no chance to retry — reset so we come back fast. */
+    const TaskHandle_t cur = xTaskGetCurrentTaskHandle();
+    const char* const name = cur ? pcTaskGetName(cur) : "(no task)";
+    PRINTF("ERROR: Malloc failed in task '%s' free=%u min_free=%u\r\n", name,
+           (unsigned)xPortGetFreeHeapSize(),
+           (unsigned)xPortGetMinimumEverFreeHeapSize());
+#ifdef USE_BACKTRACE
+    {
+        static backtrace_t bt[20];
+        register uint32_t pc, sp;
+        __asm__ volatile("mov %0, pc" : "=r"(pc));
+        __asm__ volatile("mov %0, sp" : "=r"(sp));
+        backtrace_frame_t frame;
+        frame.sp = sp;
+        frame.fp = (uint32_t)__builtin_frame_address(0);
+        frame.lr = (uint32_t)__builtin_return_address(0);
+        frame.pc = pc;
+        const int count = _backtrace_unwind(bt, 20, &frame);
+        for (int i = 0; i < count; ++i) {
+            PRINTF("%s@%p\r\n", bt[i].name, bt[i].address);
+        }
     }
+#endif
+    NVIC_SystemReset();
 }
 
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char* task_name) {
