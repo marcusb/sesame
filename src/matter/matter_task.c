@@ -12,9 +12,12 @@
 #include "embedded_be.h"
 #include "matter_mdns.h"
 #include "matter_tasmota_shim.h"
+#include "psm.h"
 #include "queue.h"
 #include "semphr.h"
 #include "task.h"
+
+extern psm_hnd_t psm_hnd;
 
 /* Shared between the matter task and (host-test) cmd handlers. */
 bvm* g_matter_vm;
@@ -173,7 +176,16 @@ static void matter_task(void* pvParameters) {
          * boot so a re-pair can be done from the serial log without
          * decoding root_passcode by hand. */
         "log('MTR: Manual pairing code: ' + "
-        "matter_device.commissioning.compute_manual_pairing_code(), 2)",
+        "matter_device.commissioning.compute_manual_pairing_code(), 2)\n"
+        /* If we've been commissioned, log the operational node ID for each
+         * provisioned fabric so the user can address the device from a
+         * controller without spelunking through /_matter_fabrics.json. */
+        "for fab : matter_device.sessions.active_fabrics()\n"
+        "  if fab.device_id != nil && fab.fabric_id != nil\n"
+        "    log('MTR: fabric=0x' + fab.fabric_id.reverse().tohex() + "
+        "' node_id=0x' + fab.device_id.reverse().tohex(), 2)\n"
+        "  end\n"
+        "end",
 #ifdef QEMU
         /* Reseed with the canonical Matter test pair (discriminator 3840,
          * passcode 20202021) and reopen commissioning with the new SPAKE2+
@@ -298,4 +310,44 @@ void matter_report_door_state(const door_state_msg_t* msg) {
     }
 
     xSemaphoreGiveRecursive(g_matter_vm_lock);
+}
+
+bool matter_commission_open(uint32_t timeout_s) {
+    if (!g_matter_vm) {
+        LogError(("[matter] commission_open: vm not ready"));
+        return false;
+    }
+    /* Bound the window: Matter spec caps it at 15 minutes, and 0 would
+     * close it. Match start_root_basic_commissioning's PASE_TIMEOUT default
+     * (900 s) when out-of-range. */
+    if (timeout_s == 0 || timeout_s > 900) timeout_s = 900;
+
+    char code[256];
+    snprintf(code, sizeof(code),
+             "matter_device.commissioning.stop_basic_commissioning()\n"
+             "matter_device.commissioning.start_root_basic_commissioning(%u)",
+             (unsigned)timeout_s);
+
+    xSemaphoreTakeRecursive(g_matter_vm_lock, portMAX_DELAY);
+    const int rc = be_dostring(g_matter_vm, code);
+    if (rc != 0) {
+        LogError(("[matter] commission_open failed: %s",
+                  be_tostring(g_matter_vm, -1)));
+        be_pop(g_matter_vm, 1);
+    } else {
+        LogInfo(("[matter] commissioning window opened for %u s",
+                 (unsigned)timeout_s));
+    }
+    xSemaphoreGiveRecursive(g_matter_vm_lock);
+    return rc == 0;
+}
+
+void matter_wipe_fabrics(void) {
+    /* Delete persisted fabrics keys directly via PSM. Cheaper and more
+     * robust than walking the (potentially corrupt) in-memory fabric list
+     * via Berry — the caller is expected to reboot immediately after, so
+     * the live Matter VM's view doesn't need updating. */
+    psm_object_delete(psm_hnd, "/_matter_fabrics.json");
+    psm_object_delete(psm_hnd, "/_matter_fabrics.tmp");
+    LogInfo(("[matter] fabrics wiped from PSM"));
 }

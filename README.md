@@ -131,6 +131,27 @@ Once satisfied that the new image is working, finalize the upgrade:
 curl -v 'http://sesame/promote'
 ```
 
+### Matter commissioning recovery
+
+If the commissioning window expires before pairing completes (controller
+gives up, network glitch, etc.), re-open it without rebooting:
+
+```sh
+curl -X POST 'http://sesame/matter/commission'
+```
+
+The serial log will print a fresh `Manual pairing code:` line.
+
+To factory-reset just Matter state (wipe all fabrics and start over),
+without losing WiFi/MQTT configuration:
+
+```sh
+curl -X POST 'http://sesame/matter/reset'
+```
+
+The device reboots and comes back uncommissioned, with the commissioning
+window automatically open for 15 minutes.
+
 ### LEDs and buttons
 
 The opener has two physical buttons and corresponding LEDs:

@@ -21,6 +21,10 @@
 #include "pb_decode.h"
 #include "util.h"
 
+#if SESAME_ENABLE_MATTER
+#include "matter_task.h"
+#endif
+
 #define BUF_SIZE 1024
 
 typedef enum { HTTP_INIT, HTTP_HEADER, HTTP_BODY } http_state_t;
@@ -160,6 +164,23 @@ static void do_request(const http_request_t* req) {
                 LogDebug(("reboot requested, rebooting..."));
                 vTaskDelay(pdMS_TO_TICKS(3000));
                 reboot();
+#if SESAME_ENABLE_MATTER
+            } else if (strcmp(req->url, "/matter/commission") == 0) {
+                /* Re-open the basic commissioning window with the device's
+                 * root passcode. Useful when the controller has dropped the
+                 * commissioning attempt and the window has timed out. */
+                const bool ok = matter_commission_open(900);
+                send_status(req, ok ? REPLY_OK : INTERNAL_SERVER_ERROR);
+            } else if (strcmp(req->url, "/matter/reset") == 0) {
+                /* Factory-reset Matter state: wipe persisted fabrics and
+                 * reboot. The device comes back uncommissioned and
+                 * automatically opens the commissioning window. */
+                send_status(req, REPLY_OK);
+                LogInfo(("matter reset requested"));
+                matter_wipe_fabrics();
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                reboot();
+#endif
             } else {
                 send_status(req, NOT_FOUND);
             }
