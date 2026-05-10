@@ -26,6 +26,7 @@
 #include "matter_mdns.h"
 #include "matter_tasmota_shim.h"
 #include "psm.h"
+#include "psm_safe.h"
 #include "queue.h"
 #include "task.h"
 
@@ -492,7 +493,7 @@ static int tas_get_config(bvm* vm) {
 static int tas_set_config(bvm* vm) {
     const char* key = be_tostring(vm, 1);
     const char* val = be_tostring(vm, 2);
-    psm_set_variable(psm_hnd, key, val, (int)strlen(val));
+    psm_set_variable_safe(psm_hnd, key, val, (int)strlen(val));
     be_return_nil(vm);
 }
 
@@ -518,7 +519,7 @@ static int per_setmember(bvm* vm) {
     const char* val = be_tostring(vm, 2);
     char psm_key[32];
     snprintf(psm_key, sizeof(psm_key), "p_%s", key);
-    psm_set_variable(psm_hnd, psm_key, val, (int)strlen(val));
+    psm_set_variable_safe(psm_hnd, psm_key, val, (int)strlen(val));
     be_return_nil(vm);
 }
 
@@ -541,7 +542,7 @@ static int path_rename(bvm* vm) {
     if (buf) {
         int ret = psm_get_variable(psm_hnd, oldname, buf, 4096);
         if (ret > 0) {
-            psm_set_variable(psm_hnd, newname, buf, ret);
+            psm_set_variable_safe(psm_hnd, newname, buf, ret);
             psm_object_delete(psm_hnd, oldname);
         }
         vPortFree(buf);
@@ -863,7 +864,7 @@ void* be_fopen(const char* filename, const char* modes) {
 int be_fclose(void* hfile) {
     virtual_file_t* f = (virtual_file_t*)hfile;
     if (f->write) {
-        psm_set_variable(psm_hnd, f->name, f->data, (int)f->size);
+        psm_set_variable_safe(psm_hnd, f->name, f->data, (int)f->size);
     }
     free(f->data);
     free(f);
