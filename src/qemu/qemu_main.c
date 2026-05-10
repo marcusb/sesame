@@ -87,7 +87,9 @@ void create_board_tasks() {
 #ifndef QEMU
 #include "fsl_common.h"
 #else
-static void NVIC_SystemReset(void) {
+/* Non-static so other shared TUs (e.g. src/main.c) can call it without
+ * pulling in CMSIS/SDK headers in the QEMU build. */
+void NVIC_SystemReset(void) {
     /* Standard ARM Cortex-M Reset */
     *((volatile uint32_t*)0xE000ED0C) = 0x05FA0004UL;
     while (1);

@@ -241,6 +241,31 @@ void test_crypto_aes_ccm_instance_unaligned_roundtrip(void) {
         "assert(ccm.tag() == tag)");
 }
 
+/* Regression: the CASE Sigma1 Resumption path computes Resume1MIC by AES-CCM
+ * over an empty plaintext — the encrypted payload is zero bytes and the MIC
+ * is the 16-byte tag alone. Matter_Commissioning_Context.be calls
+ * `ec.decrypt(encrypted)` where `encrypted` is an empty bytes() slice. The
+ * decrypt shim used to call malloc(0) for its tag-recompute scratch, which
+ * on heap_5 returns NULL and trips vApplicationMallocFailedHook — looking
+ * like a true OOM during commissioning resume. */
+void test_crypto_aes_ccm_decrypt_empty_payload(void) {
+    be_assert_success(
+        "var key = bytes('00112233445566778899aabbccddeeff') "
+        "var n   = bytes('0102030405060708090a0b0c0d') "
+        "var aad = bytes() "
+        /* encrypt empty plaintext to get the expected MIC */
+        "var enc = crypto.AES_CCM(key, n, aad, 0, 16) "
+        "var ct  = enc.encrypt(bytes()) "
+        "assert(ct.size() == 0) "
+        "var expected_tag = enc.tag() "
+        "assert(expected_tag.size() == 16) "
+        /* now decrypt the empty ciphertext and verify the tag matches */
+        "var dec = crypto.AES_CCM(key, n, aad, 0, 16) "
+        "var pt  = dec.decrypt(bytes()) "
+        "assert(pt.size() == 0) "
+        "assert(dec.tag() == expected_tag)");
+}
+
 void run_tests(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_mbedtls_ec_p256_mul_raw);
@@ -256,4 +281,5 @@ void run_tests(void) {
     RUN_TEST(test_crypto_aes_ccm_static_aligned_roundtrip);
     RUN_TEST(test_crypto_aes_ccm_static_unaligned_roundtrip);
     RUN_TEST(test_crypto_aes_ccm_instance_unaligned_roundtrip);
+    RUN_TEST(test_crypto_aes_ccm_decrypt_empty_payload);
 }

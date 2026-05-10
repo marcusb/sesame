@@ -771,12 +771,28 @@ static int crypto_aes_ccm_decrypt(bvm* vm) {
     }
     /* Recompute the tag from the recovered plaintext. We need a scratch
      * ciphertext buffer of the same size; allocate from the heap to avoid
-     * stack pressure for larger payloads. */
-    unsigned char* scratch = malloc(in_len);
-    if (scratch) {
-        aes_ccm_run_ctx(&c->ccm, 1, in_len, c->iv, c->iv_len, c->aad,
-                        c->aad_len, out, scratch, c->tag, c->tag_len);
-        free(scratch);
+     * stack pressure for larger payloads.
+     *
+     * Skip the recompute when in_len == 0: CBC-MAC over (aad, "") is the
+     * same regardless of whether the absent payload is treated as plaintext
+     * or ciphertext, so throwaway_tag is already the correct tag. Calling
+     * pvPortMalloc(0) on this port returns NULL and trips
+     * vApplicationMallocFailedHook, which used to look like a true OOM in
+     * the CASE Sigma1 Resumption path (Resume1MIC has no encrypted
+     * payload, only the 16-byte tag). */
+    if (in_len > 0) {
+        unsigned char* const scratch = malloc(in_len);
+        if (scratch) {
+            aes_ccm_run_ctx(&c->ccm, 1, in_len, c->iv, c->iv_len, c->aad,
+                            c->aad_len, out, scratch, c->tag, c->tag_len);
+            free(scratch);
+        }
+    } else {
+        int copy_len = c->tag_len;
+        if (copy_len < 0) copy_len = 0;
+        if ((size_t)copy_len > sizeof(throwaway_tag))
+            copy_len = (int)sizeof(throwaway_tag);
+        memcpy(c->tag, throwaway_tag, (size_t)copy_len);
     }
     be_return(vm);
 }

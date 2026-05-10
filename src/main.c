@@ -33,12 +33,16 @@
 
 // wmsdk
 #include "debug_console.h"
-#include "fsl_common.h"
 #include "psm.h"
 
 #ifdef USE_BACKTRACE
 #include "backtrace.h"
 #endif
+
+/* Provided either by CMSIS (`core_cm4.h` via the SDK on hardware) or the
+ * shim in src/qemu/qemu_main.c. Forward-declare here so main.c doesn't have
+ * to pull in board-specific headers. */
+extern void NVIC_SystemReset(void);
 
 // Application
 #include "board_support.h"
