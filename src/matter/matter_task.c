@@ -167,7 +167,13 @@ static void matter_task(void* pvParameters) {
         "  matter_device.commissioning.start_root_basic_commissioning(900)\n"
         "end\n"
         "log('MTR: discriminator=' + str(matter_device.root_discriminator) "
-        "+ ' passcode=' + str(matter_device.root_passcode), 2)",
+        "+ ' passcode=' + str(matter_device.root_passcode), 2)\n"
+        /* start_root_basic_commissioning logs the manual pairing code, but
+         * only fires on first boot (no active fabrics). Print it on every
+         * boot so a re-pair can be done from the serial log without
+         * decoding root_passcode by hand. */
+        "log('MTR: Manual pairing code: ' + "
+        "matter_device.commissioning.compute_manual_pairing_code(), 2)",
 #ifdef QEMU
         /* Reseed with the canonical Matter test pair (discriminator 3840,
          * passcode 20202021) and reopen commissioning with the new SPAKE2+
