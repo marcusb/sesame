@@ -241,6 +241,35 @@ void test_crypto_aes_ccm_instance_unaligned_roundtrip(void) {
         "assert(ccm.tag() == tag)");
 }
 
+/* Regression: the CASE Sigma2_Resume path builds Resume2MIC by constructing
+ * an AES_CCM and calling .tag() *without* any encrypt/decrypt:
+ *
+ *     var aes = crypto.AES_CCM(s2rk, "NCASE_SigmaS2", bytes(), 0, 16)
+ *     var Resume2MIC = aes.tag()
+ *
+ * The shim used to leave c->tag zeroed in the constructor, so we shipped
+ * a 16-byte all-zero MIC and the controller rejected the resume with
+ * INVALID_PARAMETER. .tag() must now return the CCM tag for the empty
+ * payload, matching what `crypto.AES_CCM(...).encrypt(bytes()).tag()`
+ * would yield. */
+void test_crypto_aes_ccm_tag_without_encrypt_matches_empty_encrypt(void) {
+    be_assert_success(
+        "var key = bytes('00112233445566778899aabbccddeeff') "
+        "var n   = bytes('0102030405060708090a0b0c0d') "
+        "var aad = bytes() "
+        /* tag straight from the constructor */
+        "var a = crypto.AES_CCM(key, n, aad, 0, 16) "
+        "var t_ctor = a.tag() "
+        "assert(t_ctor.size() == 16) "
+        /* must be non-zero — a zero tag means the shim never computed it */
+        "var zero = bytes('00000000000000000000000000000000') "
+        "assert(t_ctor != zero, 'tag() returned all-zero (Resume2MIC bug)') "
+        /* tag after explicit encrypt(bytes()) must match */
+        "var b = crypto.AES_CCM(key, n, aad, 0, 16) "
+        "b.encrypt(bytes()) "
+        "assert(b.tag() == t_ctor)");
+}
+
 /* Regression: the CASE Sigma1 Resumption path computes Resume1MIC by AES-CCM
  * over an empty plaintext — the encrypted payload is zero bytes and the MIC
  * is the 16-byte tag alone. Matter_Commissioning_Context.be calls
@@ -282,4 +311,5 @@ void run_tests(void) {
     RUN_TEST(test_crypto_aes_ccm_static_unaligned_roundtrip);
     RUN_TEST(test_crypto_aes_ccm_instance_unaligned_roundtrip);
     RUN_TEST(test_crypto_aes_ccm_decrypt_empty_payload);
+    RUN_TEST(test_crypto_aes_ccm_tag_without_encrypt_matches_empty_encrypt);
 }

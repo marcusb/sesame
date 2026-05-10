@@ -649,7 +649,25 @@ static int crypto_aes_ccm_init(bvm* vm) {
     memcpy(c->aad, aad ? aad : (const unsigned char*)"", aad_len);
     c->aad_len = aad_len;
     c->tag_len = tag_len;
+    /* Pre-compute the CCM tag for an empty payload so .tag() returns a
+     * meaningful value even when the caller never calls .encrypt()/.decrypt()
+     * — Matter_Commissioning_Context.be does this for Sigma2_Resume:
+     *
+     *     var aes = crypto.AES_CCM(s2rk, "NCASE_SigmaS2", bytes(), 0, 16)
+     *     var Resume2MIC = aes.tag()
+     *
+     * Without this, Resume2MIC was a zeroed 16-byte buffer and the
+     * controller rejected the resume with INVALID_PARAMETER (0x0002),
+     * triggering an infinite retry loop. The tag will be overwritten by
+     * any subsequent encrypt/decrypt, so this is safe for callers that
+     * use the streaming form. */
     memset(c->tag, 0, sizeof(c->tag));
+    if (tag_len > 0 && (size_t)tag_len <= sizeof(c->tag)) {
+        unsigned char empty = 0;
+        mbedtls_ccm_encrypt_and_tag(&c->ccm, 0, c->iv, c->iv_len, c->aad,
+                                    c->aad_len, &empty, &empty, c->tag,
+                                    (size_t)tag_len);
+    }
     be_pushcomptr(vm, c);
     be_setmember(vm, 1, ".p");
     be_return_nil(vm);
