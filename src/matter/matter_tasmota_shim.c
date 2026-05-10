@@ -535,19 +535,23 @@ static int path_remove(bvm* vm) {
 }
 
 static int path_rename(bvm* vm) {
-    const char* oldname = be_tostring(vm, 1);
-    const char* newname = be_tostring(vm, 2);
+    const char* const oldname = be_tostring(vm, 1);
+    const char* const newname = be_tostring(vm, 2);
+    int ok = 0;
     // PSM doesn't have rename, so copy and delete
-    char* buf = pvPortMalloc(4096);
+    char* const buf = pvPortMalloc(4096);
     if (buf) {
-        int ret = psm_get_variable(psm_hnd, oldname, buf, 4096);
+        const int ret = psm_get_variable(psm_hnd, oldname, buf, 4096);
         if (ret > 0) {
-            psm_set_variable_safe(psm_hnd, newname, buf, ret);
-            psm_object_delete(psm_hnd, oldname);
+            if (psm_set_variable_safe(psm_hnd, newname, buf, ret) == 0) {
+                psm_object_delete(psm_hnd, oldname);
+                ok = 1;
+            }
         }
         vPortFree(buf);
     }
-    be_return_nil(vm);
+    be_pushbool(vm, ok);
+    be_return(vm);
 }
 
 /* sesame module */
