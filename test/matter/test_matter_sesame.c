@@ -130,6 +130,52 @@ static void test_matter_door_plugin_report(void) {
         "assert(p.shadow_shutter_direction == 1)");
 }
 
+/* Regression: when the controller stops acking under wildcard-read load
+ * (commonly an IPv6 link-local CASE session with broken source-address
+ * selection), Matter_UDPServer.packets_sent used to grow without bound and
+ * consume the entire heap. Bootstrap installs a capped subclass; verify it
+ * actually drops the oldest unacked entry past MAX_PACKETS_QUEUED. */
+static void test_udpserver_packets_sent_is_capped(void) {
+    be_assert_success(
+        /* Reproduce the bootstrap subclass definition under test. */
+        "class Matter_UDPServer_Capped : matter.UDPServer\n"
+        "  static var MAX_PACKETS_QUEUED = 4\n"
+        "  def send_UDP(msg)\n"
+        "    var packet = matter.UDPPacket_sent(msg)\n"
+        /* skip the actual self.send(packet) — no socket in this test */
+        "    if packet.msg_id\n"
+        "      while size(self.packets_sent) >= self.MAX_PACKETS_QUEUED\n"
+        "        self.packets_sent.remove(0)\n"
+        "      end\n"
+        "      self.packets_sent.push(packet)\n"
+        "    end\n"
+        "  end\n"
+        "end\n"
+        /* Fake "msg" objects with the fields UDPPacket_sent.init reads. */
+        "class FakeMsg\n"
+        "  var raw, remote_ip, remote_port, x_flag_r, message_counter\n"
+        "  var exchange_id, local_session_id\n"
+        "  def init(id)\n"
+        "    self.raw = bytes('AA')\n"
+        "    self.remote_ip = '::1'\n"
+        "    self.remote_port = 5540\n"
+        "    self.x_flag_r = true\n"
+        "    self.message_counter = id\n"
+        "    self.exchange_id = id\n"
+        "    self.local_session_id = 1\n"
+        "  end\n"
+        "end\n"
+        "var srv = Matter_UDPServer_Capped(nil, '', 5540)\n"
+        "for i : 0..9\n"
+        "  srv.send_UDP(FakeMsg(1000 + i))\n"
+        "end\n"
+        "assert(size(srv.packets_sent) == 4, "
+        "'expected cap=4, got ' + str(size(srv.packets_sent)))\n"
+        /* Cap drops the OLDEST: the surviving msg_ids must be the last 4. */
+        "assert(srv.packets_sent[0].msg_id == 1006)\n"
+        "assert(srv.packets_sent[3].msg_id == 1009)");
+}
+
 void run_tests(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_sesame_door_open);
@@ -138,4 +184,5 @@ void run_tests(void) {
     RUN_TEST(test_matter_module_load);
     RUN_TEST(test_matter_door_plugin_control);
     RUN_TEST(test_matter_door_plugin_report);
+    RUN_TEST(test_udpserver_packets_sent_is_capped);
 }

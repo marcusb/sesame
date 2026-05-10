@@ -145,6 +145,31 @@ static void matter_task(void* pvParameters) {
         "\"aggregator\": matter.Plugin_Aggregator,"
         "\"shutter\": matter.Plugin_Shutter,"
         "\"sesame_door\": Matter_Door_Plugin}",
+        /* Cap the MRP retransmit queue. Upstream Matter_UDPServer keeps every
+         * sent packet awaiting ack until the controller acks it or 5 retries
+         * elapse (~10–30 s of exponential backoff). When the controller goes
+         * silent (e.g. an IPv6 link-local CASE session whose acks get dropped
+         * by source-address selection) under a wildcard-read burst, that
+         * queue grew without bound and consumed all of the heap. Subclass
+         * Matter_UDPServer so the queue is bounded; drop the oldest unacked
+         * packet — the peer's own MRP will retransmit if it cares. */
+        "class Matter_UDPServer_Capped : matter.UDPServer\n"
+        "  static var MAX_PACKETS_QUEUED = 32\n"
+        "  def send_UDP(msg)\n"
+        "    var packet = matter.UDPPacket_sent(msg)\n"
+        "    self.send(packet)\n"
+        "    if packet.msg_id\n"
+        "      while size(self.packets_sent) >= self.MAX_PACKETS_QUEUED\n"
+        "        var dropped = self.packets_sent[0]\n"
+        "        self.packets_sent.remove(0)\n"
+        "        log(format('MTR: !drop unacked msg_id=%i (queue cap %i)', "
+        "dropped.msg_id, self.MAX_PACKETS_QUEUED), 3)\n"
+        "      end\n"
+        "      self.packets_sent.push(packet)\n"
+        "    end\n"
+        "  end\n"
+        "end\n"
+        "matter.UDPServer = Matter_UDPServer_Capped",
         /* Ensure fabrics file exists and is not empty to avoid a solidified
          * bug where json.load(nil) throws 'nil' value is not callable. */
         "try\n"
