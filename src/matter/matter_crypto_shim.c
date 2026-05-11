@@ -38,6 +38,12 @@
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/error.h"
 
+/* Build-time-solidified SPAKE2P_Matter class. Provides
+ * be_class_SPAKE_Hasher and be_class_SPAKE2P_Matter; the latter is
+ * attached to the crypto module below. */
+#include "be_constobj.h"
+#include "solidify_extra/solidified_crypto_spake2p_matter.h"
+
 /* The mw320 mbedtls port defines MBEDTLS_CCM_ALT (see
  * include/config/mbedtls_app_config.h) which removes vanilla ccm.c streaming
  * functions, but mbedtls cipher.c still references mbedtls_ccm_update for the
@@ -1025,6 +1031,15 @@ int be_load_crypto_module(bvm* vm) {
     /* Add the EC_P256 class to the module */
     be_getglobal(vm, "EC_P256");
     be_setmember(vm, -2, "EC_P256");
+    be_pop(vm, 1);
+
+    /* SPAKE2P_Matter is solidified from third_party/berry_matter/extra/ at
+     * build time; attach the precompiled class onto the runtime-built
+     * crypto module here. (The .be source can't be solidified into the
+     * matter bundle because it references the crypto module's own
+     * runtime-built SHA256 class.) */
+    be_pushntvclass(vm, (bclass*)&be_class_SPAKE2P_Matter);
+    be_setmember(vm, -2, "SPAKE2P_Matter");
     be_pop(vm, 1);
 
     /* Register crypto in global scope AND in the module load cache so that

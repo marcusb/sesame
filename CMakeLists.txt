@@ -396,6 +396,14 @@ target_link_libraries(board
 # Application
 # -------------------------------------------------------------------------------------------------
 
+# axf2firmware is consumed by the post-build firmware-image step; berry_host
+# is consumed by berry_matter's solidify custom command. Both targets are
+# built in the native tree (build-native/) and exported via
+# {axf2firmware,berry_host}-config.cmake. Resolve them before any subdir
+# that references them.
+find_package(axf2firmware REQUIRED)
+find_package(berry_host REQUIRED)
+
 add_subdirectory(third_party)
 add_subdirectory(src/matter)
 
@@ -611,8 +619,6 @@ add_custom_command(
 set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
     "${exe_target}.bin" "${exe_target}.map" "${exe_target_ram}.bin" "${exe_target_ram}.map")
 
-find_package(axf2firmware)
-
 else()
 
 # Build host tools
@@ -633,5 +639,12 @@ target_link_libraries(axf2firmware
     PRIVATE)
 export(TARGETS axf2firmware FILE
     "${CMAKE_BINARY_DIR}/axf2firmware-config.cmake")
+
+# berry_host: standalone Berry interpreter used by the solidify pipeline.
+# Built here in the native tree (mirrors axf2firmware); the cross-compile
+# build picks it up via find_package(berry_host).
+add_subdirectory(third_party/berry)
+export(TARGETS berry_host FILE
+    "${CMAKE_BINARY_DIR}/berry_host-config.cmake")
 
 endif()

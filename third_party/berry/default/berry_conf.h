@@ -226,38 +226,48 @@
  * They will not compile related modules when they are false.
  **/
 
-#ifdef TASMOTA
+#ifdef BERRY_HOST_BUILD
+  /* Host-side solidify driver: needs the script compiler, solidify, os, and
+   * re modules. Keep this branch independent of the on-device TASMOTA
+   * branch so toggling one doesn't accidentally affect the other. */
+  #define BE_USE_STRING_MODULE            1
+  #define BE_USE_JSON_MODULE              1
+  #define BE_USE_MATH_MODULE              1
+  #define BE_USE_TIME_MODULE              1
+  #define BE_USE_OS_MODULE                1
+  #define BE_USE_GLOBAL_MODULE            1
+  #define BE_USE_SYS_MODULE               1
+  #define BE_USE_DEBUG_MODULE             1
+  #define BE_USE_GC_MODULE                1
+  #define BE_USE_RE_MODULE                1
+  #define BE_USE_SOLIDIFY_MODULE          1
+  #define BE_USE_INTROSPECT_MODULE        1
+  #define BE_USE_STRICT_MODULE            1
+  #define BE_MAPPING_ENABLE_INPUT_VALIDATION   1
+#elif defined(TASMOTA)
   #define BE_USE_STRING_MODULE            1
   /* berry_matter on sesame needs json (plugin config) and math
    * (math.rand for PASE backoff jitter). Vanilla Tasmota disables both. */
   #define BE_USE_JSON_MODULE              1
   #define BE_USE_MATH_MODULE              1
   #define BE_USE_RE_MODULE                0
-
   #define BE_USE_OS_MODULE                0
   #define BE_USE_SOLIDIFY_MODULE          0
-
   #define BE_USE_GLOBAL_MODULE            1
   #define BE_USE_INTROSPECT_MODULE        1
   #define BE_USE_STRICT_MODULE            0
 #else
   #define BE_USE_STRING_MODULE            1
-  /* See note in TASMOTA branch above; sesame needs json + math. */
   #define BE_USE_JSON_MODULE              1
   #define BE_USE_MATH_MODULE              1
   #define BE_USE_RE_MODULE                0
-
   #define BE_USE_OS_MODULE                0
   #define BE_USE_SOLIDIFY_MODULE          0
-
-  #define BE_USE_RE_MODULE                0
-
-  #define BE_USE_SOLIDIFY_MODULE          1
   #define BE_USE_INTROSPECT_MODULE        1
   #define BE_USE_STRICT_MODULE            0
 #endif
 
-#if defined(USE_BERRY_DEBUG) || !defined(TASMOTA)
+#if (defined(USE_BERRY_DEBUG) || !defined(TASMOTA)) && !defined(BERRY_HOST_BUILD)
   #undef BE_USE_DEBUG_MODULE
   #undef BE_USE_SOLIDIFY_MODULE
   #define BE_USE_OS_MODULE                0

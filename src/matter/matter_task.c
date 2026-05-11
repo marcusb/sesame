@@ -9,7 +9,6 @@
 #include "be_vm.h"
 #include "berry.h"
 #include "debug_console.h"
-#include "embedded_be.h"
 #include "matter_mdns.h"
 #include "matter_tasmota_shim.h"
 #include "psm.h"
@@ -51,20 +50,6 @@ static void matter_task(void* pvParameters) {
     LogInfo(("[matter] load crypto"));
     extern int be_load_crypto_module(bvm * vm);
     be_load_crypto_module(vm);
-
-    /* Define crypto.SPAKE2P_Matter (Berry source — solidify pipeline isn't
-     * working yet). Must run after the crypto module exists. */
-    if (be_dostring(vm, embedded_be_crypto_spake2p_matter) != 0) {
-        LogError(("[matter] failed to define SPAKE2P_Matter: %s",
-                  be_tostring(vm, -1)));
-        be_pop(vm, 1);
-    } else if (be_dostring(vm,
-                           "import crypto\n"
-                           "crypto.SPAKE2P_Matter = SPAKE2P_Matter\n") != 0) {
-        LogError(("[matter] failed to attach SPAKE2P_Matter: %s",
-                  be_tostring(vm, -1)));
-        be_pop(vm, 1);
-    }
 
     LogInfo(("[matter] init globals"));
     if (be_dostring(vm,
