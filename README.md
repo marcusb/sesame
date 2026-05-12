@@ -181,7 +181,7 @@ The firmware can be built on Linux.
 
 On Debian:
 ```sh
-apt install cmake ninja-build gcc-arm-none-eabi \
+apt install cmake ninja-build gcc-arm-none-eabi libstdc++-arm-none-eabi \
     binutils-arm-none-eabi python3-protobuf openocd qemu-system-arm
 ```
 

@@ -64,7 +64,11 @@ target_compile_options(globals
     "-mfpu=fpv4-sp-d16"
     "-fdata-sections"
     "-ffunction-sections"
-    "-ffreestanding"
+    # -ffreestanding sets __STDC_HOSTED__=0 which breaks libstdc++'s
+    # <stdlib.h> wrapper (drops global-scope malloc/free declarations).
+    # C++ code in this project assumes a hosted environment (newlib +
+    # libstdc++-arm-none-eabi). Keep -ffreestanding for C only.
+    "$<$<COMPILE_LANGUAGE:C>:-ffreestanding>"
     "-MMD"
     "-Wall"
     "-fno-strict-aliasing"
@@ -75,7 +79,7 @@ target_compile_options(globals
     "-Wno-missing-field-initializers"
     "-Wno-sign-compare"
     "-Wno-type-limits"
-    "-std=c99"
+    "$<$<COMPILE_LANGUAGE:C>:-std=c99>"
     $<$<CONFIG:Debug>:-g>
     $<$<CONFIG:Debug>:-Og>
     $<$<CONFIG:Release>:-Os>)
@@ -405,6 +409,7 @@ find_package(axf2firmware REQUIRED)
 find_package(berry_host REQUIRED)
 
 add_subdirectory(third_party)
+include(chip.cmake)
 add_subdirectory(src/matter)
 
 set(app_sources_common
