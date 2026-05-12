@@ -4,3 +4,7 @@
 [submodule "mw320_sdk"]
 	path = mw320_sdk
 	url = https://github.com/marcusb/mw320_sdk.git
+[submodule "connectedhomeip"]
+	path = third_party/connectedhomeip
+	url = https://github.com/project-chip/connectedhomeip.git
+	shallow = true
