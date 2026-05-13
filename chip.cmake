@@ -17,8 +17,16 @@ set(CHIP_ROOT "${CMAKE_CURRENT_LIST_DIR}/third_party/connectedhomeip")
 add_library(chip_includes INTERFACE)
 target_include_directories(chip_includes
     INTERFACE
+    # POSIX sockets shim — declarations-only. Must come before system
+    # headers so CHIP's <sys/socket.h>/<netinet/in.h>/<net/if.h> resolve
+    # to our shim, not newlib's (which doesn't ship them on bare metal
+    # anyway, but explicit beats implicit).
+    "${CMAKE_CURRENT_LIST_DIR}/include/matter/posix_shim"
     "${CHIP_ROOT}/src"
     "${CHIP_ROOT}/src/include"
+    # Some upstream files (e.g. platform/nxp/mw320/Logging.cpp) use
+    # repo-root-relative include paths like <src/lib/support/...>.
+    "${CHIP_ROOT}"
     "${CHIP_ROOT}/zzz_generated/app-common"
     "${CHIP_ROOT}/third_party/nlassert/repo/include"
     "${CHIP_ROOT}/third_party/nlio/repo/include"
@@ -53,6 +61,10 @@ target_compile_options(chip_compile_flags
     "$<$<COMPILE_LANGUAGE:CXX>:-Wno-missing-field-initializers>"
     "$<$<COMPILE_LANGUAGE:CXX>:-Wno-shadow>"
     "$<$<COMPILE_LANGUAGE:CXX>:-Os>"
+    # See include/matter/posix_shim/chip_prelude.h — kills the max/min
+    # macros from FreeRTOSConfig.h before CHIP C++ encounters them.
+    "$<$<COMPILE_LANGUAGE:CXX>:-include>"
+    "$<$<COMPILE_LANGUAGE:CXX>:chip_prelude.h>"
 )
 
 # ----------------------------------------------------------------------------
@@ -72,7 +84,35 @@ target_link_libraries(chip_support
     chip_compile_flags
 )
 
+# ----------------------------------------------------------------------------
+# Stage 3: MW320 platform layer.
+# Compiles the NXP-provided src/platform/nxp/mw320/*.cpp files (minus BLE
+# and minus those that include lwip — we'll override those with Sesame
+# subclasses against FreeRTOS+TCP).
+# ----------------------------------------------------------------------------
+if(NOT USE_QEMU)
+    # MW320Config.cpp is excluded — it depends on NXP's example-tree
+    # helper network_flash_storage.h. Per the migration plan, a Sesame
+    # subclass backs storage with psm_safe.c instead.
+    add_library(chip_platform_mw320 STATIC
+        "${CHIP_ROOT}/src/platform/nxp/mw320/Logging.cpp"
+    )
+    target_link_libraries(chip_platform_mw320
+        PUBLIC
+        globals
+        chip_includes
+        chip_compile_flags
+        # mw320_sdk propagates NXP SDK include paths (wifi.h, wlan.h,
+        # mflash_drv.h, partition.h, FreeRTOS.h, fsl_debug_console.h, ...).
+        mw320_sdk
+        freertos_kernel
+    )
+endif()
+
 # Single aggregate target the rest of Sesame links against. Currently just
 # the stub; later stages add more libraries to this interface.
 add_library(chip INTERFACE)
 target_link_libraries(chip INTERFACE chip_support)
+if(NOT USE_QEMU)
+    target_link_libraries(chip INTERFACE chip_platform_mw320)
+endif()
