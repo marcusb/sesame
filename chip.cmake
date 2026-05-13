@@ -301,9 +301,104 @@ if(NOT USE_QEMU)
     )
 endif()
 
+# ----------------------------------------------------------------------------
+# chip_credentials: Fabric table, cert chain, attestation, group data.
+# ----------------------------------------------------------------------------
+add_library(chip_credentials STATIC
+    "${CHIP_ROOT}/src/credentials/CertificationDeclaration.cpp"
+    "${CHIP_ROOT}/src/credentials/CHIPCert.cpp"
+    "${CHIP_ROOT}/src/credentials/CHIPCertFromX509.cpp"
+    "${CHIP_ROOT}/src/credentials/CHIPCertToX509.cpp"
+    "${CHIP_ROOT}/src/credentials/DeviceAttestationConstructor.cpp"
+    "${CHIP_ROOT}/src/credentials/DeviceAttestationCredsProvider.cpp"
+    "${CHIP_ROOT}/src/credentials/FabricTable.cpp"
+    "${CHIP_ROOT}/src/credentials/GenerateChipX509Cert.cpp"
+    "${CHIP_ROOT}/src/credentials/GroupDataProviderImpl.cpp"
+    "${CHIP_ROOT}/src/credentials/LastKnownGoodTime.cpp"
+    "${CHIP_ROOT}/src/credentials/PersistentStorageOpCertStore.cpp"
+)
+target_link_libraries(chip_credentials
+    PUBLIC
+    chip_crypto
+    chip_includes
+    chip_compile_flags
+)
+
+# ----------------------------------------------------------------------------
+# chip_messaging: Exchange manager, reliable messaging, session layer.
+# ----------------------------------------------------------------------------
+add_library(chip_messaging STATIC
+    "${CHIP_ROOT}/src/messaging/ApplicationExchangeDispatch.cpp"
+    "${CHIP_ROOT}/src/messaging/ErrorCategory.cpp"
+    "${CHIP_ROOT}/src/messaging/ExchangeContext.cpp"
+    "${CHIP_ROOT}/src/messaging/ExchangeMessageDispatch.cpp"
+    "${CHIP_ROOT}/src/messaging/ExchangeMgr.cpp"
+    "${CHIP_ROOT}/src/messaging/ReliableMessageContext.cpp"
+    "${CHIP_ROOT}/src/messaging/ReliableMessageMgr.cpp"
+    "${CHIP_ROOT}/src/messaging/ReliableMessageProtocolConfig.cpp"
+)
+target_link_libraries(chip_messaging
+    PUBLIC
+    chip_credentials
+    chip_includes
+    chip_compile_flags
+)
+
+# ----------------------------------------------------------------------------
+# chip_transport: Secure session and transport manager.
+# ----------------------------------------------------------------------------
+add_library(chip_transport STATIC
+    "${CHIP_ROOT}/src/transport/CryptoContext.cpp"
+    "${CHIP_ROOT}/src/transport/GroupPeerMessageCounter.cpp"
+    "${CHIP_ROOT}/src/transport/SecureMessageCodec.cpp"
+    "${CHIP_ROOT}/src/transport/SecureSession.cpp"
+    "${CHIP_ROOT}/src/transport/SecureSessionTable.cpp"
+    "${CHIP_ROOT}/src/transport/Session.cpp"
+    "${CHIP_ROOT}/src/transport/SessionHolder.cpp"
+    "${CHIP_ROOT}/src/transport/SessionManager.cpp"
+    # TraceMessage.cpp excluded — CHIP_CONFIG_TRANSPORT_TRACE_ENABLED not set;
+    # TransportTraceHandler is only declared when that flag is on.
+    "${CHIP_ROOT}/src/transport/TransportMgrBase.cpp"
+)
+target_link_libraries(chip_transport
+    PUBLIC
+    chip_messaging
+    chip_includes
+    chip_compile_flags
+)
+
+# ----------------------------------------------------------------------------
+# chip_secure_channel: CASE/PASE session establishment.
+# ----------------------------------------------------------------------------
+add_library(chip_secure_channel STATIC
+    "${CHIP_ROOT}/src/protocols/secure_channel/CASEDestinationId.cpp"
+    "${CHIP_ROOT}/src/protocols/secure_channel/CASEServer.cpp"
+    "${CHIP_ROOT}/src/protocols/secure_channel/CASESession.cpp"
+    "${CHIP_ROOT}/src/protocols/secure_channel/CheckInCounter.cpp"
+    "${CHIP_ROOT}/src/protocols/secure_channel/CheckinMessage.cpp"
+    "${CHIP_ROOT}/src/protocols/secure_channel/DefaultSessionResumptionStorage.cpp"
+    "${CHIP_ROOT}/src/protocols/secure_channel/MessageCounterManager.cpp"
+    "${CHIP_ROOT}/src/protocols/secure_channel/PairingSession.cpp"
+    "${CHIP_ROOT}/src/protocols/secure_channel/PASESession.cpp"
+    "${CHIP_ROOT}/src/protocols/secure_channel/SessionEstablishmentExchangeDispatch.cpp"
+    "${CHIP_ROOT}/src/protocols/secure_channel/SimpleSessionResumptionStorage.cpp"
+    "${CHIP_ROOT}/src/protocols/secure_channel/StatusReport.cpp"
+    "${CHIP_ROOT}/src/protocols/secure_channel/UnsolicitedStatusHandler.cpp"
+)
+target_link_libraries(chip_secure_channel
+    PUBLIC
+    chip_transport
+    chip_includes
+    chip_compile_flags
+)
+
 # Aggregate target the rest of Sesame links against.
 add_library(chip INTERFACE)
 target_link_libraries(chip INTERFACE
+    chip_secure_channel
+    chip_transport
+    chip_messaging
+    chip_credentials
     chip_platform_generic
     chip_system
     chip_inet
