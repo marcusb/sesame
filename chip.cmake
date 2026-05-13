@@ -463,9 +463,88 @@ target_link_libraries(chip_app
     chip_compile_flags
 )
 
+# chip_minmdns: MinMdns DNS-SD advertiser and resolver.
+# ----------------------------------------------------------------------------
+add_library(chip_minmdns STATIC
+    # Minimal mDNS core
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/core/QName.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/core/QNameString.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/core/RecordWriter.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/responders/IP.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/responders/QueryResponder.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/AddressPolicy.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/AddressPolicy_DefaultImpl.cpp"
+    # AddressPolicy_LibNlImpl.cpp excluded — uses netlink, not our FreeRTOS+TCP shim
+    # Logging.cpp excluded — when CHIP_MINMDNS_HIGH_VERBOSITY=0 the header already
+    # provides inline no-ops; including the .cpp causes redefinition errors.
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/Parser.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/RecordData.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/ResponseSender.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/Server.cpp"
+    # dnssd upper layer
+    "${CHIP_ROOT}/src/lib/dnssd/ActiveResolveAttempts.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/Advertiser.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/Advertiser_ImplMinimalMdns.cpp"
+    # Advertiser_ImplNone.cpp excluded — conflicts with ImplMinimalMdns
+    "${CHIP_ROOT}/src/lib/dnssd/Discovery_ImplPlatform.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/IncrementalResolve.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/IPAddressSorter.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/MinimalMdnsServer.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/Resolver.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/Resolver_ImplMinimalMdns.cpp"
+    # Resolver_ImplNone.cpp excluded — conflicts with ImplMinimalMdns
+    "${CHIP_ROOT}/src/lib/dnssd/ResolverProxy.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/ServiceNaming.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/TxtFields.cpp"
+)
+target_link_libraries(chip_minmdns
+    PUBLIC
+    chip_app
+    chip_includes
+    chip_compile_flags
+)
+
+# chip_clusters: mandatory server cluster implementations.
+# These provide the MatterXxxPluginServerInitCallback symbols declared in
+# app/PluginApplicationCallbacks.h and the cluster command handling.
+# ----------------------------------------------------------------------------
+set(CHIP_CLUSTERS_DIR "${CHIP_ROOT}/src/app/clusters")
+add_library(chip_clusters STATIC
+    # Mandatory root-node clusters
+    "${CHIP_CLUSTERS_DIR}/basic-information/basic-information.cpp"
+    "${CHIP_CLUSTERS_DIR}/general-commissioning-server/general-commissioning-server.cpp"
+    "${CHIP_CLUSTERS_DIR}/network-commissioning/network-commissioning.cpp"
+    "${CHIP_CLUSTERS_DIR}/network-commissioning/WifiScanResponse.cpp"
+    "${CHIP_CLUSTERS_DIR}/general-diagnostics-server/general-diagnostics-server.cpp"
+    "${CHIP_CLUSTERS_DIR}/general-diagnostics-server/GenericFaultTestEventTriggerHandler.cpp"
+    "${CHIP_CLUSTERS_DIR}/wifi-network-diagnostics-server/wifi-network-diagnostics-server.cpp"
+    "${CHIP_CLUSTERS_DIR}/administrator-commissioning-server/administrator-commissioning-server.cpp"
+    "${CHIP_CLUSTERS_DIR}/operational-credentials-server/operational-credentials-server.cpp"
+    "${CHIP_CLUSTERS_DIR}/access-control-server/access-control-server.cpp"
+    "${CHIP_CLUSTERS_DIR}/group-key-mgmt-server/group-key-mgmt-server.cpp"
+    "${CHIP_CLUSTERS_DIR}/descriptor/descriptor.cpp"
+    # Application cluster: Window Covering
+    "${CHIP_CLUSTERS_DIR}/window-covering-server/window-covering-server.cpp"
+    # OTA Requestor cluster + BDX downloader
+    "${CHIP_CLUSTERS_DIR}/ota-requestor/DefaultOTARequestor.cpp"
+    "${CHIP_CLUSTERS_DIR}/ota-requestor/DefaultOTARequestorDriver.cpp"
+    "${CHIP_CLUSTERS_DIR}/ota-requestor/DefaultOTARequestorStorage.cpp"
+    "${CHIP_CLUSTERS_DIR}/ota-requestor/BDXDownloader.cpp"
+    "${CHIP_CLUSTERS_DIR}/ota-requestor/ota-requestor-server.cpp"
+)
+target_link_libraries(chip_clusters
+    PUBLIC
+    chip_app
+    chip_minmdns
+    chip_includes
+    chip_compile_flags
+)
+
 # Aggregate target the rest of Sesame links against.
 add_library(chip INTERFACE)
 target_link_libraries(chip INTERFACE
+    chip_clusters
+    chip_minmdns
     chip_app
     chip_secure_channel
     chip_transport
