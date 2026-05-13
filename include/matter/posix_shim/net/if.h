@@ -30,10 +30,17 @@ struct ifaddrs {
 #define IFF_BROADCAST 0x2
 #define IFF_MULTICAST 0x1000
 
-unsigned int if_nametoindex(const char *ifname);
-char        *if_indextoname(unsigned int ifindex, char *ifname);
-int          getifaddrs(struct ifaddrs **ifap);
-void         freeifaddrs(struct ifaddrs *ifa);
+struct if_nameindex {
+    unsigned int  if_index;
+    char         *if_name;
+};
+
+unsigned int        if_nametoindex(const char *ifname);
+char               *if_indextoname(unsigned int ifindex, char *ifname);
+struct if_nameindex *if_nameindex(void);
+void                if_freenameindex(struct if_nameindex *ptr);
+int                 getifaddrs(struct ifaddrs **ifap);
+void                freeifaddrs(struct ifaddrs *ifa);
 
 #ifdef __cplusplus
 }

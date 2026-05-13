@@ -2,9 +2,13 @@
 # submodule. The CHIP tree at third_party/connectedhomeip is read-only;
 # all build rules and overrides live here or in src/matter/.
 #
-# Stage 1 (current): compile a tiny stub of CHIP's support layer to validate
-# cross-compile, include paths, C++17, and exception/RTTI-free build.
-# Subsequent stages expand the file lists toward full Server + DataModel.
+# Stages:
+#   chip_support        — lib/support CHIPMem + CHIPPlatformMemory
+#   chip_system         — System layer (SystemLayerImplSelect + timer/packet/wake)
+#   chip_inet           — Inet layer (UDP/TCP over sockets)
+#   chip_platform_generic — platform/ generic C++ (DeviceLayer, Diagnostics, etc.)
+#   chip_platform_mw320 — src/platform/nxp/mw320/*.cpp (hardware only)
+#   chip                — aggregate INTERFACE for the rest of Sesame to link
 
 enable_language(CXX)
 
@@ -41,6 +45,16 @@ target_compile_definitions(chip_includes
     INTERFACE
     CHIP_HAVE_CONFIG_H=1
 )
+# FreeRTOS include paths (include/config, freertos_kernel/include, portable/)
+# are needed by chip_prelude.h which force-includes FreeRTOSConfig.h for every
+# CHIP translation unit.
+target_link_libraries(chip_includes INTERFACE freertos_kernel)
+# mw320_sdk provides NXP SDK headers that CHIP headers pull in transitively
+# through CHIP_DEVICE_LAYER_TARGET=nxp/mw320 (e.g. ConfigurationManagerImpl.h
+# → wifi.h). Hardware builds only — QEMU has no mw320 SDK.
+if(NOT USE_QEMU)
+    target_link_libraries(chip_includes INTERFACE mw320_sdk)
+endif()
 
 # ----------------------------------------------------------------------------
 # Compile options for every CHIP translation unit.
@@ -68,9 +82,7 @@ target_compile_options(chip_compile_flags
 )
 
 # ----------------------------------------------------------------------------
-# Stage 1 stub library: prove CHIP code compiles under our toolchain.
-# Expand the source list in subsequent stages — eventually splitting into
-# libchip_core, libchip_app, libchip_platform_mw320, libchip_minmdns, etc.
+# chip_support: lib/support memory primitives.
 # ----------------------------------------------------------------------------
 add_library(chip_support STATIC
     "${CHIP_ROOT}/src/lib/support/CHIPMem.cpp"
@@ -80,6 +92,90 @@ add_library(chip_support STATIC
 target_link_libraries(chip_support
     PUBLIC
     globals
+    chip_includes
+    chip_compile_flags
+)
+
+# ----------------------------------------------------------------------------
+# chip_system: System layer (timer, packet buffer, select-loop wake event).
+# Uses SystemLayerImplSelect (sockets path); SystemLayerImplFreeRTOS is for
+# the lwIP path and is excluded.
+# ----------------------------------------------------------------------------
+add_library(chip_system STATIC
+    "${CHIP_ROOT}/src/system/SystemClock.cpp"
+    "${CHIP_ROOT}/src/system/SystemError.cpp"
+    "${CHIP_ROOT}/src/system/SystemLayer.cpp"
+    "${CHIP_ROOT}/src/system/SystemLayerImplSelect.cpp"
+    "${CHIP_ROOT}/src/system/SystemMutex.cpp"
+    "${CHIP_ROOT}/src/system/SystemPacketBuffer.cpp"
+    "${CHIP_ROOT}/src/system/SystemStats.cpp"
+    "${CHIP_ROOT}/src/system/SystemTimer.cpp"
+    "${CHIP_ROOT}/src/system/TLVPacketBufferBackingStore.cpp"
+    "${CHIP_ROOT}/src/system/WakeEvent.cpp"
+    # SystemFaultInjection.cpp excluded — CHIP_WITH_NLFAULTINJECTION=0
+)
+target_link_libraries(chip_system
+    PUBLIC
+    chip_support
+    chip_includes
+    chip_compile_flags
+)
+
+# ----------------------------------------------------------------------------
+# chip_inet: Inet layer (IP address, UDP/TCP endpoints over sockets).
+# LwIP / OpenThread endpoint impls excluded — we use USE_SOCKETS=1.
+# ----------------------------------------------------------------------------
+add_library(chip_inet STATIC
+    "${CHIP_ROOT}/src/inet/InetArgParser.cpp"
+    "${CHIP_ROOT}/src/inet/InetError.cpp"
+    "${CHIP_ROOT}/src/inet/InetInterface.cpp"
+    "${CHIP_ROOT}/src/inet/InetInterfaceImplDefault.cpp"
+    "${CHIP_ROOT}/src/inet/IPAddress.cpp"
+    "${CHIP_ROOT}/src/inet/IPAddress-StringFuncts.cpp"
+    "${CHIP_ROOT}/src/inet/IPPacketInfo.cpp"
+    "${CHIP_ROOT}/src/inet/IPPrefix.cpp"
+    "${CHIP_ROOT}/src/inet/TCPEndPoint.cpp"
+    "${CHIP_ROOT}/src/inet/TCPEndPointImplSockets.cpp"
+    "${CHIP_ROOT}/src/inet/UDPEndPoint.cpp"
+    "${CHIP_ROOT}/src/inet/UDPEndPointImplSockets.cpp"
+    # EndPointStateLwIP.cpp / *LwIP.cpp / *OpenThread.cpp excluded
+    # InetFaultInjection.cpp excluded — CHIP_WITH_NLFAULTINJECTION=0
+)
+target_link_libraries(chip_inet
+    PUBLIC
+    chip_system
+    chip_includes
+    chip_compile_flags
+)
+
+# ----------------------------------------------------------------------------
+# chip_platform_generic: Generic DeviceLayer C++ sources.
+# These are platform-independent; the mw320-specific code lives in
+# chip_platform_mw320 below.
+# ----------------------------------------------------------------------------
+add_library(chip_platform_generic STATIC
+    "${CHIP_ROOT}/src/platform/CommissionableDataProvider.cpp"
+    "${CHIP_ROOT}/src/platform/DeviceControlServer.cpp"
+    "${CHIP_ROOT}/src/platform/DeviceInfoProvider.cpp"
+    "${CHIP_ROOT}/src/platform/DeviceInstanceInfoProvider.cpp"
+    # DeviceSafeQueue.cpp excluded — uses std::mutex which requires gthreads,
+    # unavailable on arm-none-eabi bare-metal. The mw320 platform uses
+    # GenericPlatformManagerImpl_FreeRTOS (not POSIX), so this is unreferenced.
+    "${CHIP_ROOT}/src/platform/DiagnosticDataProvider.cpp"
+    "${CHIP_ROOT}/src/platform/Entropy.cpp"
+    "${CHIP_ROOT}/src/platform/GeneralUtils.cpp"
+    "${CHIP_ROOT}/src/platform/Globals.cpp"
+    "${CHIP_ROOT}/src/platform/LockTracker.cpp"
+    "${CHIP_ROOT}/src/platform/PersistedStorage.cpp"
+    "${CHIP_ROOT}/src/platform/PlatformEventSupport.cpp"
+    "${CHIP_ROOT}/src/platform/RuntimeOptionsProvider.cpp"
+    "${CHIP_ROOT}/src/platform/SingletonConfigurationManager.cpp"
+    "${CHIP_ROOT}/src/platform/SyscallStubs.cpp"
+)
+target_link_libraries(chip_platform_generic
+    PUBLIC
+    chip_system
+    chip_inet
     chip_includes
     chip_compile_flags
 )
@@ -138,10 +234,14 @@ if(NOT USE_QEMU)
     )
 endif()
 
-# Single aggregate target the rest of Sesame links against. Currently just
-# the stub; later stages add more libraries to this interface.
+# Aggregate target the rest of Sesame links against.
 add_library(chip INTERFACE)
-target_link_libraries(chip INTERFACE chip_support)
+target_link_libraries(chip INTERFACE
+    chip_platform_generic
+    chip_system
+    chip_inet
+    chip_support
+)
 if(NOT USE_QEMU)
     target_link_libraries(chip INTERFACE chip_platform_mw320)
 endif()

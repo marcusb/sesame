@@ -35,6 +35,14 @@ typedef uint32_t socklen_t;
 #define SO_SNDTIMEO  0x1005
 #define SO_ERROR     0x1007
 #define SO_KEEPALIVE 0x0008
+#define SO_LINGER    0x0080
+#define SO_SNDBUF    0x1001
+#define SO_RCVBUF    0x1002
+
+struct linger {
+    int l_onoff;
+    int l_linger;
+};
 
 #define MSG_PEEK      0x01
 #define MSG_DONTWAIT  0x40
@@ -103,6 +111,7 @@ int       setsockopt(int sockfd, int level, int optname,
 int       getsockopt(int sockfd, int level, int optname,
                      void *optval, socklen_t *optlen);
 int       getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+int       getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 int       shutdown(int sockfd, int how);
 
 #ifdef __cplusplus
