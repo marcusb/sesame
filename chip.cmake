@@ -392,9 +392,81 @@ target_link_libraries(chip_secure_channel
     chip_compile_flags
 )
 
+# ----------------------------------------------------------------------------
+# chip_app: Interaction Model engine, data model, server, cluster utils.
+# ----------------------------------------------------------------------------
+add_library(chip_app STATIC
+    # Core interaction model
+    "${CHIP_ROOT}/src/app/AttributeAccessInterfaceRegistry.cpp"
+    "${CHIP_ROOT}/src/app/AttributePathExpandIterator.cpp"
+    "${CHIP_ROOT}/src/app/AttributeReportBuilder.cpp"
+    "${CHIP_ROOT}/src/app/AttributeValueEncoder.cpp"
+    "${CHIP_ROOT}/src/app/BufferedReadCallback.cpp"
+    "${CHIP_ROOT}/src/app/CASEClient.cpp"
+    "${CHIP_ROOT}/src/app/CASESessionManager.cpp"
+    "${CHIP_ROOT}/src/app/ChunkedWriteCallback.cpp"
+    "${CHIP_ROOT}/src/app/ClusterStateCache.cpp"
+    "${CHIP_ROOT}/src/app/CommandHandler.cpp"
+    "${CHIP_ROOT}/src/app/CommandHandlerImpl.cpp"
+    "${CHIP_ROOT}/src/app/CommandHandlerInterfaceRegistry.cpp"
+    "${CHIP_ROOT}/src/app/CommandResponseSender.cpp"
+    "${CHIP_ROOT}/src/app/CommandSender.cpp"
+    "${CHIP_ROOT}/src/app/DeviceProxy.cpp"
+    "${CHIP_ROOT}/src/app/EventManagement.cpp"
+    "${CHIP_ROOT}/src/app/FailSafeContext.cpp"
+    "${CHIP_ROOT}/src/app/GlobalAttributes.cpp"
+    "${CHIP_ROOT}/src/app/InteractionModelDelegatePointers.cpp"
+    "${CHIP_ROOT}/src/app/InteractionModelEngine.cpp"
+    "${CHIP_ROOT}/src/app/OperationalSessionSetup.cpp"
+    "${CHIP_ROOT}/src/app/PendingResponseTrackerImpl.cpp"
+    "${CHIP_ROOT}/src/app/ReadClient.cpp"
+    "${CHIP_ROOT}/src/app/ReadHandler.cpp"
+    "${CHIP_ROOT}/src/app/SafeAttributePersistenceProvider.cpp"
+    # SimpleSubscriptionResumptionStorage and SubscriptionResumptionSessionEstablisher
+    # excluded — CHIP_CONFIG_PERSIST_SUBSCRIPTIONS=0 in CHIPProjectConfig.h
+    "${CHIP_ROOT}/src/app/StatusResponse.cpp"
+    "${CHIP_ROOT}/src/app/StorageDelegateWrapper.cpp"
+    "${CHIP_ROOT}/src/app/TimedHandler.cpp"
+    "${CHIP_ROOT}/src/app/TimedRequest.cpp"
+    "${CHIP_ROOT}/src/app/TimerDelegates.cpp"
+    "${CHIP_ROOT}/src/app/WriteClient.cpp"
+    "${CHIP_ROOT}/src/app/WriteHandler.cpp"
+
+    # Server
+    "${CHIP_ROOT}/src/app/server/AclStorage.cpp"
+    "${CHIP_ROOT}/src/app/server/CommissioningWindowManager.cpp"
+    "${CHIP_ROOT}/src/app/server/DefaultAclStorage.cpp"
+    "${CHIP_ROOT}/src/app/server/DefaultTermsAndConditionsProvider.cpp"
+    "${CHIP_ROOT}/src/app/server/Dnssd.cpp"
+    "${CHIP_ROOT}/src/app/server/EchoHandler.cpp"
+    "${CHIP_ROOT}/src/app/server/Server.cpp"
+    "${CHIP_ROOT}/src/app/server/TermsAndConditionsManager.cpp"
+    # JointFabricDatastore.cpp excluded — CHIP_DEVICE_CONFIG_ENABLE_JOINT_FABRIC=0
+
+    # Ember data model / util
+    "${CHIP_ROOT}/src/app/util/attribute-metadata.cpp"
+    "${CHIP_ROOT}/src/app/util/attribute-storage.cpp"
+    "${CHIP_ROOT}/src/app/util/attribute-table.cpp"
+    "${CHIP_ROOT}/src/app/util/binding-table.cpp"
+    "${CHIP_ROOT}/src/app/util/DataModelHandler.cpp"
+    "${CHIP_ROOT}/src/app/util/ember-io-storage.cpp"
+    "${CHIP_ROOT}/src/app/util/ember-strings.cpp"
+    "${CHIP_ROOT}/src/app/util/generic-callback-stubs.cpp"
+    "${CHIP_ROOT}/src/app/util/MatterCallbacks.cpp"
+    "${CHIP_ROOT}/src/app/util/privilege-storage.cpp"
+    "${CHIP_ROOT}/src/app/util/util.cpp"
+)
+target_link_libraries(chip_app
+    PUBLIC
+    chip_secure_channel
+    chip_includes
+    chip_compile_flags
+)
+
 # Aggregate target the rest of Sesame links against.
 add_library(chip INTERFACE)
 target_link_libraries(chip INTERFACE
+    chip_app
     chip_secure_channel
     chip_transport
     chip_messaging
