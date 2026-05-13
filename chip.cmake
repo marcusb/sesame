@@ -82,18 +82,84 @@ target_compile_options(chip_compile_flags
 )
 
 # ----------------------------------------------------------------------------
-# chip_support: lib/support memory primitives.
+# chip_support: lib/support — CHIP utility layer.
+# Excludes JniReferences.cpp (Android JNI) and ThreadOperationalDataset.cpp
+# (OpenThread, CHIP_ENABLE_OPENTHREAD=0).  CHIPFaultInjection.cpp excluded —
+# CHIP_WITH_NLFAULTINJECTION=0.
 # ----------------------------------------------------------------------------
 add_library(chip_support STATIC
+    "${CHIP_ROOT}/src/lib/support/Base64.cpp"
+    "${CHIP_ROOT}/src/lib/support/BufferReader.cpp"
+    "${CHIP_ROOT}/src/lib/support/BufferWriter.cpp"
+    "${CHIP_ROOT}/src/lib/support/BytesCircularBuffer.cpp"
+    "${CHIP_ROOT}/src/lib/support/BytesToHex.cpp"
     "${CHIP_ROOT}/src/lib/support/CHIPMem.cpp"
     "${CHIP_ROOT}/src/lib/support/CHIPMem-Malloc.cpp"
     "${CHIP_ROOT}/src/lib/support/CHIPPlatformMemory.cpp"
+    "${CHIP_ROOT}/src/lib/support/FibonacciUtils.cpp"
+    "${CHIP_ROOT}/src/lib/support/FixedBufferAllocator.cpp"
+    "${CHIP_ROOT}/src/lib/support/IniEscaping.cpp"
+    "${CHIP_ROOT}/src/lib/support/Pool.cpp"
+    "${CHIP_ROOT}/src/lib/support/PrivateHeap.cpp"
+    "${CHIP_ROOT}/src/lib/support/ReadOnlyBuffer.cpp"
+    "${CHIP_ROOT}/src/lib/support/StringBuilder.cpp"
+    "${CHIP_ROOT}/src/lib/support/TimeUtils.cpp"
+    "${CHIP_ROOT}/src/lib/support/utf8.cpp"
+    "${CHIP_ROOT}/src/lib/support/ZclString.cpp"
+    # PersistentStorageAudit.cpp — audit helper, include
+    "${CHIP_ROOT}/src/lib/support/PersistentStorageAudit.cpp"
 )
 target_link_libraries(chip_support
     PUBLIC
     globals
     chip_includes
     chip_compile_flags
+)
+
+# ----------------------------------------------------------------------------
+# chip_core: lib/core — TLV, error codes, OTA image header.
+# ----------------------------------------------------------------------------
+add_library(chip_core STATIC
+    "${CHIP_ROOT}/src/lib/core/CHIPError.cpp"
+    "${CHIP_ROOT}/src/lib/core/CHIPKeyIds.cpp"
+    "${CHIP_ROOT}/src/lib/core/ErrorStr.cpp"
+    "${CHIP_ROOT}/src/lib/core/OTAImageHeader.cpp"
+    # StringBuilderAdapters.cpp excluded — requires Pigweed pw_string headers
+    "${CHIP_ROOT}/src/lib/core/TLVCircularBuffer.cpp"
+    "${CHIP_ROOT}/src/lib/core/TLVDebug.cpp"
+    "${CHIP_ROOT}/src/lib/core/TLVReader.cpp"
+    "${CHIP_ROOT}/src/lib/core/TLVTags.cpp"
+    "${CHIP_ROOT}/src/lib/core/TLVUpdater.cpp"
+    "${CHIP_ROOT}/src/lib/core/TLVUtilities.cpp"
+    "${CHIP_ROOT}/src/lib/core/TLVVectorWriter.cpp"
+    "${CHIP_ROOT}/src/lib/core/TLVWriter.cpp"
+)
+target_link_libraries(chip_core
+    PUBLIC
+    chip_support
+    chip_includes
+    chip_compile_flags
+)
+
+# ----------------------------------------------------------------------------
+# chip_crypto: Crypto PAL — mbedTLS backend (CHIP_CRYPTO_MBEDTLS=1).
+# PSA / OpenSSL variants excluded.
+# ----------------------------------------------------------------------------
+add_library(chip_crypto STATIC
+    "${CHIP_ROOT}/src/crypto/CHIPCryptoPAL.cpp"
+    "${CHIP_ROOT}/src/crypto/CHIPCryptoPALmbedTLS.cpp"
+    "${CHIP_ROOT}/src/crypto/CHIPCryptoPALmbedTLSCert.cpp"
+    "${CHIP_ROOT}/src/crypto/PersistentStorageOperationalKeystore.cpp"
+    "${CHIP_ROOT}/src/crypto/RandUtils.cpp"
+    "${CHIP_ROOT}/src/crypto/RawKeySessionKeystore.cpp"
+    # PSA variants excluded — CHIP_CRYPTO_PSA=0
+)
+target_link_libraries(chip_crypto
+    PUBLIC
+    chip_core
+    chip_includes
+    chip_compile_flags
+    mbedcrypto
 )
 
 # ----------------------------------------------------------------------------
@@ -116,7 +182,8 @@ add_library(chip_system STATIC
 )
 target_link_libraries(chip_system
     PUBLIC
-    chip_support
+    chip_core
+    chip_crypto
     chip_includes
     chip_compile_flags
 )
@@ -240,6 +307,8 @@ target_link_libraries(chip INTERFACE
     chip_platform_generic
     chip_system
     chip_inet
+    chip_crypto
+    chip_core
     chip_support
 )
 if(NOT USE_QEMU)
