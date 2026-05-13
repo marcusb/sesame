@@ -96,6 +96,35 @@ if(NOT USE_QEMU)
     # subclass backs storage with psm_safe.c instead.
     add_library(chip_platform_mw320 STATIC
         "${CHIP_ROOT}/src/platform/nxp/mw320/Logging.cpp"
+
+        # Configuration — excludes MW320Config.cpp (needs network_flash_storage.h;
+        # replaced by Sesame PSM-backed subclass in src/matter/platform_sesame/).
+        "${CHIP_ROOT}/src/platform/nxp/mw320/ConfigurationManagerImpl.cpp"
+
+        # Device info / factory data / attestation.
+        "${CHIP_ROOT}/src/platform/nxp/mw320/DeviceInfoProviderImpl.cpp"
+        "${CHIP_ROOT}/src/platform/nxp/mw320/FactoryDataProvider.cpp"
+
+        # Network commissioning drivers.
+        # ConnectivityUtils.cpp excluded: needs netdb.h/wm_net.h (lwIP port header).
+        "${CHIP_ROOT}/src/platform/nxp/mw320/NetworkCommissioningWiFiDriver.cpp"
+
+        # OTA — mw320_ota.cpp provides the flash-write primitives that
+        # OTAImageProcessorImpl.cpp calls.
+        "${CHIP_ROOT}/src/platform/nxp/mw320/mw320_ota.cpp"
+        "${CHIP_ROOT}/src/platform/nxp/mw320/OTAImageProcessorImpl.cpp"
+
+        # Excluded — Sesame subclasses replace these:
+        #   ConnectivityManagerImpl.cpp   (lwIP-dependent; subclass uses network_manager.c)
+        #   DiagnosticDataProviderImpl.cpp (lwIP-dependent; subclass uses FreeRTOS APIs)
+        #   PlatformManagerImpl.cpp       (lwIP-dependent; init ordering handled in matter_app.cpp)
+        #   KeyValueStoreManagerImpl.cpp  (needs network_flash_storage.h; subclass uses psm_safe.c)
+        # Excluded — compile-time dead code:
+        #   SoftwareUpdateManagerImpl.cpp (broken include paths, deprecated pre-Matter-OTA)
+        #   NetworkProvisioningServerImpl.cpp (legacy include paths, superseded by commissioning API)
+        #   NetworkCommissioningEthernetDriver.cpp (needs ConnectivityUtils.h/wm_net.h)
+        # Excluded — BLE disabled:
+        #   BLEManagerImpl.cpp
     )
     target_link_libraries(chip_platform_mw320
         PUBLIC

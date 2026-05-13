@@ -22,6 +22,9 @@ extern "C" {
 #define IPPROTO_IPV6 41
 #define IPPROTO_ICMPV6 58
 
+#define INET_ADDRSTRLEN  16
+#define INET6_ADDRSTRLEN 46
+
 #define INADDR_ANY       ((uint32_t) 0x00000000)
 #define INADDR_BROADCAST ((uint32_t) 0xffffffff)
 #define INADDR_LOOPBACK  ((uint32_t) 0x7f000001)

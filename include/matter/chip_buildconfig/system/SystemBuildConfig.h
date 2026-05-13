@@ -32,7 +32,7 @@
 #define CHIP_PLATFORM_CONFIG_INCLUDE <platform/nxp/mw320/CHIPPlatformConfig.h>
 #define SYSTEM_PROJECT_CONFIG_INCLUDE <CHIPProjectConfig.h>
 #define SYSTEM_PLATFORM_CONFIG_INCLUDE <platform/nxp/mw320/SystemPlatformConfig.h>
-#define CHIP_SYSTEM_LAYER_IMPL_CONFIG_FILE <system/SystemLayerImplFreeRTOS.h>
+#define CHIP_SYSTEM_LAYER_IMPL_CONFIG_FILE <system/SystemLayerImplSelect.h>
 #define CHIP_SYSTEM_CONFIG_MULTICAST_HOMING 0
 
 #endif  // SYSTEM_SYSTEMBUILDCONFIG_H_

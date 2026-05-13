@@ -29,7 +29,13 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #if defined(__ICCARM__)||defined(__CC_ARM)||defined(__GNUC__)
     /* Clock manager provides in this variable system core clock frequency */
     #include <stdint.h>
+    #ifdef __cplusplus
+    extern "C" {
+    #endif
     extern uint32_t SystemCoreClock;
+    #ifdef __cplusplus
+    }
+    #endif
 #endif
 
 #include <assert.h>
