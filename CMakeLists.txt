@@ -89,7 +89,8 @@ target_compile_definitions(globals
     _GNU_SOURCE
     __ASSERT_VERBOSE
     __FPU_PRESENT
-    TASMOTA=1)
+    TASMOTA=1
+    $<$<BOOL:${USE_QEMU}>:USE_QEMU>)
 
 # -------------------------------------------------------------------------------------------------
 # Backtrace
@@ -401,10 +402,9 @@ target_link_libraries(board
 # -------------------------------------------------------------------------------------------------
 
 # axf2firmware is consumed by the post-build firmware-image step; berry_host
-# is consumed by berry_matter's solidify custom command. Both targets are
-# built in the native tree (build-native/) and exported via
-# {axf2firmware,berry_host}-config.cmake. Resolve them before any subdir
-# that references them.
+# is still required by third_party/berry_matter's solidify pipeline until
+# Berry is fully removed. Both are built in build-native/ and exported via
+# {target}-config.cmake.
 find_package(axf2firmware REQUIRED)
 find_package(berry_host REQUIRED)
 
@@ -486,7 +486,12 @@ target_link_options(app_deps
     "-Wl,--undefined,uxTopUsedPriority"
     "-Wl,--cref"
     "-Wl,--gc-sections"
-    "-Wl,--nmagic")
+    "-Wl,--nmagic"
+    # The backtrace library provides empty stubs for __aeabi_unwind_cpp_pr0/1/2
+    # to prevent the libgcc unwinder from being pulled in.  With CHIP's C++
+    # code (built with -fno-exceptions), libgcc's unwind-arm.o also appears.
+    # The backtrace stubs come first and win; allow the duplicate.
+    "-Wl,--allow-multiple-definition")
 
 if(USE_QEMU)
     set(USE_BACKTRACE ON)
@@ -503,33 +508,22 @@ else()
     )
 endif()
 
-# Flash version (with Matter)
+# Flash version (with Matter via CHIP)
 add_executable("${exe_target}")
 target_sources("${exe_target}" PRIVATE ${app_sources} ${common_exe_sources})
 target_compile_definitions("${exe_target}" PRIVATE SESAME_ENABLE_MATTER=1)
-target_link_libraries("${exe_target}" PRIVATE app_deps sesame_matter berry_matter)
-# Resolve circular deps between berry and sesame_matter/berry_matter port code.
+target_link_libraries("${exe_target}" PRIVATE app_deps sesame_matter)
 if(USE_QEMU)
     target_link_options("${exe_target}" PRIVATE
         "LINKER:--start-group"
-        "$<TARGET_FILE:berry>"
-        "$<TARGET_FILE:berry_matter>"
         "$<TARGET_FILE:mbedcrypto>"
         "$<TARGET_FILE:qemu_mbedtls_port>"
-        "LINKER:--whole-archive"
-        "$<TARGET_FILE:sesame_matter>"
-        "LINKER:--no-whole-archive"
         "LINKER:--end-group"
         "-Wl,-Map,${exe_target}.map"
     )
 else()
     target_link_options("${exe_target}" PRIVATE
         "LINKER:--start-group"
-        "$<TARGET_FILE:berry>"
-        "$<TARGET_FILE:berry_matter>"
-        "LINKER:--whole-archive"
-        "$<TARGET_FILE:sesame_matter>"
-        "LINKER:--no-whole-archive"
         "LINKER:--end-group"
         "-Wl,-Map,${exe_target}.map"
     )
@@ -566,6 +560,7 @@ if(NOT USE_QEMU)
             "${CMAKE_COMMAND}" -G Ninja -DUSE_QEMU=ON -DUSE_BACKTRACE=ON -DCMAKE_BUILD_TYPE=Debug
                 -DCMAKE_TOOLCHAIN_FILE=${CMAKE_SOURCE_DIR}/toolchain.cmake
                 -Daxf2firmware_DIR=${axf2firmware_DIR}
+                -Dberry_host_DIR=${CMAKE_BINARY_DIR}
                 -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/qemu-build"
             COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/qemu-build"
         INSTALL_COMMAND ""

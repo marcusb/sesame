@@ -26,6 +26,9 @@ target_include_directories(chip_includes
     # to our shim, not newlib's (which doesn't ship them on bare metal
     # anyway, but explicit beats implicit).
     "${CMAKE_CURRENT_LIST_DIR}/include/matter/posix_shim"
+    # Sesame overrides for vendored CHIP headers. Must come before the CHIP
+    # source tree so our patched versions shadow the originals.
+    "${CMAKE_CURRENT_LIST_DIR}/include/matter/chip_overrides"
     "${CHIP_ROOT}/src"
     "${CHIP_ROOT}/src/include"
     # Some upstream files (e.g. platform/nxp/mw320/Logging.cpp) use
@@ -40,6 +43,9 @@ target_include_directories(chip_includes
     "${CMAKE_CURRENT_LIST_DIR}/include/matter/chip_buildconfig"
     # Project config: CHIP_PROJECT_CONFIG_INCLUDE = <CHIPProjectConfig.h>
     "${CMAKE_CURRENT_LIST_DIR}/src/matter"
+    # Stub headers for NXP SDK files used by mw320 platform code but not
+    # present in our SDK tree (e.g. network_flash_storage.h from wifi_examples)
+    "${CMAKE_CURRENT_LIST_DIR}/include/matter/mw320_stubs"
 )
 target_compile_definitions(chip_includes
     INTERFACE
@@ -89,6 +95,8 @@ target_compile_options(chip_compile_flags
 # ----------------------------------------------------------------------------
 add_library(chip_support STATIC
     "${CHIP_ROOT}/src/lib/support/Base64.cpp"
+    # FreeRTOS platform clock implementation (defines gClockImpl)
+    "${CHIP_ROOT}/src/platform/FreeRTOS/SystemTimeSupport.cpp"
     "${CHIP_ROOT}/src/lib/support/BufferReader.cpp"
     "${CHIP_ROOT}/src/lib/support/BufferWriter.cpp"
     "${CHIP_ROOT}/src/lib/support/BytesCircularBuffer.cpp"
@@ -108,6 +116,11 @@ add_library(chip_support STATIC
     "${CHIP_ROOT}/src/lib/support/ZclString.cpp"
     # PersistentStorageAudit.cpp — audit helper, include
     "${CHIP_ROOT}/src/lib/support/PersistentStorageAudit.cpp"
+    # Logging — text-only backend (BinaryLogging.cpp excluded)
+    "${CHIP_ROOT}/src/lib/support/logging/TextOnlyLogging.cpp"
+    # Verhoeff check digit (used by ManualSetupPayloadGenerator)
+    "${CHIP_ROOT}/src/lib/support/verhoeff/Verhoeff.cpp"
+    "${CHIP_ROOT}/src/lib/support/verhoeff/Verhoeff10.cpp"
 )
 target_link_libraries(chip_support
     PUBLIC
@@ -146,6 +159,11 @@ target_link_libraries(chip_core
 # PSA / OpenSSL variants excluded.
 # ----------------------------------------------------------------------------
 add_library(chip_crypto STATIC
+    # mbedtls_ccm_update/update_ad/finish stubs — MBEDTLS_CCM_ALT disables all
+    # of ccm.c; the HW accelerator provides one-shot encrypt/decrypt only.
+    # CHIP never calls the streaming API so these are unreachable, but the linker
+    # needs the symbols.  Must be in a library processed before mbedcrypto.a.
+    "${CMAKE_CURRENT_LIST_DIR}/src/matter/sesame_mbedtls_ccm_stubs.c"
     "${CHIP_ROOT}/src/crypto/CHIPCryptoPAL.cpp"
     "${CHIP_ROOT}/src/crypto/CHIPCryptoPALmbedTLS.cpp"
     "${CHIP_ROOT}/src/crypto/CHIPCryptoPALmbedTLSCert.cpp"
@@ -179,6 +197,11 @@ add_library(chip_system STATIC
     "${CHIP_ROOT}/src/system/TLVPacketBufferBackingStore.cpp"
     "${CHIP_ROOT}/src/system/WakeEvent.cpp"
     # SystemFaultInjection.cpp excluded — CHIP_WITH_NLFAULTINJECTION=0
+
+    # BSD-socket shim for CHIP over FreeRTOS+TCP.
+    # Lives here (inside the linker group) so the symbols are visible when
+    # chip_system/chip_inet demand select(), pipe(), htonl(), getifaddrs(), etc.
+    "${CMAKE_CURRENT_LIST_DIR}/src/matter/freertos_socket_shim.c"
 )
 target_link_libraries(chip_system
     PUBLIC
@@ -186,6 +209,7 @@ target_link_libraries(chip_system
     chip_crypto
     chip_includes
     chip_compile_flags
+    freertos_plus_tcp
 )
 
 # ----------------------------------------------------------------------------
@@ -260,9 +284,16 @@ if(NOT USE_QEMU)
     add_library(chip_platform_mw320 STATIC
         "${CHIP_ROOT}/src/platform/nxp/mw320/Logging.cpp"
 
-        # Configuration — excludes MW320Config.cpp (needs network_flash_storage.h;
-        # replaced by Sesame PSM-backed subclass in src/matter/platform_sesame/).
+        # Configuration.
+        "${CHIP_ROOT}/src/platform/nxp/mw320/MW320Config.cpp"
         "${CHIP_ROOT}/src/platform/nxp/mw320/ConfigurationManagerImpl.cpp"
+
+        # Key-value store — uses network_flash_storage stubs for now; will be
+        # replaced with a PSM-backed Sesame subclass in a later step.
+        "${CHIP_ROOT}/src/platform/nxp/mw320/KeyValueStoreManagerImpl.cpp"
+
+        # Platform manager — provides PlatformManagerImpl::sInstance.
+        "${CHIP_ROOT}/src/platform/nxp/mw320/PlatformManagerImpl.cpp"
 
         # Device info / factory data / attestation.
         "${CHIP_ROOT}/src/platform/nxp/mw320/DeviceInfoProviderImpl.cpp"
@@ -277,11 +308,17 @@ if(NOT USE_QEMU)
         "${CHIP_ROOT}/src/platform/nxp/mw320/mw320_ota.cpp"
         "${CHIP_ROOT}/src/platform/nxp/mw320/OTAImageProcessorImpl.cpp"
 
+        # Sesame ConnectivityManagerImpl — replaces the LwIP-dependent upstream version.
+        # Provides template instantiations for UDP/TCP EndPointManager and minimal WiFi stubs.
+        "${CMAKE_CURRENT_LIST_DIR}/src/matter/ConnectivityManagerImpl_sesame.cpp"
+
+        # Sesame DiagnosticDataProviderImpl — replaces the LwIP-dependent upstream version.
+        "${CMAKE_CURRENT_LIST_DIR}/src/matter/DiagnosticDataProviderImpl_sesame.cpp"
+
         # Excluded — Sesame subclasses replace these:
-        #   ConnectivityManagerImpl.cpp   (lwIP-dependent; subclass uses network_manager.c)
+        #   ConnectivityManagerImpl.cpp   (lwIP-dependent; replaced by ConnectivityManagerImpl_sesame.cpp)
         #   DiagnosticDataProviderImpl.cpp (lwIP-dependent; subclass uses FreeRTOS APIs)
         #   PlatformManagerImpl.cpp       (lwIP-dependent; init ordering handled in matter_app.cpp)
-        #   KeyValueStoreManagerImpl.cpp  (needs network_flash_storage.h; subclass uses psm_safe.c)
         # Excluded — compile-time dead code:
         #   SoftwareUpdateManagerImpl.cpp (broken include paths, deprecated pre-Matter-OTA)
         #   NetworkProvisioningServerImpl.cpp (legacy include paths, superseded by commissioning API)
@@ -359,6 +396,10 @@ add_library(chip_transport STATIC
     # TraceMessage.cpp excluded — CHIP_CONFIG_TRANSPORT_TRACE_ENABLED not set;
     # TransportTraceHandler is only declared when that flag is on.
     "${CHIP_ROOT}/src/transport/TransportMgrBase.cpp"
+    # Raw transport implementations (UDP and TCP over sockets)
+    "${CHIP_ROOT}/src/transport/raw/MessageHeader.cpp"
+    "${CHIP_ROOT}/src/transport/raw/UDP.cpp"
+    "${CHIP_ROOT}/src/transport/raw/TCP.cpp"
 )
 target_link_libraries(chip_transport
     PUBLIC
@@ -443,6 +484,135 @@ add_library(chip_app STATIC
     "${CHIP_ROOT}/src/app/server/TermsAndConditionsManager.cpp"
     # JointFabricDatastore.cpp excluded — CHIP_DEVICE_CONFIG_ENABLE_JOINT_FABRIC=0
 
+    # MessageDef — TLV builders/parsers for interaction model messages
+    "${CHIP_ROOT}/src/app/MessageDef/ArrayBuilder.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/ArrayParser.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/AttributeDataIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/AttributeDataIBs.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/AttributePathIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/AttributePathIBs.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/AttributeReportIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/AttributeReportIBs.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/AttributeStatusIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/AttributeStatusIBs.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/Builder.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/ClusterPathIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/CommandDataIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/CommandPathIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/CommandStatusIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/DataVersionFilterIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/DataVersionFilterIBs.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/EventDataIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/EventFilterIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/EventFilterIBs.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/EventPathIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/EventPathIBs.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/EventReportIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/EventReportIBs.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/EventStatusIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/InvokeRequestMessage.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/InvokeRequests.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/InvokeResponseIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/InvokeResponseIBs.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/InvokeResponseMessage.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/ListBuilder.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/ListParser.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/MessageBuilder.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/MessageDefHelper.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/MessageParser.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/Parser.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/ReadRequestMessage.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/ReportDataMessage.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/StatusIB.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/StatusResponseMessage.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/StructBuilder.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/StructParser.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/SubscribeRequestMessage.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/SubscribeResponseMessage.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/TimedRequestMessage.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/WriteRequestMessage.cpp"
+    "${CHIP_ROOT}/src/app/MessageDef/WriteResponseMessage.cpp"
+
+    # Reporting engine — required by InteractionModelEngine
+    "${CHIP_ROOT}/src/app/reporting/Engine.cpp"
+    "${CHIP_ROOT}/src/app/reporting/reporting.cpp"
+    "${CHIP_ROOT}/src/app/reporting/ReportSchedulerImpl.cpp"
+    # SynchronizedReportSchedulerImpl.cpp excluded (uses separate sync task)
+
+    # Access control
+    "${CHIP_ROOT}/src/access/AccessControl.cpp"
+    "${CHIP_ROOT}/src/access/AccessRestrictionProvider.cpp"
+
+    # Address resolver — used by CASESessionManager
+    "${CHIP_ROOT}/src/lib/address_resolve/AddressResolve.cpp"
+    "${CHIP_ROOT}/src/lib/address_resolve/AddressResolve_DefaultImpl.cpp"
+
+    # ASN.1 encoder/decoder (used by cert chain validation in CHIPCert)
+    "${CHIP_ROOT}/src/lib/asn1/ASN1Error.cpp"
+    "${CHIP_ROOT}/src/lib/asn1/ASN1OID.cpp"
+    "${CHIP_ROOT}/src/lib/asn1/ASN1Reader.cpp"
+    "${CHIP_ROOT}/src/lib/asn1/ASN1Time.cpp"
+    "${CHIP_ROOT}/src/lib/asn1/ASN1Writer.cpp"
+
+    # Credentials examples (dev-only attestation credentials)
+    "${CHIP_ROOT}/src/credentials/examples/DeviceAttestationCredsExample.cpp"
+    "${CHIP_ROOT}/src/credentials/examples/ExampleDACs.cpp"
+    "${CHIP_ROOT}/src/credentials/examples/ExamplePAI.cpp"
+
+    # Setup payload — QR code / onboarding codes
+    "${CHIP_ROOT}/src/setup_payload/AdditionalDataPayloadGenerator.cpp"
+    "${CHIP_ROOT}/src/setup_payload/AdditionalDataPayloadParser.cpp"
+    "${CHIP_ROOT}/src/setup_payload/Base38Decode.cpp"
+    "${CHIP_ROOT}/src/setup_payload/Base38Encode.cpp"
+    "${CHIP_ROOT}/src/setup_payload/ManualSetupPayloadGenerator.cpp"
+    "${CHIP_ROOT}/src/setup_payload/ManualSetupPayloadParser.cpp"
+    "${CHIP_ROOT}/src/setup_payload/OnboardingCodesUtil.cpp"
+    "${CHIP_ROOT}/src/setup_payload/QRCodeSetupPayloadGenerator.cpp"
+    "${CHIP_ROOT}/src/setup_payload/QRCodeSetupPayloadParser.cpp"
+    "${CHIP_ROOT}/src/setup_payload/SetupPayload.cpp"
+    "${CHIP_ROOT}/src/setup_payload/SetupPayloadHelper.cpp"
+
+    # Codegen data model provider (needed for CommonCaseDeviceServerInitParams)
+    "${CHIP_ROOT}/src/data-model-providers/codegen/CodegenDataModelProvider.cpp"
+    "${CHIP_ROOT}/src/data-model-providers/codegen/CodegenDataModelProvider_Read.cpp"
+    "${CHIP_ROOT}/src/data-model-providers/codegen/CodegenDataModelProvider_Write.cpp"
+    "${CHIP_ROOT}/src/data-model-providers/codegen/EmberAttributeDataBuffer.cpp"
+    "${CHIP_ROOT}/src/data-model-providers/codegen/EmberMetadata.cpp"
+    "${CHIP_ROOT}/src/data-model-providers/codegen/Instance.cpp"
+    "${CHIP_ROOT}/src/data-model-providers/codegen/ServerClusterInterfaceRegistry.cpp"
+
+    # Data model provider base (ActionReturnStatus, MetadataLookup, ProviderMetadataTree)
+    # StringBuilderAdapters.cpp excluded — requires Pigweed pw_string headers
+    "${CHIP_ROOT}/src/app/data-model-provider/ActionReturnStatus.cpp"
+    "${CHIP_ROOT}/src/app/data-model-provider/MetadataLookup.cpp"
+    "${CHIP_ROOT}/src/app/data-model-provider/ProviderMetadataTree.cpp"
+
+    # Access control example delegate (dev-only; production replaces with real ACL)
+    "${CHIP_ROOT}/src/access/examples/ExampleAccessControlDelegate.cpp"
+
+    # Attribute persistence provider (default: writes to KeyValueStore)
+    "${CHIP_ROOT}/src/app/util/persistence/AttributePersistenceProvider.cpp"
+    "${CHIP_ROOT}/src/app/util/persistence/DefaultAttributePersistenceProvider.cpp"
+
+    # InteractionModel status codes
+    "${CHIP_ROOT}/src/protocols/interaction_model/StatusCode.cpp"
+
+    # Protocol name/type lookup (used by ExchangeMgr and SessionManager logging)
+    "${CHIP_ROOT}/src/protocols/Protocols.cpp"
+
+    # TLV struct decode/encode helpers
+    "${CHIP_ROOT}/src/app/data-model/StructDecodeIterator.cpp"
+    "${CHIP_ROOT}/src/app/data-model/WrappedStructEncoder.cpp"
+
+    # Per-application command dispatch (generated by ZAP; maintained by hand for Sesame)
+    "${CMAKE_CURRENT_LIST_DIR}/src/matter/zap-generated/IMClusterCommandHandler.cpp"
+
+    # ServerClusterInterface base implementation (PathsContains, etc.)
+    "${CHIP_ROOT}/src/app/server-cluster/ServerClusterInterface.cpp"
+
+    # emberAfClusterInitCallback stub (not in generic-callback-stubs.cpp)
+    "${CMAKE_CURRENT_LIST_DIR}/src/matter/sesame_chip_app_callbacks.cpp"
+
     # Ember data model / util
     "${CHIP_ROOT}/src/app/util/attribute-metadata.cpp"
     "${CHIP_ROOT}/src/app/util/attribute-storage.cpp"
@@ -470,6 +640,8 @@ add_library(chip_minmdns STATIC
     "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/core/QName.cpp"
     "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/core/QNameString.cpp"
     "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/core/RecordWriter.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/records/IP.cpp"
+    "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/records/ResourceRecord.cpp"
     "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/responders/IP.cpp"
     "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/responders/QueryResponder.cpp"
     "${CHIP_ROOT}/src/lib/dnssd/minimal_mdns/AddressPolicy.cpp"
@@ -503,6 +675,10 @@ target_link_libraries(chip_minmdns
     chip_includes
     chip_compile_flags
 )
+target_compile_definitions(chip_minmdns
+    PUBLIC
+    CHIP_DNSSD_DEFAULT_MINIMAL=1
+)
 
 # chip_clusters: mandatory server cluster implementations.
 # These provide the MatterXxxPluginServerInitCallback symbols declared in
@@ -510,6 +686,11 @@ target_link_libraries(chip_minmdns
 # ----------------------------------------------------------------------------
 set(CHIP_CLUSTERS_DIR "${CHIP_ROOT}/src/app/clusters")
 add_library(chip_clusters STATIC
+    # ZAP-generated cluster struct encode/decode (all clusters, including root-node)
+    "${CHIP_ROOT}/zzz_generated/app-common/app-common/zap-generated/cluster-objects.cpp"
+    # ZAP-generated attribute accessors (Get/Set for all cluster attributes)
+    "${CHIP_ROOT}/zzz_generated/app-common/app-common/zap-generated/attributes/Accessors.cpp"
+
     # Mandatory root-node clusters
     "${CHIP_CLUSTERS_DIR}/basic-information/basic-information.cpp"
     "${CHIP_CLUSTERS_DIR}/general-commissioning-server/general-commissioning-server.cpp"
@@ -541,22 +722,57 @@ target_link_libraries(chip_clusters
 )
 
 # Aggregate target the rest of Sesame links against.
+# The CHIP static libraries have mutual dependencies (e.g. chip_app pulls in
+# symbols from chip_minmdns and chip_credentials which in turn need chip_app
+# symbols).  Wrap the whole group with --start-group/--end-group so the GNU
+# linker iterates until all cross-archive references are satisfied.
+#
+# chip_platform_mw320 is INSIDE the group so that:
+#  - Its instantiation of GenericPlatformManagerImpl creates demands for symbols
+#    from chip_core/chip_inet/chip_platform_generic (RegisterCHIPLayerErrorFormatter,
+#    RegisterLayerErrorFormatter, InitEntropy, etc.) that are satisfied within
+#    the group iteration.
+#  - ConnectivityManagerImpl_sesame.cpp (in chip_platform_mw320) creates a demand
+#    for vtable for UDPEndPointImplSockets / TCPEndPointImplSockets which are
+#    defined in chip_inet — both must be in the same group pass.
 add_library(chip INTERFACE)
-target_link_libraries(chip INTERFACE
-    chip_clusters
-    chip_minmdns
-    chip_app
-    chip_secure_channel
-    chip_transport
-    chip_messaging
-    chip_credentials
-    chip_platform_generic
-    chip_system
-    chip_inet
-    chip_crypto
-    chip_core
-    chip_support
-)
 if(NOT USE_QEMU)
-    target_link_libraries(chip INTERFACE chip_platform_mw320)
+    target_link_libraries(chip INTERFACE
+        -Wl,--start-group
+        chip_clusters
+        chip_minmdns
+        chip_app
+        chip_secure_channel
+        chip_transport
+        chip_messaging
+        chip_credentials
+        chip_platform_generic
+        chip_platform_mw320
+        chip_system
+        chip_inet
+        chip_crypto
+        chip_core
+        chip_support
+        mbedcrypto
+        -Wl,--end-group
+    )
+else()
+    target_link_libraries(chip INTERFACE
+        -Wl,--start-group
+        chip_clusters
+        chip_minmdns
+        chip_app
+        chip_secure_channel
+        chip_transport
+        chip_messaging
+        chip_credentials
+        chip_platform_generic
+        chip_system
+        chip_inet
+        chip_crypto
+        chip_core
+        chip_support
+        mbedcrypto
+        -Wl,--end-group
+    )
 endif()

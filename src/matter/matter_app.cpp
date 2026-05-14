@@ -1,0 +1,160 @@
+/*
+ * matter_app.cpp — CHIP stack entry point and public API for Sesame.
+ *
+ * Replaces matter_task.c (Berry-based).  Called from board_main.c via
+ * matter_app_start() after Wi-Fi is up (network_manager has reached
+ * kNetworkReady state).
+ *
+ * QEMU builds skip the CHIP stack entirely (no platform layer available).
+ * The public API functions are no-ops so the rest of the firmware links.
+ */
+
+/* picolibc bare-metal doesn't provide a FILE* object for stderr.  Define a
+ * weak NULL here so libstdc++ internals (e.g. vterminate) can reference it
+ * without a link error.  Placed in this TU (not sesame_matter_stubs.c) so the
+ * definition is guaranteed to be extracted from the archive. */
+extern "C" {
+#include <stdio.h>
+#undef stderr
+extern __attribute__((weak)) FILE * const stderr = nullptr;
+}
+
+#ifndef USE_QEMU
+
+#include "matter_app.h"
+#include "matter_task.h"
+
+#include <app/server/CommissioningWindowManager.h>
+#include <app/server/Dnssd.h>
+#include <app/server/Server.h>
+#include <app/util/attribute-storage.h>
+#include <credentials/DeviceAttestationCredsProvider.h>
+#include <credentials/examples/DeviceAttestationCredsExample.h>
+#include <data-model-providers/codegen/Instance.h>
+#include <lib/support/CHIPMem.h>
+#include <lib/support/logging/CHIPLogging.h>
+#include <platform/CHIPDeviceLayer.h>
+#include <setup_payload/OnboardingCodesUtil.h>
+
+#include "app_logging.h"
+#include "controller.h"
+
+using namespace chip;
+using namespace chip::app;
+using namespace chip::DeviceLayer;
+
+static bool s_started = false;
+
+static void matter_app_task(void * /*param*/)
+{
+    ChipLogProgress(DeviceLayer, "CHIP stack init");
+
+    CHIP_ERROR err = chip::Platform::MemoryInit();
+    if (err != CHIP_NO_ERROR)
+    {
+        ChipLogError(DeviceLayer, "MemoryInit failed: %" CHIP_ERROR_FORMAT, err.Format());
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    err = PlatformMgr().InitChipStack();
+    if (err != CHIP_NO_ERROR)
+    {
+        ChipLogError(DeviceLayer, "InitChipStack failed: %" CHIP_ERROR_FORMAT, err.Format());
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    chip::Credentials::SetDeviceAttestationCredentialsProvider(
+        chip::Credentials::Examples::GetExampleDACProvider());
+
+    static chip::CommonCaseDeviceServerInitParams init_params;
+    (void) init_params.InitializeStaticResourcesBeforeServerInit();
+    init_params.dataModelProvider =
+        CodegenDataModelProviderInstance(init_params.persistentStorageDelegate);
+
+    err = chip::Server::GetInstance().Init(init_params);
+    if (err != CHIP_NO_ERROR)
+    {
+        ChipLogError(DeviceLayer, "Server::Init failed: %" CHIP_ERROR_FORMAT, err.Format());
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    PrintOnboardingCodes(chip::RendezvousInformationFlag::kOnNetwork);
+
+    PlatformMgr().RunEventLoop();
+}
+
+void matter_app_start(void)
+{
+    if (s_started)
+        return;
+    s_started = true;
+    xTaskCreate(matter_app_task, "CHIP", 6 * 1024 / sizeof(StackType_t),
+                nullptr, tskIDLE_PRIORITY + 2, nullptr);
+}
+
+void matter_init(void)
+{
+    matter_app_start();
+}
+
+void matter_schedule_network_up(void)
+{
+    if (!s_started)
+        return;
+    PlatformMgr().ScheduleWork(
+        [](intptr_t) { chip::app::DnssdServer::Instance().StartServer(); }, 0);
+}
+
+void matter_report_door_state(const door_state_msg_t * /*msg*/)
+{
+    /* TODO: update Window Covering cluster attributes once dynamic endpoint is registered. */
+}
+
+bool matter_commission_open(uint32_t timeout_s)
+{
+    if (timeout_s == 0 || timeout_s > 900)
+        timeout_s = 900;
+
+    CHIP_ERROR err =
+        chip::Server::GetInstance().GetCommissioningWindowManager().OpenBasicCommissioningWindow(
+            chip::System::Clock::Seconds32(static_cast<uint32_t>(timeout_s)));
+    if (err != CHIP_NO_ERROR)
+    {
+        LogError(("[matter] commission_open failed: %" CHIP_ERROR_FORMAT, err.Format()));
+        return false;
+    }
+    LogInfo(("[matter] commissioning window opened for %u s", (unsigned) timeout_s));
+    return true;
+}
+
+void matter_wipe_fabrics(void)
+{
+    chip::Server::GetInstance().ScheduleFactoryReset();
+    LogInfo(("[matter] factory reset scheduled"));
+}
+
+#else /* USE_QEMU */
+
+#include "matter_app.h"
+#include "matter_task.h"
+
+extern "C" {
+#include "app_logging.h"
+#include "controller.h"
+}
+
+void matter_app_start(void)
+{
+    LogInfo(("[matter] CHIP stack disabled in QEMU build"));
+}
+
+void matter_init(void)  { matter_app_start(); }
+void matter_schedule_network_up(void) {}
+void matter_report_door_state(const door_state_msg_t * /*msg*/) {}
+bool matter_commission_open(uint32_t /*timeout_s*/) { return false; }
+void matter_wipe_fabrics(void) {}
+
+#endif /* USE_QEMU */
