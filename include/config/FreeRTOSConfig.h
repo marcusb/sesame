@@ -136,6 +136,7 @@ unsigned long portWMSDK_GET_RUN_TIME_COUNTER_VALUE(void);
 #define INCLUDE_xTaskAbortDelay                 0
 #define INCLUDE_xTaskGetHandle                  0
 #define INCLUDE_xTaskResumeFromISR              1
+#define INCLUDE_xSemaphoreGetMutexHolder        1
 
 #ifdef __NVIC_PRIO_BITS
 /* __BVIC_PRIO_BITS will be specified when CMSIS is being used. */
@@ -171,11 +172,17 @@ standard names. */
 #ifdef ENABLE_LOGGING
 /* The function that implements FreeRTOS printf style output, and the macro
  * that maps the configPRINTF() macros to that function. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern void vLoggingPrintf( const char * pcFormat, ... );
+extern void vLoggingPrint( const char * pcMessage );
+#ifdef __cplusplus
+}
+#endif
 #define configPRINTF( X )    vLoggingPrintf X
 
 /* Non-format version thread-safe print */
-extern void vLoggingPrint( const char * pcMessage );
 #define configPRINT( X )     vLoggingPrint( X )
 #else
 #define configPRINTF( X )

@@ -220,7 +220,9 @@ add_library(chip_inet STATIC
     "${CHIP_ROOT}/src/inet/InetArgParser.cpp"
     "${CHIP_ROOT}/src/inet/InetError.cpp"
     "${CHIP_ROOT}/src/inet/InetInterface.cpp"
-    "${CHIP_ROOT}/src/inet/InetInterfaceImplDefault.cpp"
+    # InetInterfaceImplDefault.cpp excluded — calls POSIX if_nameindex(); replaced
+    # by inet_interface_impl.cpp below which uses our single FreeRTOS+TCP interface.
+    "${CMAKE_CURRENT_LIST_DIR}/src/matter/inet_interface_impl.cpp"
     "${CHIP_ROOT}/src/inet/IPAddress.cpp"
     "${CHIP_ROOT}/src/inet/IPAddress-StringFuncts.cpp"
     "${CHIP_ROOT}/src/inet/IPPacketInfo.cpp"
@@ -336,6 +338,34 @@ if(NOT USE_QEMU)
         mw320_sdk
         freertos_kernel
     )
+    target_compile_definitions(chip_platform_mw320 PRIVATE MW320_LOG_ENABLED=1)
+else()
+    # QEMU platform: same mw320 source files but without the hardware SDK.
+    # OTA files (mw320_ota.cpp, OTAImageProcessorImpl.cpp) are excluded because
+    # they need mflash_drv.h / partition.h which have no QEMU equivalents.
+    # All other mw320 platform files compile against our mw320_stubs headers.
+    add_library(chip_platform_qemu STATIC
+        "${CHIP_ROOT}/src/platform/nxp/mw320/Logging.cpp"
+        "${CHIP_ROOT}/src/platform/nxp/mw320/MW320Config.cpp"
+        "${CHIP_ROOT}/src/platform/nxp/mw320/ConfigurationManagerImpl.cpp"
+        "${CHIP_ROOT}/src/platform/nxp/mw320/KeyValueStoreManagerImpl.cpp"
+        "${CHIP_ROOT}/src/platform/nxp/mw320/PlatformManagerImpl.cpp"
+        "${CHIP_ROOT}/src/platform/nxp/mw320/DeviceInfoProviderImpl.cpp"
+        "${CHIP_ROOT}/src/platform/nxp/mw320/FactoryDataProvider.cpp"
+        "${CHIP_ROOT}/src/platform/nxp/mw320/NetworkCommissioningWiFiDriver.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/matter/ConnectivityManagerImpl_sesame.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/matter/DiagnosticDataProviderImpl_sesame.cpp"
+        # RAM-backed KVS for QEMU (replaces the stub network_flash_storage.h functions).
+        "${CMAKE_CURRENT_LIST_DIR}/src/matter/kvs_ram.c"
+    )
+    target_link_libraries(chip_platform_qemu
+        PUBLIC
+        globals
+        chip_includes
+        chip_compile_flags
+        freertos_kernel
+    )
+    target_compile_definitions(chip_platform_qemu PRIVATE MW320_LOG_ENABLED=1 "PRINTF=printf")
 endif()
 
 # ----------------------------------------------------------------------------
@@ -678,6 +708,7 @@ target_link_libraries(chip_minmdns
 target_compile_definitions(chip_minmdns
     PUBLIC
     CHIP_DNSSD_DEFAULT_MINIMAL=1
+    CHIP_MINMDNS_DEFAULT_POLICY=1
 )
 
 # chip_clusters: mandatory server cluster implementations.
@@ -767,6 +798,7 @@ else()
         chip_messaging
         chip_credentials
         chip_platform_generic
+        chip_platform_qemu
         chip_system
         chip_inet
         chip_crypto

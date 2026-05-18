@@ -17,7 +17,22 @@ void Default_Handler(void) {
     while (1);
 }
 void NMI_Handler(void) {
-    printf("NMI\n");
+    uint32_t exc_return;
+    __asm volatile("mov %0, lr" : "=r"(exc_return));
+    printf("NMI (EXC_RETURN=0x%08lx)\n", (unsigned long)exc_return);
+    /* Choose the right stack: if bit 2 of EXC_RETURN is set we interrupted
+     * a task using PSP; otherwise we interrupted an ISR using MSP. */
+    uint32_t* sp;
+    if (exc_return & 0x4)
+        __asm volatile("mrs %0, psp" : "=r"(sp));
+    else
+        __asm volatile("mrs %0, msp" : "=r"(sp));
+    printf("  r0=0x%08lx r1=0x%08lx r2=0x%08lx r3=0x%08lx\n",
+           (unsigned long)sp[0], (unsigned long)sp[1], (unsigned long)sp[2],
+           (unsigned long)sp[3]);
+    printf("  r12=0x%08lx lr=0x%08lx pc=0x%08lx psr=0x%08lx\n",
+           (unsigned long)sp[4], (unsigned long)sp[5], (unsigned long)sp[6],
+           (unsigned long)sp[7]);
     while (1);
 }
 void MemManage_Handler(void) {

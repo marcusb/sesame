@@ -68,6 +68,10 @@ int register_log_backend(log_backend_func f);
  * @param[in] ... The variadic list of parameters for the format
  * specifiers in the @p pcFormat.
  */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void vLoggingPrintf(const char *pcFormat, ...);
 
 /**
@@ -133,3 +137,7 @@ void vLoggingPrintfInfo(const char *pcFormat, ...);
  * specifiers in the @p pcFormat.
  */
 void vLoggingPrintfDebug(const char *pcFormat, ...);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif

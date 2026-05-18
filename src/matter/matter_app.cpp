@@ -5,8 +5,8 @@
  * matter_app_start() after Wi-Fi is up (network_manager has reached
  * kNetworkReady state).
  *
- * QEMU builds skip the CHIP stack entirely (no platform layer available).
- * The public API functions are no-ops so the rest of the firmware links.
+ * QEMU builds run the same CHIP stack but with chip_platform_qemu providing
+ * the platform layer (no OTA flash drivers, stub WiFi).
  */
 
 /* picolibc bare-metal doesn't provide a FILE* object for stderr.  Define a
@@ -18,8 +18,6 @@ extern "C" {
 #undef stderr
 extern __attribute__((weak)) FILE * const stderr = nullptr;
 }
-
-#ifndef USE_QEMU
 
 #include "matter_app.h"
 #include "matter_task.h"
@@ -91,7 +89,7 @@ void matter_app_start(void)
     if (s_started)
         return;
     s_started = true;
-    xTaskCreate(matter_app_task, "CHIP", 6 * 1024 / sizeof(StackType_t),
+    xTaskCreate(matter_app_task, "CHIP", 24 * 1024 / sizeof(StackType_t),
                 nullptr, tskIDLE_PRIORITY + 2, nullptr);
 }
 
@@ -135,26 +133,3 @@ void matter_wipe_fabrics(void)
     chip::Server::GetInstance().ScheduleFactoryReset();
     LogInfo(("[matter] factory reset scheduled"));
 }
-
-#else /* USE_QEMU */
-
-#include "matter_app.h"
-#include "matter_task.h"
-
-extern "C" {
-#include "app_logging.h"
-#include "controller.h"
-}
-
-void matter_app_start(void)
-{
-    LogInfo(("[matter] CHIP stack disabled in QEMU build"));
-}
-
-void matter_init(void)  { matter_app_start(); }
-void matter_schedule_network_up(void) {}
-void matter_report_door_state(const door_state_msg_t * /*msg*/) {}
-bool matter_commission_open(uint32_t /*timeout_s*/) { return false; }
-void matter_wipe_fabrics(void) {}
-
-#endif /* USE_QEMU */

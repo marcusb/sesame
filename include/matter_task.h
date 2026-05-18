@@ -3,6 +3,10 @@
 
 #include "controller.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * Initialize Matter task and related subsystems.
  */
@@ -37,5 +41,9 @@ bool matter_commission_open(uint32_t timeout_s);
  * the caller should arrange a restart.
  */
 void matter_wipe_fabrics(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* MATTER_TASK_H */

@@ -178,11 +178,14 @@ static void from_freeaddr(const struct freertos_sockaddr* fa,
 }
 
 int socket(int domain, int type, int protocol) {
+    (void)protocol;
     BaseType_t ftype =
         (type == SOCK_STREAM) ? FREERTOS_SOCK_STREAM : FREERTOS_SOCK_DGRAM;
     BaseType_t fdom =
         (domain == AF_INET6) ? FREERTOS_AF_INET6 : FREERTOS_AF_INET4;
-    Socket_t sock = FreeRTOS_socket(fdom, ftype, FREERTOS_IPPROTO_UDP);
+    BaseType_t fprot =
+        (type == SOCK_STREAM) ? FREERTOS_IPPROTO_TCP : FREERTOS_IPPROTO_UDP;
+    Socket_t sock = FreeRTOS_socket(fdom, ftype, fprot);
     if (sock == FREERTOS_INVALID_SOCKET) {
         errno = ENOMEM;
         return -1;
