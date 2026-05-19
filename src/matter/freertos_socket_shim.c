@@ -13,11 +13,15 @@
  */
 
 #include <errno.h>
+#include <net/if.h>
+#include <netinet/in.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/_timeval.h>
+#include <sys/socket.h>
 
 #include "FreeRTOS.h"
 #include "queue.h"
@@ -40,46 +44,19 @@ uint32_t ntohl(uint32_t x) { return _BSWAP32(x); }
 uint16_t htons(uint16_t x) { return _BSWAP16(x); }
 uint16_t ntohs(uint16_t x) { return _BSWAP16(x); }
 
-/* ---- inet_pton / inet_ntop ------------------------------------------------
- */
-
-#include <netinet/in.h>
-#include <sys/socket.h>
-
 int inet_pton(int af, const char* src, void* dst) {
-    if (af == AF_INET) {
-        uint32_t addr = FreeRTOS_inet_addr(src);
-        if (addr == 0xFFFFFFFFu) return 0;
-        memcpy(dst, &addr, 4);
-        return 1;
-    }
-    /* IPv6 not supported yet */
-    return -1;
+    BaseType_t freertos_af =
+        (af == AF_INET6) ? FREERTOS_AF_INET6 : FREERTOS_AF_INET;
+    return FreeRTOS_inet_pton(freertos_af, src, dst) == pdPASS ? 1 : 0;
 }
 
 const char* inet_ntop(int af, const void* src, char* dst, socklen_t size) {
-    if (af == AF_INET) {
-        uint32_t addr;
-        memcpy(&addr, src, 4);
-        FreeRTOS_inet_ntoa(addr, dst);
-        return dst;
-    }
-    /* IPv6: best-effort hex print */
-    if (af == AF_INET6 && size >= 40) {
-        const uint8_t* b = (const uint8_t*)src;
-        snprintf(dst, size,
-                 "%02x%02x:%02x%02x:%02x%02x:%02x%02x:"
-                 "%02x%02x:%02x%02x:%02x%02x:%02x%02x",
-                 b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9],
-                 b[10], b[11], b[12], b[13], b[14], b[15]);
-        return dst;
-    }
-    return NULL;
+    BaseType_t freertos_af =
+        (af == AF_INET6) ? FREERTOS_AF_INET6 : FREERTOS_AF_INET;
+    return FreeRTOS_inet_ntop(freertos_af, src, dst, size);
 }
 
 /* ---- Interface enumeration ---------------------------------------------- */
-
-#include <net/if.h>
 
 int getifaddrs(struct ifaddrs** ifap) {
     static struct ifaddrs s_entry;

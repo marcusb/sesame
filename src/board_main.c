@@ -3,6 +3,7 @@
 #include "FreeRTOS_ND.h"
 #include "NetworkInterface.h"
 #include "app_logging.h"
+#include "libc_wrappers.h"
 #include "queue.h"
 #include "task.h"
 
@@ -193,7 +194,6 @@ void reboot() {
 }
 
 extern void main_task(void* param);
-extern void setup_heap();
 
 extern unsigned __HeapBase, __HeapLimit, __HeapBase_sram0, __HeapLimit_sram0;
 void setup_heap() {
@@ -221,7 +221,6 @@ int main(void) {
     mbedtls_hardware_init_hash(hash, len);
     srand(((uint32_t*)hash)[0]);
 
-    setup_heap();
     if (xTaskCreate(main_task, "main", configMINIMAL_STACK_SIZE + 896, NULL,
                     tskIDLE_PRIORITY + 3, NULL) != pdPASS) {
         PRINTF("main task creation failed\r\n");

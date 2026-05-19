@@ -7,6 +7,7 @@
 #include "FreeRTOS_ND.h"
 #include "NetworkInterface.h"
 #include "app_logging.h"
+#include "libc_wrappers.h"
 #include "queue.h"
 #include "task.h"
 
@@ -102,7 +103,6 @@ void reboot() {
 }
 
 extern void main_task(void* param);
-extern void setup_heap();
 
 extern unsigned __HeapBase, __HeapLimit;
 void setup_heap() {
@@ -123,7 +123,6 @@ extern void mbedtls_hardware_init_hash(uint8_t* entropy, size_t len);
 int main(void) {
     // In QEMU, stdout goes to host via semihosting automatically with
     // --oslib=semihost
-    setup_heap();
 
     /* QEMU has no hardware entropy source. Seed the mbedtls entropy pool
      * with a deterministic placeholder so internal_entropy_poll() answers

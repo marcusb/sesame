@@ -81,7 +81,12 @@ __attribute__((__used__)) void HardFault_IRQHandler_C(
         (unsigned int)fault_frame->IP, (unsigned int)fault_frame->LR,
         (unsigned int)fault_frame->PC, (unsigned int)fault_frame->PSR);
 
-    PRINTF("Task name: %s\r\n", pcTaskGetName(NULL));
+    const char* tname = "???";
+    TaskHandle_t h = xTaskGetCurrentTaskHandle();
+    if (h != NULL) {
+        tname = pcTaskGetName(h);
+    }
+    PRINTF("Task name: %s\r\n", tname);
 
 #ifndef QEMU
     uint32_t hfsr = SCB->HFSR;

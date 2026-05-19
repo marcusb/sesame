@@ -1,8 +1,11 @@
+#include "libc_wrappers.h"
+
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/_initfini.h>
 
 #include "FreeRTOS.h"
 #include "debug_console.h"
@@ -62,6 +65,19 @@ void* __wrap_calloc(size_t nmemb, size_t size) {
 
 void* __wrap_realloc(void* ptr, size_t size) {
     return pvPortReAlloc(ptr, size);
+}
+
+/* Override picolibc's __libc_init_array to init FreeRTOS heap before
+ * static constructors (libstdc++ exception pool) call malloc. With
+ * --allow-multiple-definition, our definition (linked earlier) wins. */
+void __libc_init_array(void) {
+    setup_heap();
+    /* Inline picolibc's __bothinit_array iteration so we don't need to
+     * call the picolibc version (which would be a duplicate strong symbol). */
+    for (void (*const* p)() = __bothinit_array_start; p < __bothinit_array_end;
+         ++p) {
+        (*p)();
+    }
 }
 
 #if SDK_DEBUGCONSOLE || defined(QEMU)
