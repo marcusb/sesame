@@ -10,11 +10,9 @@ target_include_directories(${matter_target} PRIVATE
     "${CMAKE_SOURCE_DIR}/src/matter")
 
 # Same circular-dep-tolerant link group the full sesame-qemu.axf uses; matter
-# initializers in sesame_matter must be force-linked or Berry never sees them.
+# initializers in sesame_matter must be force-linked.
 target_link_libraries(${matter_target} PRIVATE
     "LINKER:--start-group"
-    berry
-    berry_matter
     mbedcrypto
     qemu_mbedtls_port
     "LINKER:--whole-archive"

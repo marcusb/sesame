@@ -89,7 +89,6 @@ target_compile_definitions(globals
     _GNU_SOURCE
     __ASSERT_VERBOSE
     __FPU_PRESENT
-    TASMOTA=1
     $<$<BOOL:${USE_QEMU}>:USE_QEMU>)
 
 # -------------------------------------------------------------------------------------------------
@@ -401,20 +400,8 @@ target_link_libraries(board
 # Application
 # -------------------------------------------------------------------------------------------------
 
-# axf2firmware is consumed by the post-build firmware-image step; berry_host
-# is still required by third_party/berry_matter's solidify pipeline until
-# Berry is fully removed. Both are built in build-native/ and exported via
-# {target}-config.cmake.
 find_package(axf2firmware REQUIRED)
 
-# berry_host lives in build-native/ alongside axf2firmware.
-if(NOT berry_host_DIR AND axf2firmware_DIR)
-    set(berry_host_DIR "${axf2firmware_DIR}")
-endif()
-find_package(berry_host REQUIRED)
-
-# ZAP code generation must run before find_package(berry_host) so that
-# configure-time generation completes before berry errors halt the run.
 add_subdirectory(third_party)
 include(chip.cmake)
 add_subdirectory(src/matter)
@@ -567,7 +554,6 @@ if(NOT USE_QEMU)
             "${CMAKE_COMMAND}" -G Ninja -DUSE_QEMU=ON -DUSE_BACKTRACE=ON -DCMAKE_BUILD_TYPE=Debug
                 -DCMAKE_TOOLCHAIN_FILE=${CMAKE_SOURCE_DIR}/toolchain.cmake
                 -Daxf2firmware_DIR=${axf2firmware_DIR}
-                -Dberry_host_DIR=${axf2firmware_DIR}
                 -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/qemu-build"
             COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/qemu-build"
         INSTALL_COMMAND ""
@@ -579,11 +565,6 @@ if(NOT USE_QEMU)
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/sesame-qemu.axf" "${CMAKE_BINARY_DIR}/sesame-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/sesame_ram-qemu.axf" "${CMAKE_BINARY_DIR}/sesame_ram-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/sesame_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/sesame_tests-qemu.axf"
-        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_crypto_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_crypto_tests-qemu.axf"
-        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_mdns_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_mdns_tests-qemu.axf"
-        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_mdns_responder_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_mdns_responder_tests-qemu.axf"
-        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_sesame_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_sesame_tests-qemu.axf"
-        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/matter_tasmota_tests-qemu.axf" "${CMAKE_BINARY_DIR}/test/matter_tasmota_tests-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/test/integration/httpd"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/qemu-build/test/integration/httpd/httpd_it-qemu.axf" "${CMAKE_BINARY_DIR}/test/integration/httpd/httpd_it-qemu.axf"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/test/integration/matter"
@@ -606,11 +587,6 @@ if(NOT USE_QEMU)
     endmacro()
 
     add_qemu_unit_test(sesame_tests sesame_tests-qemu.axf)
-    add_qemu_unit_test(matter_crypto_tests matter_crypto_tests-qemu.axf)
-    add_qemu_unit_test(matter_mdns_tests matter_mdns_tests-qemu.axf)
-    add_qemu_unit_test(matter_mdns_responder_tests matter_mdns_responder_tests-qemu.axf)
-    add_qemu_unit_test(matter_sesame_tests matter_sesame_tests-qemu.axf)
-    add_qemu_unit_test(matter_tasmota_tests matter_tasmota_tests-qemu.axf)
 
     add_test(NAME integration_tests
         COMMAND uv run --project "${CMAKE_SOURCE_DIR}/test/integration" pytest -xvs "${CMAKE_SOURCE_DIR}/test/integration"
@@ -646,12 +622,5 @@ target_link_libraries(axf2firmware
     PRIVATE)
 export(TARGETS axf2firmware FILE
     "${CMAKE_BINARY_DIR}/axf2firmware-config.cmake")
-
-# berry_host: standalone Berry interpreter used by the solidify pipeline.
-# Built here in the native tree (mirrors axf2firmware); the cross-compile
-# build picks it up via find_package(berry_host).
-add_subdirectory(third_party/berry)
-export(TARGETS berry_host FILE
-    "${CMAKE_BINARY_DIR}/berry_host-config.cmake")
 
 endif()

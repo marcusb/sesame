@@ -1,5 +1,5 @@
 /*
- * mDNS / DNS-SD logical state store backing the Matter stack and Berry shim.
+ * mDNS / DNS-SD logical state store backing the Matter stack.
  */
 
 #include "matter_mdns.h"

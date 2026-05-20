@@ -127,7 +127,7 @@ int main(void) {
     /* QEMU has no hardware entropy source. Seed the mbedtls entropy pool
      * with a deterministic placeholder so internal_entropy_poll() answers
      * with non-zero data — without this, ctr_drbg_random() returns
-     * NO_SOURCE, crypto.random() yields nil to Berry, and Matter's
+     * NO_SOURCE, mbedtls_ctr_drbg will fail, and Matter's
      * generate_random_passcode() spins forever. The PRNG is still seeded
      * in CTR_DRBG; this just gates startup. */
     static uint8_t qemu_seed_entropy[32] = {

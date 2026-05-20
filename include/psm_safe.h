@@ -11,7 +11,7 @@
  * silently fail when the QSPI controller stalls.
  *
  * Both the variable *name* and the *value* are written to flash by PSM, so
- * either being a constant in .rodata (typical for Berry-interned strings or
+ * either being a constant in .rodata (typical for protobuf-interned strings or
  * inline literals) is enough to crash the device.
  *
  * This wrapper detects XIP-resident inputs and bounces them through a

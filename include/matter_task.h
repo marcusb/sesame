@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /**
- * Initialize Matter task and related subsystems.
+ * Initialize the CHIP Matter stack (creates the CHIP event-loop task).
  */
 void matter_init(void);
 
@@ -30,8 +30,7 @@ void matter_report_door_state(const door_state_msg_t* msg);
  * even when commissioning is already open — stops the existing window first
  * to ensure SPAKE2+ verifier state is fresh.
  *
- * Returns true on success, false if the Matter VM isn't up yet or the Berry
- * call errored.
+ * Returns true on success, false if the Matter stack isn't up yet.
  */
 bool matter_commission_open(uint32_t timeout_s);
 

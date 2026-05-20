@@ -191,7 +191,7 @@ int main(void) {
 
     /* QEMU has no hardware entropy; seed the mbedtls entropy pool with the
      * same deterministic placeholder qemu_main.c uses, otherwise
-     * ctr_drbg_random returns NO_SOURCE and Matter's Berry code spins
+     * ctr_drbg_random returns NO_SOURCE and Matter's init spins
      * generating a passcode. */
     static uint8_t qemu_seed_entropy[32] = {
         0xa1, 0x5e, 0xc0, 0xde, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x11, 0x22,

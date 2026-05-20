@@ -1,7 +1,7 @@
 /*
  * matter_app.cpp — CHIP stack entry point and public API for Sesame.
  *
- * Replaces matter_task.c (Berry-based).  Called from board_main.c via
+ * Called from board_main.c via
  * matter_app_start() after Wi-Fi is up (network_manager has reached
  * kNetworkReady state).
  *

@@ -55,111 +55,12 @@ target_include_directories(test_stubs
     "${mw320_sdk_dir}/components/boot2_utils")
 target_link_libraries(test_stubs PRIVATE globals mw320_sdk)
 
-# ---------------------------------------------------------------------------
-# Specialized Matter Shim Tests
-# ---------------------------------------------------------------------------
-
-# Object library ensures all shared test code is available to linkers without dropping symbols
-add_library(matter_test_support OBJECT
-    matter/matter_test_utils.c
-    "${CMAKE_SOURCE_DIR}/src/libc_wrappers.c"
-    "${CMAKE_SOURCE_DIR}/src/util.c"
-    "${CMAKE_SOURCE_DIR}/src/idle_task.c"
-    "${CMAKE_SOURCE_DIR}/src/time_util.c")
-
-if(USE_QEMU)
-    target_sources(matter_test_support PRIVATE 
-        stubs/stub_fsl_uart.c
-        "${CMAKE_SOURCE_DIR}/src/hardfault.c"
-        "${CMAKE_SOURCE_DIR}/src/hardfault_irq.S"
-        "${CMAKE_SOURCE_DIR}/src/qemu/qemu_stubs.c"
-        "${CMAKE_SOURCE_DIR}/src/qemu/qemu_vectors.c")
-else()
-    target_sources(matter_test_support PRIVATE
-        "${CMAKE_SOURCE_DIR}/src/pin_mux.c")
-endif()
-
-target_include_directories(matter_test_support PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/matter"
-    "${CMAKE_SOURCE_DIR}/third_party/berry/src")
-
-target_link_libraries(matter_test_support PUBLIC
-    globals unity logging proto
-    freertos_kernel freertos_plus_tcp test_infra test_stubs)
-
-if(NOT USE_QEMU)
-    target_link_libraries(matter_test_support PUBLIC
-        board mw320_utility_assert
-        mw320_mbedtls_port mw320_drivers_aes mw320_drivers_crc)
-endif()
-
-if(USE_BACKTRACE)
-    target_link_libraries(matter_test_support PUBLIC backtrace)
-endif()
-
-if(USE_QEMU)
-    target_link_libraries(matter_test_support PUBLIC mw320_device_system)
-else()
-    target_link_libraries(matter_test_support PUBLIC mw320_device_startup)
-endif()
-
 # Common ARM link options for tests
 add_compile_definitions(SDK_DEBUGCONSOLE=0)
 
 set(ARM_TEST_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/board/88MW320_xx_xxxx_ram.ld")
 if(USE_QEMU)
     set(ARM_TEST_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/board/qemu.ld")
-endif()
-
-macro(add_matter_test_binary name source)
-    set(target_name "${name}${target_suffix}")
-    add_executable(${target_name} "matter/${source}" $<TARGET_OBJECTS:matter_test_support>)
-    target_link_libraries(${target_name} PRIVATE globals matter_test_support)
-
-    target_link_options(${target_name} PRIVATE
-        ${ARM_TEST_LINK_OPTIONS}
-        "-T${ARM_TEST_LINKER_SCRIPT}"
-        "-Wl,-Map,${target_name}.map")
-    if(USE_QEMU)
-        target_link_options(${target_name} PRIVATE
-            "-Wl,--wrap,UART_TransferReceiveNonBlocking"
-            "-Wl,--wrap,UART_TransferAbortReceive")
-        target_link_libraries(${target_name} PRIVATE
-            "LINKER:--start-group"
-            mbedcrypto
-            qemu_mbedtls_port
-            test_stubs
-            "LINKER:--whole-archive"
-            sesame_matter
-            "LINKER:--no-whole-archive"
-            berry_matter
-            berry
-            freertos_plus_tcp
-            "LINKER:--end-group")
-    endif()
-endmacro()
-
-# matter_crypto_tests still overflows the on-target ram.ld linker region
-# (88MW320_xx_xxxx_ram.ld) once the full crypto shim is linked in,
-# so only build these for QEMU.
-# if(USE_QEMU)
-#     add_matter_test_binary(matter_crypto_tests test_matter_crypto.c)
-#     add_matter_test_binary(matter_mdns_tests test_matter_mdns.c)
-#     add_matter_test_binary(matter_mdns_responder_tests test_matter_mdns_responder.c)
-#     target_link_options(matter_mdns_responder_tests${target_suffix} PRIVATE
-#         "-Wl,--wrap,vReturnEthernetFrame")
-#     add_matter_test_binary(matter_sesame_tests test_matter_sesame.c)
-#     add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c)
-# endif()
-
-if(USE_QEMU)
-    add_matter_test_binary(matter_crypto_tests test_matter_crypto.c)
-    # add_matter_test_binary(matter_mdns_tests test_matter_mdns.c)
-    # add_matter_test_binary(matter_mdns_responder_tests test_matter_mdns_responder.c)
-    # target_link_options(matter_mdns_responder_tests${target_suffix} PRIVATE
-    #     "-Wl,--wrap,vReturnEthernetFrame")
-    add_matter_test_binary(matter_sesame_tests test_matter_sesame.c)
-    add_matter_test_binary(matter_tasmota_tests test_matter_tasmota.c)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -218,7 +119,16 @@ if(NOT USE_QEMU)
 endif()
 
 if(USE_QEMU)
-    target_link_libraries(${test_target} PRIVATE freertos_plus_tcp)
+    target_link_libraries(${test_target} PRIVATE
+        "LINKER:--start-group"
+        mbedcrypto
+        qemu_mbedtls_port
+        test_stubs
+        "LINKER:--whole-archive"
+        sesame_matter
+        "LINKER:--no-whole-archive"
+        freertos_plus_tcp
+        "LINKER:--end-group")
 endif()
 
 if(USE_BACKTRACE)
@@ -236,18 +146,6 @@ if(USE_QEMU)
         PRIVATE
         "-Wl,--wrap,UART_TransferReceiveNonBlocking"
         "-Wl,--wrap,UART_TransferAbortReceive")
-    target_link_libraries(${test_target} PRIVATE
-        "LINKER:--start-group"
-        mbedcrypto
-        qemu_mbedtls_port
-        test_stubs
-        "LINKER:--whole-archive"
-        sesame_matter
-        "LINKER:--no-whole-archive"
-        berry_matter
-        berry
-        freertos_plus_tcp
-        "LINKER:--end-group")
 endif()
 
 if(USE_QEMU)
