@@ -34,3 +34,4 @@ CWSettingsWindows.stg
 .claude
 
 *.pyc
+.zap/

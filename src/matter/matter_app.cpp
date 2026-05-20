@@ -22,6 +22,8 @@ extern __attribute__((weak)) FILE * const stderr = nullptr;
 #include "matter_app.h"
 #include "matter_task.h"
 
+#include <app/clusters/window-covering-server/window-covering-server.h>
+#include <app-common/zap-generated/attributes/Accessors.h>
 #include <app/server/CommissioningWindowManager.h>
 #include <app/server/Dnssd.h>
 #include <app/server/Server.h>
@@ -40,6 +42,41 @@ extern __attribute__((weak)) FILE * const stderr = nullptr;
 using namespace chip;
 using namespace chip::app;
 using namespace chip::DeviceLayer;
+
+static constexpr EndpointId kWindowCoveringEndpoint = 1;
+
+class SesameWindowCoveringDelegate : public Clusters::WindowCovering::Delegate
+{
+public:
+    CHIP_ERROR HandleMovement(Clusters::WindowCovering::WindowCoveringType type) override
+    {
+        if (type != Clusters::WindowCovering::WindowCoveringType::Lift)
+            return CHIP_NO_ERROR;
+
+        Clusters::WindowCovering::NPercent100ths target;
+        Clusters::WindowCovering::Attributes::TargetPositionLiftPercent100ths::
+            Get(mEndpoint, target);
+
+        ctrl_msg_t msg;
+        msg.type = CTRL_MSG_DOOR_CONTROL;
+        if (!target.IsNull() && target.Value() < 5000)
+            msg.msg.door_control.command = DOOR_CMD_OPEN;
+        else
+            msg.msg.door_control.command = DOOR_CMD_CLOSE;
+
+        xQueueSend(ctrl_queue, &msg, pdMS_TO_TICKS(500));
+        return CHIP_NO_ERROR;
+    }
+
+    CHIP_ERROR HandleStopMotion() override
+    {
+        ctrl_msg_t msg = {CTRL_MSG_DOOR_CONTROL, {DOOR_CMD_STOP}};
+        xQueueSend(ctrl_queue, &msg, pdMS_TO_TICKS(500));
+        return CHIP_NO_ERROR;
+    }
+};
+
+static SesameWindowCoveringDelegate g_window_covering_delegate;
 
 static bool s_started = false;
 
@@ -81,6 +118,8 @@ static void matter_app_task(void * /*param*/)
 
     PrintOnboardingCodes(chip::RendezvousInformationFlag::kOnNetwork);
 
+    Clusters::WindowCovering::SetDefaultDelegate(kWindowCoveringEndpoint, &g_window_covering_delegate);
+
     PlatformMgr().RunEventLoop();
 }
 
@@ -106,9 +145,45 @@ void matter_schedule_network_up(void)
         [](intptr_t) { chip::app::DnssdServer::Instance().StartServer(); }, 0);
 }
 
-void matter_report_door_state(const door_state_msg_t * /*msg*/)
+void matter_report_door_state(const door_state_msg_t * msg)
 {
-    /* TODO: update Window Covering cluster attributes once dynamic endpoint is registered. */
+    if (!msg || !s_started)
+        return;
+
+    auto to_percent100ths = [](door_open_state_t s) -> Clusters::WindowCovering::NPercent100ths {
+        Clusters::WindowCovering::NPercent100ths val;
+        switch (s)
+        {
+        case DCM_DOOR_STATE_CLOSED:
+            val.SetNonNull(10000);
+            break;
+        case DCM_DOOR_STATE_OPEN:
+            val.SetNonNull(0);
+            break;
+        default:
+            val.SetNull();
+            break;
+        }
+        return val;
+    };
+
+    auto to_op_state = [](door_direction_t d) -> Clusters::WindowCovering::OperationalState {
+        switch (d)
+        {
+        case DCM_DOOR_DIR_UP:
+            return Clusters::WindowCovering::OperationalState::MovingUpOrOpen;
+        case DCM_DOOR_DIR_DOWN:
+            return Clusters::WindowCovering::OperationalState::MovingDownOrClose;
+        default:
+            return Clusters::WindowCovering::OperationalState::Stall;
+        }
+    };
+
+    Clusters::WindowCovering::LiftPositionSet(kWindowCoveringEndpoint, to_percent100ths(msg->state));
+    Clusters::WindowCovering::OperationalStateSet(kWindowCoveringEndpoint,
+        chip::BitMask<Clusters::WindowCovering::OperationalStatus>(
+            Clusters::WindowCovering::OperationalStatus::kLift),
+        to_op_state(msg->direction));
 }
 
 bool matter_commission_open(uint32_t timeout_s)

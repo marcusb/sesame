@@ -13,6 +13,10 @@
 
 #include <FreeRTOSConfig.h>
 
+#ifndef USE_QEMU
+#include <fsl_debug_console.h>
+#endif
+
 #ifdef max
 #undef max
 #endif

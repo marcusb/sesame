@@ -406,8 +406,15 @@ target_link_libraries(board
 # Berry is fully removed. Both are built in build-native/ and exported via
 # {target}-config.cmake.
 find_package(axf2firmware REQUIRED)
+
+# berry_host lives in build-native/ alongside axf2firmware.
+if(NOT berry_host_DIR AND axf2firmware_DIR)
+    set(berry_host_DIR "${axf2firmware_DIR}")
+endif()
 find_package(berry_host REQUIRED)
 
+# ZAP code generation must run before find_package(berry_host) so that
+# configure-time generation completes before berry errors halt the run.
 add_subdirectory(third_party)
 include(chip.cmake)
 add_subdirectory(src/matter)
@@ -560,7 +567,7 @@ if(NOT USE_QEMU)
             "${CMAKE_COMMAND}" -G Ninja -DUSE_QEMU=ON -DUSE_BACKTRACE=ON -DCMAKE_BUILD_TYPE=Debug
                 -DCMAKE_TOOLCHAIN_FILE=${CMAKE_SOURCE_DIR}/toolchain.cmake
                 -Daxf2firmware_DIR=${axf2firmware_DIR}
-                -Dberry_host_DIR=${CMAKE_BINARY_DIR}
+                -Dberry_host_DIR=${axf2firmware_DIR}
                 -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/qemu-build"
             COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/qemu-build"
         INSTALL_COMMAND ""
