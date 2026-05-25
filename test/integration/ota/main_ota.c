@@ -28,7 +28,6 @@ static void on_cmd(const char* line) {
 }
 
 int main(void) {
-    setup_heap();
     ota_queue = xQueueCreate(4, sizeof(ota_msg_t));
     if (!ota_queue) {
         return 1;

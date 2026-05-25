@@ -48,7 +48,6 @@ static void on_cmd(const char* line) {
 }
 
 int main(void) {
-    setup_heap();
     harness_init();
     harness_on_cmd(on_cmd);
     harness_run();

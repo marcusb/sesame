@@ -138,8 +138,6 @@ static void on_cmd(const char* line) {
 }
 
 int main(void) {
-    setup_heap();
-
     /* QEMU has no hardware entropy; seed the mbedtls entropy pool with the
      * same deterministic placeholder qemu_main.c uses, otherwise
      * ctr_drbg_random returns NO_SOURCE and Matter's init spins

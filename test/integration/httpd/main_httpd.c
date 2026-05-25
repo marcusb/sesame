@@ -11,7 +11,6 @@ static void start_sut(void) {
 }
 
 int main(void) {
-    setup_heap();
     harness_init();
     harness_on_network_up(start_sut);
     harness_run();

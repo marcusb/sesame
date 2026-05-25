@@ -22,9 +22,6 @@
    before creating SUT tasks. */
 void harness_init(void);
 
-/* Setup the FreeRTOS heap. Must be called first in main(). */
-void setup_heap(void);
-
 /* Launch the FreeRTOS scheduler. Does not return. */
 void harness_run(void) __attribute__((noreturn));
 
