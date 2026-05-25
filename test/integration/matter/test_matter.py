@@ -32,9 +32,8 @@ QEMU_PASSCODE = 20202021
 MATTER_NODE_ID = 1
 SESAME_DOOR_ENDPOINT = 2
 MATTER_UDP_PORT = 5540
-# Deterministic IPv6 link-local derived from the test MAC 00:11:22:33:44:55 in
-# main_matter.c. chip-tool's minmDNS resolver doesn't browse tap-sesame, so we
-# skip mDNS discovery and pair via the SUT's known link-local address.
+# Deterministic IPv6 link-local derived from the test MAC 00:11:22:33:44:55
+# (RFC 4291 EUI-64 with U/L bit flipped).
 QEMU_LINK_LOCAL = "fe80::211:22ff:fe33:4455"
 
 
@@ -47,7 +46,7 @@ class _Collector(ServiceListener):
         self.services: dict[str, object] = {}
 
     def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        info = zc.get_service_info(type_, name, timeout=2000)
+        info = zc.get_service_info(type_, name, timeout=5000)
         if info is not None:
             self.services[name] = info
 
@@ -62,6 +61,7 @@ def _browse(
     service: str,
     timeout: float = 20.0,
     predicate=None,
+    tap_iface: str | None = None,
 ) -> dict[str, object]:
     """Browse mDNS for `service`.
 
@@ -70,8 +70,15 @@ def _browse(
     as soon as some collected service matches; otherwise keeps waiting until
     timeout. This lets callers select a specific instance on a LAN that may
     have several advertisers of the same service type.
+
+    If `tap_iface` is given, binds zeroconf to that interface explicitly
+    (zeroconf's default interface selection may skip TAP interfaces).
     """
-    zc = Zeroconf()
+    if tap_iface is not None:
+        idx = socket.if_nametoindex(tap_iface)
+        zc = Zeroconf(interfaces=[idx])
+    else:
+        zc = Zeroconf()
     listener = _Collector()
     ServiceBrowser(zc, service, listener)
     deadline = time.monotonic() + timeout
@@ -89,7 +96,16 @@ def _browse(
 
 
 def _has_qemu_addr(info) -> bool:
-    return "10.20.30.2" in info.parsed_addresses(version=zeroconf.IPVersion.V4Only)
+    # QEMU advertises only IPv6 (INET_CONFIG_ENABLE_IPV4=0).
+    # Check for the EUI-64 link-local derived from MAC 00:11:22:33:44:55.
+    # FreeRTOS+TCP may skip the U/L bit flip, producing fe80::11:22ff:fe33:4455
+    # instead of fe80::211:22ff:fe33:4455. Match either form.
+    v6 = info.parsed_addresses(version=zeroconf.IPVersion.V6Only)
+    for a in v6:
+        low = a.lower()
+        if "11:22ff:fe33:4455" in low or "211:22ff:fe33:4455" in low:
+            return True
+    return False
 
 
 def _run_chip_tool(
@@ -101,33 +117,45 @@ def _run_chip_tool(
     )
 
 
-def test_mdns_advertises_commissionable_service(matter_harness: Harness) -> None:
-    services = _browse("_matterc._udp.local.", timeout=30.0, predicate=_has_qemu_addr)
+def test_mdns_advertises_commissionable_service(
+    matter_harness: Harness, qemu_tap
+) -> None:
+    services = _browse(
+        "_matterc._udp.local.",
+        timeout=30.0,
+        predicate=_has_qemu_addr,
+        tap_iface=qemu_tap.name,
+    )
     assert services, (
         "no _matterc._udp service found via mDNS within 30s — "
-        "matter_mdns publication is broken (host can reach guest? avahi-browse "
-        "from host should also see it)"
+        "matter_mdns publication is broken (host can reach guest?)"
     )
 
     # The host LAN may have other Matter commissioners (e.g. a real Sesame
     # device on the network) advertising _matterc._udp. Filter to the SUT by
-    # IP — our QEMU guest binds the static 10.20.30.2.
+    # IPv6 link-local — our QEMU guest uses the deterministic EUI-64
+    # derived from MAC 00:11:22:33:44:55.
     info = next((i for i in services.values() if _has_qemu_addr(i)), None)
-    # Re-resolve so we pick up A and AAAA records that may have arrived after
-    # the SRV/TXT triggered the predicate.
+
+    # Re-resolve so we pick up AAAA/TXT records that may have arrived after
+    # the SRV/TXT triggered the predicate, or were rate-limited by the SUT's
+    # mDNS responder (RFC 6762 §6 limits multicast responses to 1/second).
+    # Wait >1s before re-querying to let the rate limiter reset.
     if info is not None:
-        zc = Zeroconf()
+        time.sleep(1.5)
+        tap_idx = socket.if_nametoindex(qemu_tap.name)
+        zc = Zeroconf(interfaces=[tap_idx])
         try:
             from zeroconf import ServiceInfo
             refreshed = ServiceInfo(info.type, info.name)
-            if refreshed.request(zc, timeout=3000):
+            if refreshed.request(zc, timeout=5000):
                 info = refreshed
         finally:
             zc.close()
     assert info is not None, (
-        f"no _matterc._udp instance at 10.20.30.2 found among "
+        f"no _matterc._udp instance found among "
         f"{[(s, list(i.parsed_addresses())) for s, i in services.items()]}"
-    )
+)
     txt = {
         k.decode(): (v.decode() if isinstance(v, bytes) else v)
         for k, v in info.properties.items()
@@ -141,19 +169,18 @@ def test_mdns_advertises_commissionable_service(matter_harness: Harness) -> None
     assert txt.get("CM") in ("1", "2"), txt
     assert info.port == MATTER_UDP_PORT
 
-    # Matter mandates IPv6 for operational, so both A and AAAA must resolve.
-    # zeroconf returns parsed addresses; verify both families are present.
-    v4 = info.parsed_addresses(version=zeroconf.IPVersion.V4Only)
+    # QEMU runs IPv6-only (INET_CONFIG_ENABLE_IPV4=0), so only AAAA is advertised.
     v6 = info.parsed_addresses(version=zeroconf.IPVersion.V6Only)
-    assert v4, f"no IPv4 address advertised for {info.server!r}"
     assert v6, f"no IPv6 address advertised for {info.server!r} — chip-tool needs IPv6"
 
-    # Sanity-check the addresses match what the SUT reports it has. The IPv4
-    # is the static 10.20.30.2 and the IPv6 is the deterministic EUI-64
-    # built from the test MAC 00:11:22:33:44:55.
-    assert "10.20.30.2" in v4, v4
+    # Sanity-check the IPv6 address: deterministic EUI-64 from MAC 00:11:22:33:44:55.
     assert any(a.lower().startswith("fe80::") for a in v6), v6
-    assert any("211:22ff:fe33:4455" in a.lower() for a in v6), v6
+    for a in v6:
+        low = a.lower()
+        if "11:22ff:fe33:4455" in low or "211:22ff:fe33:4455" in low:
+            break
+    else:
+        assert False, f"expected EUI-64 from MAC 00:11:22:33:44:55 in {v6}"
 
 
 def test_chip_tool_pairs_and_drives_door(

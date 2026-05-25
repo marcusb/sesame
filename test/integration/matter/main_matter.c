@@ -183,6 +183,18 @@ static void on_cmd(const char* line) {
         dump_mdns();
     } else if (strcmp(line, "dump_endpoints") == 0) {
         dump_endpoints();
+    } else if (strcmp(line, "emit_mac") == 0) {
+        /* Emit the actual MAC address the FreeRTOS stack is using so the
+         * host-side test can derive the IPv6 link-local address. */
+        NetworkEndPoint_t* ep = FreeRTOS_FirstEndPoint(NULL);
+        while (ep != NULL) {
+            uint8_t* m = ep->xMACAddress.ucBytes;
+            char line2[64];
+            snprintf(line2, sizeof(line2), "MAC %02x:%02x:%02x:%02x:%02x:%02x",
+                     m[0], m[1], m[2], m[3], m[4], m[5]);
+            host_inspector_emit(line2);
+            ep = FreeRTOS_NextEndPoint(NULL, ep);
+        }
     }
 }
 

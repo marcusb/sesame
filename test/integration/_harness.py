@@ -97,6 +97,11 @@ def _run_harness(
 
     host_port = _free_port() if guest_port else 0
 
+    # Deterministic MAC so the guest's IPv6 link-local is stable (needed for
+    # mDNS discovery, chip-tool pairing, and hardcoded QEMU_LINK_LOCAL).  Must
+    # match hwaddr in main_matter.c.
+    qemu_mac = "00:11:22:33:44:55"
+
     qemu_cmd = [
         "qemu-system-arm",
         "-M",
@@ -110,7 +115,7 @@ def _run_harness(
         "-kernel",
         str(binary),
         "-net",
-        "nic,model=lan9118",
+        f"nic,model=lan9118,macaddr={qemu_mac}",
     ]
 
     if net_mode == "tap":

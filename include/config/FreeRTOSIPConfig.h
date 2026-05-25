@@ -48,14 +48,14 @@ extern void vLoggingPrintf(const char* pcFormatString, ...);
 #define ipconfigIPv4_BACKWARD_COMPATIBLE 0
 #define ipconfigCOMPATIBLE_WITH_SINGLE 0
 
-#define ipconfigHAS_DEBUG_PRINTF 0
+#define ipconfigHAS_DEBUG_PRINTF 1
 #if (ipconfigHAS_DEBUG_PRINTF == 1)
-#define FreeRTOS_debug_printf(X) vLoggingPrintf X
+#define FreeRTOS_debug_printf(X) printf X
 #endif
 
-#define ipconfigHAS_PRINTF 0
+#define ipconfigHAS_PRINTF 1
 #if (ipconfigHAS_PRINTF == 1)
-#define FreeRTOS_printf(X) vLoggingPrintf X
+#define FreeRTOS_printf(X) printf X
 #endif
 
 /* Define the byte order of the target MCU (the MCU FreeRTOS+TCP is executing
@@ -240,8 +240,9 @@ extern void vLoggingPrintf(const char* pcFormatString, ...);
 #define ipconfigSUPPORT_OUTGOING_PINGS 0
 
 /* If ipconfigSUPPORT_SELECT_FUNCTION is set to 1 then the FreeRTOS_select()
- * (and associated) API function is available. */
-#define ipconfigSUPPORT_SELECT_FUNCTION 0
+ * API function is included in the FreeRTOS+TCP release.  It is not needed for
+ * most use cases. */
+#define ipconfigSUPPORT_SELECT_FUNCTION 1
 
 /* If ipconfigFILTER_OUT_NON_ETHERNET_II_FRAMES is set to 1 then Ethernet frames
  * that are not in Ethernet II format will be dropped.  This option is included

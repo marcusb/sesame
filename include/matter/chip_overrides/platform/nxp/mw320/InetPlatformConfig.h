@@ -23,3 +23,9 @@
 #ifndef INET_CONFIG_NUM_UDP_ENDPOINTS
 #define INET_CONFIG_NUM_UDP_ENDPOINTS 4
 #endif
+
+/* Enable IPv6 multicast group join via setsockopt(IPV6_ADD_MEMBERSHIP).
+ * The socket shim intercepts this call and sends MLDv2 reports directly. */
+#ifndef IPV6_MULTICAST_IMPLEMENTED
+#define IPV6_MULTICAST_IMPLEMENTED
+#endif

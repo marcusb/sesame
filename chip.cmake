@@ -206,6 +206,7 @@ add_library(chip_system STATIC
     # Lives here (inside the linker group) so the symbols are visible when
     # chip_system/chip_inet demand select(), pipe(), htonl(), getifaddrs(), etc.
     "${CMAKE_CURRENT_LIST_DIR}/src/matter/freertos_socket_shim.c"
+    "${CMAKE_CURRENT_LIST_DIR}/src/matter/mdns_mcast_join.c"
 )
 target_link_libraries(chip_system
     PUBLIC

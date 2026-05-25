@@ -30,6 +30,11 @@ struct ifaddrs {
 #define IFF_BROADCAST 0x2
 #define IFF_MULTICAST 0x1000
 
+#define IFA_F_PERMANENT  0x20
+#define IFA_F_DEPRECATED 0x01
+#define IFA_F_TEMPORARY  0x02
+#define IFA_F_DADFAILED  0x04
+
 struct if_nameindex {
     unsigned int  if_index;
     char         *if_name;

@@ -19,13 +19,18 @@
  * Sesame shadow override of GenericPlatformManagerImpl_FreeRTOS.ipp.
  *
  * Changes from upstream (pinned at 7521861ff3):
- *   - _RunEventLoop: replaced LayerImplFreeRTOS::HandlePlatformTimer() with a
- *     no-op for CHIP_SYSTEM_CONFIG_USE_SOCKETS=1.  In sockets mode,
- *     LayerImplSelect::StartTimer() never calls PlatformEventing::StartTimer(),
- *     so _StartChipTimer() is never invoked and mChipTimerActive is always
- *     false; the timer-dispatch branch is unreachable dead code.  The cast to
- *     LayerImplFreeRTOS is replaced to avoid a compile error on the undefined
- *     type.
+ *   - _RunEventLoop: replaced the LwIP-only xQueueReceive loop with the
+ *     SystemLayerSocketsLoop() PrepareEvents/WaitForEvents/HandleEvents cycle,
+ *     which is the correct event loop for CHIP_SYSTEM_CONFIG_USE_SOCKETS=1
+ *     builds.  LayerImplSelect manages sockets via select() and timers via
+ *     its own TimerList; the old xQueueReceive loop never called
+ *     HandleEvents() so incoming UDP datagrams were never consumed.
+ *   - _PostEvent: appends SystemLayerSocketsLoop().Signal() so that a queued
+ *     event wakes the select() in WaitForEvents().
+ *   - _StartChipTimer: no-op -- LayerImplSelect::StartTimer() manages timers
+ *     internally and never calls PlatformEventing::StartTimer(), so the
+ *     upstream FreeRTOS timer bookkeeping is dead code in sockets mode.
+ *   - HandlePlatformTimer cast to LayerImplFreeRTOS removed (undefined type).
  */
 
 #ifndef GENERIC_PLATFORM_MANAGER_IMPL_FREERTOS_CPP
@@ -39,9 +44,18 @@
 
 #include <platform/internal/GenericPlatformManagerImpl.ipp>
 
+#include <system/SystemLayer.h>
+
 namespace chip {
 namespace DeviceLayer {
 namespace Internal {
+
+namespace {
+System::LayerSocketsLoop & SystemLayerSocketsLoop()
+{
+    return static_cast<System::LayerSocketsLoop &>(DeviceLayer::SystemLayer());
+}
+} // anonymous namespace
 
 template <class ImplClass>
 CHIP_ERROR GenericPlatformManagerImpl_FreeRTOS<ImplClass>::_InitChipStack(void)
@@ -71,7 +85,7 @@ CHIP_ERROR GenericPlatformManagerImpl_FreeRTOS<ImplClass>::_InitChipStack(void)
     {
 #if defined(CHIP_CONFIG_FREERTOS_USE_STATIC_QUEUE) && CHIP_CONFIG_FREERTOS_USE_STATIC_QUEUE
         mChipEventQueue = xQueueCreateStatic(CHIP_DEVICE_CONFIG_MAX_EVENT_QUEUE_SIZE, sizeof(ChipDeviceEvent), mEventQueueBuffer,
-                                             &mEventQueueStruct);
+                                              &mEventQueueStruct);
 #else
         mChipEventQueue = xQueueCreate(CHIP_DEVICE_CONFIG_MAX_EVENT_QUEUE_SIZE, sizeof(ChipDeviceEvent));
 #endif
@@ -93,7 +107,7 @@ CHIP_ERROR GenericPlatformManagerImpl_FreeRTOS<ImplClass>::_InitChipStack(void)
     {
 #if defined(CHIP_CONFIG_FREERTOS_USE_STATIC_QUEUE) && CHIP_CONFIG_FREERTOS_USE_STATIC_QUEUE
         mBackgroundEventQueue = xQueueCreateStatic(CHIP_DEVICE_CONFIG_BG_MAX_EVENT_QUEUE_SIZE, sizeof(ChipDeviceEvent),
-                                                   mBackgroundQueueBuffer, &mBackgroundQueueStruct);
+                                                    mBackgroundQueueBuffer, &mBackgroundQueueStruct);
 #else
         mBackgroundEventQueue = xQueueCreate(CHIP_DEVICE_CONFIG_BG_MAX_EVENT_QUEUE_SIZE, sizeof(ChipDeviceEvent));
 #endif
@@ -158,17 +172,26 @@ CHIP_ERROR GenericPlatformManagerImpl_FreeRTOS<ImplClass>::_PostEvent(const Chip
         ChipLogError(DeviceLayer, "Failed to post event to CHIP Platform event queue");
         return CHIP_ERROR(chip::ChipError::Range::kOS, status);
     }
+    // Wake the select() in the event loop so HandleEvents/ProcessDeviceEvents
+    // picks up the queued event without waiting for the next timer expiry.
+    SystemLayerSocketsLoop().Signal();
     return CHIP_NO_ERROR;
+}
+
+template <class ImplClass>
+void GenericPlatformManagerImpl_FreeRTOS<ImplClass>::ProcessDeviceEvents()
+{
+    ChipDeviceEvent event;
+
+    while (xQueueReceive(mChipEventQueue, &event, 0) == pdTRUE)
+    {
+        Impl()->DispatchEvent(&event);
+    }
 }
 
 template <class ImplClass>
 void GenericPlatformManagerImpl_FreeRTOS<ImplClass>::_RunEventLoop(void)
 {
-    CHIP_ERROR err;
-    ChipDeviceEvent event;
-
-    StackLock lock;
-
     bool oldShouldRunEventLoop = false;
     if (!mShouldRunEventLoop.compare_exchange_strong(oldShouldRunEventLoop /* expected */, true /* desired */))
     {
@@ -176,55 +199,25 @@ void GenericPlatformManagerImpl_FreeRTOS<ImplClass>::_RunEventLoop(void)
         return;
     }
 
-    while (mShouldRunEventLoop.load())
+    // Lock the CHIP stack.
+    StackLock lock;
+
+    SystemLayerSocketsLoop().EventLoopBegins();
+    do
     {
-        TickType_t waitTime;
+        SystemLayerSocketsLoop().PrepareEvents();
 
-        if (mChipTimerActive)
-        {
-            if (xTaskCheckForTimeOut(&mNextTimerBaseTime, &mNextTimerDurationTicks) == pdTRUE)
-            {
-                mChipTimerActive = false;
+        Impl()->UnlockChipStack();
+        SystemLayerSocketsLoop().WaitForEvents();
+        Impl()->LockChipStack();
 
-                /* Sesame: when CHIP_SYSTEM_CONFIG_USE_SOCKETS=1, LayerImplSelect
-                 * manages its own timer list via select() and never calls
-                 * _StartChipTimer(), so mChipTimerActive is always false and
-                 * this branch is unreachable dead code.  The original cast to
-                 * LayerImplFreeRTOS (an LwIP-only type) is replaced with a
-                 * no-op to keep the build clean. */
-                err = CHIP_NO_ERROR;
-                if (err != CHIP_NO_ERROR)
-                {
-                    ChipLogError(DeviceLayer, "Error handling CHIP timers: %" CHIP_ERROR_FORMAT, err.Format());
-                }
+        SystemLayerSocketsLoop().HandleEvents();
 
-                waitTime = 0;
-            }
-            else
-            {
-                waitTime = mNextTimerDurationTicks;
-            }
-        }
-        else
-        {
-            waitTime = portMAX_DELAY;
-        }
+        this->ProcessDeviceEvents();
+    } while (mShouldRunEventLoop.load());
+    SystemLayerSocketsLoop().EventLoopEnds();
 
-        BaseType_t eventReceived = pdFALSE;
-        {
-            StackUnlock unlock;
-            eventReceived = xQueueReceive(mChipEventQueue, &event, waitTime);
-        }
-
-        while (eventReceived == pdTRUE)
-        {
-            Impl()->DispatchEvent(&event);
-            {
-                StackUnlock unlock;
-                eventReceived = xQueueReceive(mChipEventQueue, &event, 0);
-            }
-        }
-    }
+    Impl()->UnlockChipStack();
 }
 
 template <class ImplClass>
@@ -232,7 +225,7 @@ CHIP_ERROR GenericPlatformManagerImpl_FreeRTOS<ImplClass>::_StartEventLoopTask(v
 {
 #if defined(CHIP_CONFIG_FREERTOS_USE_STATIC_TASK) && CHIP_CONFIG_FREERTOS_USE_STATIC_TASK
     mEventLoopTask = xTaskCreateStatic(EventLoopTaskMain, CHIP_DEVICE_CONFIG_CHIP_TASK_NAME, MATTER_ARRAY_SIZE(mEventLoopStack),
-                                       this, CHIP_DEVICE_CONFIG_CHIP_TASK_PRIORITY, mEventLoopStack, &mEventLoopTaskStruct);
+                                        this, CHIP_DEVICE_CONFIG_CHIP_TASK_PRIORITY, mEventLoopStack, &mEventLoopTaskStruct);
 #else
     xTaskCreate(EventLoopTaskMain, CHIP_DEVICE_CONFIG_CHIP_TASK_NAME, CHIP_DEVICE_CONFIG_CHIP_TASK_STACK_SIZE / sizeof(StackType_t),
                 this, CHIP_DEVICE_CONFIG_CHIP_TASK_PRIORITY, &mEventLoopTask);
@@ -354,16 +347,11 @@ void GenericPlatformManagerImpl_FreeRTOS<ImplClass>::BackgroundEventLoopTaskMain
 template <class ImplClass>
 CHIP_ERROR GenericPlatformManagerImpl_FreeRTOS<ImplClass>::_StartChipTimer(System::Clock::Timeout delay)
 {
-    mChipTimerActive = true;
-    vTaskSetTimeOutState(&mNextTimerBaseTime);
-    mNextTimerDurationTicks = pdMS_TO_TICKS(System::Clock::Milliseconds64(delay).count());
-
-    if (xTaskGetCurrentTaskHandle() != mEventLoopTask)
-    {
-        ChipDeviceEvent noop{ .Type = DeviceEventType::kNoOp };
-        ReturnErrorOnFailure(Impl()->PostEvent(&noop));
-    }
-
+    // In sockets mode (CHIP_SYSTEM_CONFIG_USE_SOCKETS=1), LayerImplSelect manages
+    // its own timer list and select() timeout.  It never calls into
+    // PlatformEventing::StartTimer(), so this method is never invoked by the
+    // upstream code path.  We keep it as a no-op to satisfy the vtable.
+    (void)delay;
     return CHIP_NO_ERROR;
 }
 
@@ -421,6 +409,11 @@ CHIP_ERROR GenericPlatformManagerImpl_FreeRTOS<ImplClass>::_StopEventLoopTask(vo
     if (mEventLoopTask != NULL)
     {
         mShouldRunEventLoop.store(false);
+
+        // Wake the select() so the loop can observe mShouldRunEventLoop == false
+        Impl()->LockChipStack();
+        SystemLayerSocketsLoop().Signal();
+        Impl()->UnlockChipStack();
 
         ChipDeviceEvent noop{ .Type = DeviceEventType::kNoOp };
         if (mChipEventQueue != NULL)

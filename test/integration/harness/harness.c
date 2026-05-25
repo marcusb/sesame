@@ -41,6 +41,7 @@ __attribute__((weak)) BaseType_t xApplicationDNSQueryHook_Multi(
 static harness_net_up_cb net_up_cb;
 static harness_cmd_handler_t cmd_handler;
 static bool network_up;
+static volatile int hook_call_count = 0;
 
 static char level_char(uint8_t level) {
     switch (level) {
@@ -173,6 +174,7 @@ static void cmd_task(void* arg) {
 
 void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t eNetworkEvent,
                                           struct xNetworkEndPoint* ep) {
+    hook_call_count++;
     if (eNetworkEvent == eNetworkUp && !network_up && ep != NULL) {
         network_up = true;
         uint32_t ip, mask, gw, dns;
@@ -180,11 +182,30 @@ void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t eNetworkEvent,
         if (gw != 0) {
             FreeRTOS_OutputARPRequest(gw);
         }
-        printf("READY host=127.0.0.1 port=0 inspector=0 guest_ip=%u.%u.%u.%u\n",
-               (unsigned)(ip & 0xff), (unsigned)((ip >> 8) & 0xff),
-               (unsigned)((ip >> 16) & 0xff), (unsigned)((ip >> 24) & 0xff));
+        printf(
+            "READY host=127.0.0.1 port=0 inspector=0 guest_ip=%u.%u.%u.%u "
+            "hook_count=%d\n",
+            (unsigned)(ip & 0xff), (unsigned)((ip >> 8) & 0xff),
+            (unsigned)((ip >> 16) & 0xff), (unsigned)((ip >> 24) & 0xff),
+            hook_call_count);
         fflush(stdout);
-        if (net_up_cb) net_up_cb();
+
+        /* Emit actual MAC address from endpoint so host-side test can derive
+         * the IPv6 link-local (needed when QEMU assigns a random MAC to the
+         * emulated LAN9118). */
+        {
+            uint8_t* m = ep->xMACAddress.ucBytes;
+            printf("INSPECTOR:MAC %02x:%02x:%02x:%02x:%02x:%02x\n", m[0], m[1],
+                   m[2], m[3], m[4], m[5]);
+            fflush(stdout);
+        }
+
+        if (net_up_cb) {
+            net_up_cb();
+        } else {
+            printf("harness: net_up_cb is NULL\n");
+            fflush(stdout);
+        }
     }
 }
 
@@ -253,6 +274,9 @@ void vApplicationIPNetworkEventHook(eIPCallbackEvent_t eNetworkEvent) {
 
 extern unsigned __HeapBase, __HeapLimit;
 void setup_heap() {
+    static bool initialized = false;
+    if (initialized) return;
+    initialized = true;
     unsigned heap_size = (unsigned)&__HeapLimit - (unsigned)&__HeapBase;
     HeapRegion_t xHeapRegions[] = {{(uint8_t*)&__HeapBase, heap_size},
                                    {NULL, 0}};
