@@ -4,9 +4,6 @@ project(sesame_matter LANGUAGES C CXX)
 
 add_library(sesame_matter STATIC
     matter_app.cpp
-    matter_mdns.c
-    mdns_responder.c
-    mdns_mcast_join.c
     psm_safe.c
     sesame_matter_stubs.c
 )

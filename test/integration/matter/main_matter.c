@@ -18,8 +18,6 @@
 #include "NetworkInterface.h"
 #include "controller.h"
 #include "harness.h"
-#include "matter_mdns.h"
-#include "matter_mdns_internal.h"
 #include "matter_task.h"
 #include "psm.h"
 #include "queue.h"
@@ -96,58 +94,6 @@ static void dump_endpoints(void) {
     }
 }
 
-static void dump_mdns(void) {
-    size_t count;
-    matter_mdns_lock();
-    const matter_mdns_service_t* services = matter_mdns_locked_services(&count);
-    const char* hostname = matter_mdns_locked_hostname();
-
-    char line[320];
-
-    int total_recs = 0;
-    if (hostname) total_recs += 2;
-    for (size_t i = 0; i < count; i++) {
-        total_recs += 3 + (int)services[i].subtype_count;
-    }
-
-    snprintf(line, sizeof(line), "MDNS count=%d", total_recs);
-    host_inspector_emit(line);
-
-    int idx = 0;
-    if (hostname) {
-        snprintf(line, sizeof(line), "MDNS [%d] A %s", idx++, hostname);
-        host_inspector_emit(line);
-        snprintf(line, sizeof(line), "MDNS [%d] AAAA %s", idx++, hostname);
-        host_inspector_emit(line);
-    }
-
-    for (size_t i = 0; i < count; i++) {
-        const matter_mdns_service_t* s = &services[i];
-        char sn[64], in[128];
-        snprintf(sn, sizeof(sn), "%s.%s.local", s->service, s->proto);
-        snprintf(in, sizeof(in), "%s.%s.%s.local", s->instance, s->service,
-                 s->proto);
-
-        snprintf(line, sizeof(line), "MDNS [%d] PTR %s ->%s", idx++, sn, in);
-        host_inspector_emit(line);
-
-        snprintf(line, sizeof(line), "MDNS [%d] SRV %s port=%u target=%s",
-                 idx++, in, (unsigned)s->port, s->hostname);
-        host_inspector_emit(line);
-
-        snprintf(line, sizeof(line), "MDNS [%d] TXT %s txtlen=%u", idx++, in,
-                 (unsigned)s->txt_len);
-        host_inspector_emit(line);
-
-        for (size_t j = 0; j < s->subtype_count; j++) {
-            snprintf(line, sizeof(line), "MDNS [%d] PTR %s._sub.%s ->%s", idx++,
-                     s->subtypes[j], sn, in);
-            host_inspector_emit(line);
-        }
-    }
-    matter_mdns_unlock();
-}
-
 static void on_cmd(const char* line) {
     /*
      * Commands understood by matter_it:
@@ -160,11 +106,6 @@ static void on_cmd(const char* line) {
      *   inspector task echoes to the host) and pushes the same state into
      *   the Matter shadow so subscribed controllers receive an attribute
      *   report.
-     *
-     *   dump_mdns
-     *     Emits one INSPECTOR line per registered mDNS record. Useful for
-     *     tests that need to validate publication state without sniffing the
-     *     wire (chip-tool / avahi-browse not always available in CI).
      */
     int state, dir, pos;
     if (sscanf(line, "door_state %d %d %d", &state, &dir, &pos) == 3) {
@@ -179,8 +120,6 @@ static void on_cmd(const char* line) {
         };
         xQueueSendToBack(ctrl_queue, &msg, 0);
         matter_report_door_state(&st);
-    } else if (strcmp(line, "dump_mdns") == 0) {
-        dump_mdns();
     } else if (strcmp(line, "dump_endpoints") == 0) {
         dump_endpoints();
     } else if (strcmp(line, "emit_mac") == 0) {

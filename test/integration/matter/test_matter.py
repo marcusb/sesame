@@ -128,7 +128,7 @@ def test_mdns_advertises_commissionable_service(
     )
     assert services, (
         "no _matterc._udp service found via mDNS within 30s — "
-        "matter_mdns publication is broken (host can reach guest?)"
+        "CHIP minmdns publication is broken (host can reach guest?)"
     )
 
     # The host LAN may have other Matter commissioners (e.g. a real Sesame
