@@ -76,6 +76,4 @@ void board_init(void) {
     /* Initialize dummy entropy for tests */
     uint8_t dummy_hash[32] = {0x42};
     mbedtls_hardware_init_hash(dummy_hash, sizeof(dummy_hash));
-
-    setup_heap();
 }
