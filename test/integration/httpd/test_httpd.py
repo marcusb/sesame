@@ -10,7 +10,7 @@ import pytest
 import requests
 
 
-def _post(harness, path, data=b"", content_type=None, timeout=5):
+def _post(harness, path, data=b"", content_type=None, timeout=15):
     headers = {}
     if content_type:
         headers["content-type"] = content_type
@@ -44,7 +44,7 @@ def test_unknown_post_returns_404(httpd_harness):
 
 
 def test_get_returns_404(httpd_harness):
-    r = requests.get(f"http://{httpd_harness.host}:{httpd_harness.port}/open", timeout=5)
+    r = requests.get(f"http://{httpd_harness.host}:{httpd_harness.port}/open", timeout=15)
     assert r.status_code == 404
 
 

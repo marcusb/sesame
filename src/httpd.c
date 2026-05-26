@@ -259,64 +259,67 @@ static void request_task(void* params) {
     char* mark = buf;
     BaseType_t res = 0;
     for (;;) {
-        if (mark == rd_pos) {
-            // rd_pos has not moved, no more input was consumed, so need to
-            // read more
+        if (res <= 0) {
+            // Need to read more data
             res = FreeRTOS_recv(socket, wr_pos, buf_end - wr_pos, 0);
             wr_pos += res;
             if (wr_pos == buf_end) {
                 LogDebug(("request too big"));
                 goto close_conn;
             }
+            if (res <= 0) {
+                goto err;
+            }
         }
         mark = rd_pos;
-        if (res > 0) {
-            switch (req.state) {
-                case HTTP_INIT:
-                    for (char* q = buf; q < wr_pos - 1; q++) {
+        switch (req.state) {
+            case HTTP_INIT:
+                for (char* q = buf; q < wr_pos - 1; q++) {
+                    if (*q == '\r' && *(q + 1) == '\n') {
+                        *q = '\0';
+                        process_request_line(&req);
+                        req.state = HTTP_HEADER;
+                        req.header_start = rd_pos = q + 2;
+                        break;
+                    }
+                }
+                break;
+
+            case HTTP_HEADER:
+                if (wr_pos >= rd_pos + 2 && *rd_pos == '\r' &&
+                    *(rd_pos + 1) == '\n') {
+                    rd_pos += 2;
+                    req.body_start = rd_pos;
+                    char* q = get_header(&req, "content-length");
+                    if (q) {
+                        req.content_length = atoi(q);
+                    } else {
+                        req.content_length = 0;
+                    }
+                    req.state = HTTP_BODY;
+                    if (buf_end - wr_pos < req.content_length) {
+                        goto close_conn;
+                    }
+                } else {
+                    for (char* q = rd_pos; q < wr_pos - 1; q++) {
                         if (*q == '\r' && *(q + 1) == '\n') {
                             *q = '\0';
-                            process_request_line(&req);
-                            req.state = HTTP_HEADER;
-                            req.header_start = rd_pos = q + 2;
+                            rd_pos = q + 2;
                             break;
                         }
                     }
-                    break;
-                case HTTP_HEADER:
-                    if (wr_pos >= rd_pos + 2 && *rd_pos == '\r' &&
-                        *(rd_pos + 1) == '\n') {
-                        rd_pos += 2;
-                        req.body_start = rd_pos;
-                        char* q = get_header(&req, "content-length");
-                        if (q) {
-                            req.content_length = atoi(q);
-                        } else {
-                            req.content_length = 0;
-                        }
-                        req.state = HTTP_BODY;
-                        if (buf_end - wr_pos < req.content_length) {
-                            goto close_conn;
-                        }
-                    } else {
-                        for (char* q = rd_pos; q < wr_pos - 1; q++) {
-                            if (*q == '\r' && *(q + 1) == '\n') {
-                                *q = '\0';
-                                rd_pos = q + 2;
-                                break;
-                            }
-                        }
-                    }
-                    break;
+                }
+                break;
 
-                case HTTP_BODY:
-                    if (wr_pos - req.body_start >= req.content_length) {
-                        do_request(&req);
-                        goto close_conn;
-                    }
-            }
-        } else if (res <= 0) {
-            goto err;
+            case HTTP_BODY:
+                if (wr_pos - req.body_start >= req.content_length) {
+                    do_request(&req);
+                    goto close_conn;
+                }
+        }
+        // If rd_pos didn't move, no more data could be consumed — need recv
+        if (mark == rd_pos) {
+            res = 0;
         }
     }
 
@@ -325,10 +328,6 @@ err:
 
 close_conn:
     FreeRTOS_shutdown(socket, FREERTOS_SHUT_RDWR);
-    for (int i = 0; i < 20 && FreeRTOS_recv(socket, buf, BUF_SIZE, 0) >= 0;
-         i++) {
-        vTaskDelay(pdTICKS_TO_MS(250));
-    }
     FreeRTOS_closesocket(socket);
     if (buf) {
         vPortFree(buf);
