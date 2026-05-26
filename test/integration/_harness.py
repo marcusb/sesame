@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import queue
 import re
+import select
 import socket
 import subprocess
 import sys
@@ -144,29 +145,39 @@ def _run_harness(
     ready_evt = threading.Event()
     guest_ip = ""
 
+    def _process_line(line: str) -> bool:
+        """Process a single line. Returns True if it contained READY."""
+        if "INSPECTOR:" in line:
+            evt = line.split("INSPECTOR:")[1]
+            inspector_q.put(evt.strip())
+        elif line.startswith("SUT: ") or line.startswith("harness: "):
+            sys.stdout.write("SUT: " + line)
+            sys.stdout.flush()
+        else:
+            if not line.startswith("READY "):
+                sys.stdout.write("QEMU: " + line)
+                sys.stdout.flush()
+
+        m = READY_RE.search(line)
+        if m:
+            nonlocal guest_ip
+            guest_ip = m.group("guest_ip")
+            return True
+        return False
+
     def relay_stdout() -> None:
-        nonlocal guest_ip
         assert proc.stdout is not None
         for line in proc.stdout:
-            # sys.stdout.write(line)
-            # sys.stdout.flush()
-
-            # SUT events
-            if "INSPECTOR:" in line:
-                evt = line.split("INSPECTOR:")[1]
-                inspector_q.put(evt.strip())
-            elif line.startswith("SUT: ") or line.startswith("harness: "):
-                sys.stdout.write("SUT: " + line)
-                sys.stdout.flush()
-            else:
-                # Print QEMU internal errors/warnings
-                if not line.startswith("READY "):
-                    sys.stdout.write("QEMU: " + line)
-                    sys.stdout.flush()
-
-            m = READY_RE.search(line)
-            if m:
-                guest_ip = m.group("guest_ip")
+            if _process_line(line):
+                # READY found — consume any remaining buffered lines (e.g., the
+                # MAC event printed immediately after READY) before signaling,
+                # so the drain in _run_harness catches them.
+                fd = proc.stdout.fileno()
+                while select.select([fd], [], [], 0.2)[0]:
+                    next_line = proc.stdout.readline()
+                    if not next_line:
+                        break
+                    _process_line(next_line)
                 ready_evt.set()
 
     threading.Thread(target=relay_stdout, daemon=True).start()
@@ -177,6 +188,14 @@ def _run_harness(
 
     if proc.poll() is not None:
         pytest.fail(f"QEMU binary {binary} exited early with rc={proc.returncode}")
+
+    # Drain inspector events emitted during boot (e.g., MAC address) so the
+    # first wait_event() in a test returns only events triggered by the test.
+    while True:
+        try:
+            inspector_q.get_nowait()
+        except queue.Empty:
+            break
 
     yield Harness(
         proc=proc,
