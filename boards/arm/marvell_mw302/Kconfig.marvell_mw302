@@ -1,0 +1,3 @@
+config BOARD_MARVELL_MW302
+	bool
+	select SOC_88MW320

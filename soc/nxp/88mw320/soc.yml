@@ -1,0 +1,9 @@
+family:
+  - name: nxp_88mw320
+    series:
+      - name: 88mw320
+        socs:
+          - name: 88mw320
+            cpuclusters:
+              - name: cpu0
+vendor: nxp

@@ -1,0 +1,35 @@
+/dts-v1/;
+#include "../../../soc/nxp/88mw320/88mw320.dtsi"
+#include "genie_idcm.dts"
+
+/ {
+	model = "Marvell MW302 RAM Execution";
+	compatible = "marvell,mw302-ram", "nxp,88mw320";
+
+ chosen {
+		zephyr,sram = &sram1;
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+	};
+
+	memory@20000000 {
+		device_type = "memory";
+		/* Use sram1 for both code and data in RAM build */
+		reg = <0x20000000 0x20000>;
+	};
+
+	
+};
+
+&uart0 {
+	status = "okay";
+	current-speed = <115200>;
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};

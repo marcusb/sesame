@@ -1,0 +1,8 @@
+config WIFI_MW320
+	bool "NXP MW320 WiFi driver"
+	default y
+	depends on WIFI
+	depends on SOC_88MW320
+	select WIFI_OFFLOAD
+	help
+	  Enable the Zephyr L2 WiFi driver for NXP MW320 (wlcmgr wrapper).

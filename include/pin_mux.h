@@ -1,5 +1,8 @@
 #pragma once
 
+#include <zephyr/drivers/gpio.h>
+
+/* UART pins */
 #define BOARD_UART0_TX_PIN 2
 #define BOARD_UART0_TX_PIN_FUNCTION_ID PINMUX_GPIO2_UART0_TXD
 
@@ -12,34 +15,23 @@
 #define BOARD_UART1_RX_PIN 45
 #define BOARD_UART1_RX_PIN_FUNCTION_ID PINMUX_GPIO45_UART1_RXD
 
-#define BOARD_LED_OTA_BLUE_PIN 16
-#define BOARD_LED_OTA_BLUE_PIN_FUNCTION_ID PINMUX_GPIO16_GPIO16
-
-#define BOARD_LED_OTA_GREEN_PIN 27
-#define BOARD_LED_OTA_GREEN_PIN_FUNCTION_ID PINMUX_GPIO27_GPIO27
-
-#define BOARD_LED_OTA_RED_PIN 40
-#define BOARD_LED_OTA_RED_PIN_FUNCTION_ID PINMUX_GPIO40_GPIO40
-
-#define BOARD_LED_WIFI_BLUE_PIN 41
-#define BOARD_LED_WIFI_BLUE_PIN_FUNCTION_ID PINMUX_GPIO41_GPIO41
-
-#define BOARD_LED_WIFI_GREEN_PIN 42
-#define BOARD_LED_WIFI_GREEN_PIN_FUNCTION_ID PINMUX_GPIO42_GPIO42
-
-#define BOARD_LED_WIFI_RED_PIN 43
-#define BOARD_LED_WIFI_RED_PIN_FUNCTION_ID PINMUX_GPIO43_GPIO43
-
-#define BOARD_SW_WIFI_PIN 22
-#define BOARD_SW_WIFI_PIN_FUNCTION_ID PINMUX_GPIO22_GPIO22
-
-#define BOARD_SW_OTA_PIN 23
-#define BOARD_SW_OTA_PIN_FUNCTION_ID PINMUX_GPIO23_GPIO23
-
+/* Crystal pins */
 #define BOARD_XTAL32K_IN_PIN 25
 #define BOARD_XTAL32K_IN_PIN_FUNCTION_ID PINMUX_GPIO25_XTAL32K_IN
 
 #define BOARD_XTAL32K_OUT_PIN 26
 #define BOARD_XTAL32K_OUT_PIN_FUNCTION_ID PINMUX_GPIO26_XTAL32K_OUT
+
+/* LED gpio_dt_spec */
+static const struct gpio_dt_spec led_ota_blue   = GPIO_DT_SPEC_GET(DT_NODELABEL(led_ota_blue), gpios);
+static const struct gpio_dt_spec led_ota_green  = GPIO_DT_SPEC_GET(DT_NODELABEL(led_ota_green), gpios);
+static const struct gpio_dt_spec led_ota_red    = GPIO_DT_SPEC_GET(DT_NODELABEL(led_ota_red), gpios);
+static const struct gpio_dt_spec led_wifi_blue  = GPIO_DT_SPEC_GET(DT_NODELABEL(led_wifi_blue), gpios);
+static const struct gpio_dt_spec led_wifi_green = GPIO_DT_SPEC_GET(DT_NODELABEL(led_wifi_green), gpios);
+static const struct gpio_dt_spec led_wifi_red   = GPIO_DT_SPEC_GET(DT_NODELABEL(led_wifi_red), gpios);
+
+/* Button gpio_dt_spec */
+static const struct gpio_dt_spec sw_wifi = GPIO_DT_SPEC_GET(DT_NODELABEL(sw_wifi), gpios);
+static const struct gpio_dt_spec sw_ota  = GPIO_DT_SPEC_GET(DT_NODELABEL(sw_ota), gpios);
 
 void board_init_pins(void);

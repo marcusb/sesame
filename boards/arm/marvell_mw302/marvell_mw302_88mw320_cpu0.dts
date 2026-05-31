@@ -1,0 +1,57 @@
+/dts-v1/;
+#include "../../../soc/nxp/88mw320/88mw320.dtsi"
+#include "genie_idcm.dts"
+
+/ {
+	model = "Marvell MW302 Development Board";
+	compatible = "marvell,mw302", "nxp,88mw320";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+	};
+};
+
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot2_partition: partition@0 {
+			label = "boot2";
+			reg = <0x00000000 0x00018000>;
+		};
+		wififw_partition: partition@18000 {
+			label = "wififw";
+			reg = <0x00018000 0x00044000>;
+		};
+		psm_partition: partition@5c000 {
+			label = "psm";
+			reg = <0x0005C000 0x00018000>;
+		};
+		slot0_partition: partition@74000 {
+			label = "image-0";
+			reg = <0x00074000 0x000C8000>;
+		};
+		slot1_partition: partition@13c000 {
+			label = "image-1";
+			reg = <0x0013C000 0x000C8000>;
+		};
+	};
+};
+
+&uart0 {
+	status = "okay";
+	current-speed = <115200>;
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};

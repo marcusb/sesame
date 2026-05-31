@@ -1,0 +1,4 @@
+# Disable code/data relocation for RAM build - all code runs from SRAM
+CONFIG_CODE_DATA_RELOCATION=n
+# RAM build does not execute from flash
+CONFIG_XIP=n

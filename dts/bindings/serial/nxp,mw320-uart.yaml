@@ -1,0 +1,8 @@
+description: NXP MW320 UART
+compatible: "nxp,mw320-uart"
+include: [uart-controller.yaml, base.yaml]
+properties:
+  reg:
+    required: true
+  interrupts:
+    required: true

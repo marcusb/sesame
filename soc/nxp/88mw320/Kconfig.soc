@@ -1,0 +1,11 @@
+config SOC_88MW320
+	bool
+	select ARM
+	select CPU_CORTEX_M4
+	select CPU_HAS_FPU
+	select CPU_HAS_ARM_MPU
+	select CPU_CORTEX_M_HAS_DWT
+	select CPU_CORTEX_M_HAS_SYSTICK
+
+config SOC
+	default "88mw320" if SOC_88MW320

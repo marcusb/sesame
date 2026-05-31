@@ -27,9 +27,9 @@ endif
 
 all: $(TARGET)
 
-$(TARGET): $(SDK_PATH)/sdk/src/core/util/crc/soft_crc32.c axf2firmware.c
+$(TARGET): soft_crc32.c axf2firmware.c
 	@echo " [host][ld] $@"
-	$(AT)$(CC) -O2 -Wall $(CFLAGS) $(LDFLAGS) -I$(SDK_PATH)/sdk/src/incl/sdk -I$(SDK_PATH)/sdk/src/incl/libc/arm_gcc -o $@ $^
+	$(AT)$(CC) -O2 -Wall $(CFLAGS) $(LDFLAGS) -I. -o $@ $^
 
 clean:
 	$(AT)rm -f $(TARGET) $(wildcard *.o)

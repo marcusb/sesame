@@ -1,0 +1,6 @@
+config GPIO_MW320
+	bool "NXP MW320 GPIO driver"
+	default y
+	depends on DT_HAS_NXP_MW320_GPIO_ENABLED
+	help
+	  Enable the GPIO driver for NXP MW320 SoCs.

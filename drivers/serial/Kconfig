@@ -1,0 +1,8 @@
+config UART_MW320
+	bool "NXP MW320 UART driver"
+	default y
+	depends on DT_HAS_NXP_MW320_UART_ENABLED
+	depends on SERIAL
+	select SERIAL_HAS_DRIVER
+	help
+	  Enable the UART driver for NXP MW320 SoCs.

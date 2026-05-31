@@ -1,0 +1,11 @@
+boards:
+  - name: marvell_mw302
+    full_name: Marvell MW302 Development Board
+    vendor: marvell
+    socs:
+      - name: 88mw320
+  - name: marvell_mw302_ram
+    full_name: Marvell MW302 RAM Execution
+    vendor: marvell
+    socs:
+      - name: 88mw320
