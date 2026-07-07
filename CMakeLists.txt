@@ -48,4 +48,27 @@ add_custom_command(
     VERBATIM
 )
 add_custom_target(sesame_bin ALL DEPENDS ${CMAKE_BINARY_DIR}/sesame.bin)
+
+# --- Multi-variant Build Support ---
+# Build the RAM variant automatically within the main build folder
+include(ExternalProject)
+ExternalProject_Add(ram_variant
+    SOURCE_DIR      "${CMAKE_SOURCE_DIR}"
+    BINARY_DIR      "${CMAKE_BINARY_DIR}/ram-build"
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND
+        "${CMAKE_COMMAND}" -G Ninja
+            -DBOARD=marvell_mw302_ram/88mw320/cpu0
+            -DZEPHYR_TOOLCHAIN_VARIANT=gnuarmemb
+            -DGNUARMEMB_TOOLCHAIN_PATH=/usr
+            -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/ram-build"
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/ram-build"
+    INSTALL_COMMAND ""
+    BUILD_ALWAYS    TRUE
+)
+
+ExternalProject_Add_Step(ram_variant copy_binaries
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/ram-build/zephyr/zephyr.elf" "${CMAKE_BINARY_DIR}/sesame_ram.axf"
+    DEPENDEES build
+)
 endif()
