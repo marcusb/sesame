@@ -13,6 +13,10 @@ set(SOC_ROOT ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "SOC root directory")
 # Board selection (use marvell_mw302 for flash/XIP, marvell_mw302_ram for RAM load)
 set(BOARD marvell_mw302/88mw320/cpu0 CACHE STRING "Zephyr board")
 
+# Toolchain defaults
+set(ZEPHYR_TOOLCHAIN_VARIANT "gnuarmemb" CACHE STRING "Zephyr toolchain variant")
+set(GNUARMEMB_TOOLCHAIN_PATH "/usr" CACHE PATH "GNU ARM Embedded toolchain path")
+
 # Load Zephyr build system
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(sesame)
@@ -59,8 +63,6 @@ ExternalProject_Add(ram_variant
     BUILD_COMMAND
         "${CMAKE_COMMAND}" -G Ninja
             -DBOARD=marvell_mw302_ram/88mw320/cpu0
-            -DZEPHYR_TOOLCHAIN_VARIANT=gnuarmemb
-            -DGNUARMEMB_TOOLCHAIN_PATH=/usr
             -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/ram-build"
         COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/ram-build"
     INSTALL_COMMAND ""
