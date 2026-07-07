@@ -1,1 +1,2 @@
-rsource "arm/marvell_mw302/Kconfig.board"
+rsource "arm/marvell_mw302/Kconfig.marvell_mw302"
+rsource "arm/marvell_mw302/Kconfig.marvell_mw302_ram"

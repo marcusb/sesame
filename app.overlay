@@ -1,0 +1,9 @@
+/ {
+	chosen {
+		zephyr,flash = &flash0;
+	};
+};
+
+&flash0 {
+	reg = <0x1f0000C8 0x7FFF38>;
+};

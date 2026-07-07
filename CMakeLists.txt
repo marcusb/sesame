@@ -1,23 +1,51 @@
 # Zephyr Standalone Application CMakeLists.txt
 cmake_minimum_required(VERSION 3.20.0)
 
-
-list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR})
+# ZEPHYR_EXTRA_MODULES is required to trigger zephyr_module.py, which generates
+# kconfig_module_dirs.cmake. The mw320_sdk module provides SDK driver sources.
 list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/modules/mw320_sdk)
+
+# Custom board and SOC root directories (freestanding application)
+# Zephyr looks for $BOARD_ROOT/boards/<arch>/<board> and $SOC_ROOT/soc/<vendor>/<soc>
+set(BOARD_ROOT ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "Board root directory")
+set(SOC_ROOT ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "SOC root directory")
+
+# Board selection (use marvell_mw302 for flash/XIP, marvell_mw302_ram for RAM load)
+set(BOARD marvell_mw302/88mw320/cpu0 CACHE STRING "Zephyr board")
 
 # Load Zephyr build system
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(sesame)
 
 # Application Sources
-target_sources(app PRIVATE 
+target_sources(app PRIVATE
     src/main.c
     # We will progressively add files as we port them
     # src/network_manager.c (Needs rewrite)
     # src/ota.c (Needs rewrite)
 )
 
-# Bring in the custom sdk module and drivers
-zephyr_include_directories(modules/mw320_sdk/zephyr)
 zephyr_include_directories(include)
-# Drivers are built as a Zephyr module via zephyr/module.yml
+
+# MW320 SDK sources are provided by the mw320_sdk Zephyr module
+# via ZEPHYR_EXTRA_MODULES
+
+# Custom drivers (added directly in application mode)
+zephyr_library_sources_ifdef(CONFIG_UART_MW320 drivers/serial/uart_mw320.c)
+zephyr_library_sources_ifdef(CONFIG_GPIO_MW320 drivers/gpio/gpio_mw320.c)
+zephyr_library_sources_ifdef(CONFIG_ENTROPY_MW320 drivers/entropy/entropy_mw320.c)
+zephyr_library_sources_ifdef(CONFIG_WIFI_MW320 drivers/wifi/mw320/wifi_mw320.c)
+
+# Convert ELF to firmware binary for flashing (XIP only, RAM build uses AXF directly)
+if(NOT CONFIG_BOARD_MARVELL_MW302_RAM)
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/sesame.bin
+    COMMAND ${CMAKE_SOURCE_DIR}/build-native/axf2firmware
+            ${CMAKE_BINARY_DIR}/zephyr/zephyr.elf
+            ${CMAKE_BINARY_DIR}/sesame.bin
+    DEPENDS zephyr_final ${CMAKE_BINARY_DIR}/zephyr/zephyr.elf
+    COMMENT "Converting zephyr.elf -> sesame.bin"
+    VERBATIM
+)
+add_custom_target(sesame_bin ALL DEPENDS ${CMAKE_BINARY_DIR}/sesame.bin)
+endif()

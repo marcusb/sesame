@@ -15,9 +15,9 @@
 		};
 	};
 
-	flash0: flash@1f0a0000 {
+	flash0: flash@1f000000 {
 		compatible = "soc-nv-flash";
-		reg = <0x1f0a0000 0x760000>;
+		reg = <0x1f000000 0x800000>;
 	};
 
 	soc {

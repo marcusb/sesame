@@ -6,4 +6,35 @@ config NUM_IRQS
 config SYS_CLOCK_HW_CYCLES_PER_SEC
 	default 200000000
 
+config SERIAL_HAS_DRIVER
+	def_bool y
+
+config UART_MW320
+	bool
+	default y
+	depends on DT_HAS_NXP_MW320_UART_ENABLED && SERIAL
+
+config GPIO_MW320
+	bool
+	default y
+	depends on DT_HAS_NXP_MW320_GPIO_ENABLED
+
+config ENTROPY_MW320
+	bool
+	default y
+	depends on DT_HAS_NXP_MW320_ENTROPY_ENABLED
+
+config WIFI_MW320
+	bool
+	default y
+	depends on WIFI
+	select WIFI_OFFLOAD
+
+config SOC_EARLY_RESET_HOOK
+	def_bool y
+
+config KERNEL_ENTRY
+	string
+	default "zephyr_reset_handler"
+
 endif # SOC_88MW320

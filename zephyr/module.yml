@@ -1,7 +1,0 @@
-build:
-  cmake: zephyr
-  kconfig: zephyr/Kconfig
-  settings:
-    board_root: .
-    soc_root: .
-    dts_root: .

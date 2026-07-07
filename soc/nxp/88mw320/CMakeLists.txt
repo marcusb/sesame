@@ -1,8 +1,15 @@
-zephyr_sources(soc.c)
+zephyr_sources(soc.c entry.S)
 zephyr_include_directories(.)
+zephyr_include_directories(${CMAKE_SOURCE_DIR}/mw320_sdk/CMSIS/Include)
+zephyr_include_directories(${CMAKE_SOURCE_DIR}/mw320_sdk/devices/88MW320)
+zephyr_include_directories(${CMAKE_SOURCE_DIR}/mw320_sdk/devices/88MW320/drivers)
+zephyr_include_directories(${ZEPHYR_BASE}/modules/cmsis_6)
+zephyr_include_directories(${ZEPHYR_BASE}/modules/cmsis_6/CMSIS/Core/Include)
 zephyr_compile_definitions(CPU_88MW320_A0_NAPC)
+zephyr_compile_definitions(SERIAL_PORT_TYPE_UART=1)
+
 set(SOC_LINKER_SCRIPT ${ZEPHYR_BASE}/include/zephyr/arch/arm/cortex_m/scripts/linker.ld CACHE INTERNAL "")
 # Only relocate code for flash build; RAM build runs entirely from SRAM
 if(NOT CONFIG_BOARD_MARVELL_MW302_RAM)
-zephyr_code_relocate(FILES soc.c LOCATION RAM)
+zephyr_code_relocate(FILES ${CMAKE_CURRENT_SOURCE_DIR}/soc.c LOCATION RAM)
 endif()

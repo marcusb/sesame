@@ -2,3 +2,7 @@
 CONFIG_CODE_DATA_RELOCATION=n
 # RAM build does not execute from flash
 CONFIG_XIP=n
+# UART console
+CONFIG_UART_CONSOLE=y
+# GPIO
+CONFIG_GPIO=y

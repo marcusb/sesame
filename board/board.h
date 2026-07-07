@@ -1,11 +1,10 @@
 #pragma once
 
-#include "clock_config.h"
 #include "fsl_common.h"
 
 #define BOARD_NAME "genie"
 
-#define BOARD_IS_XIP                                \
+#define BOARD_IS_XIP                                  \
     (((uint32_t)init_debug_console >= 0x1F000000U) && \
      ((uint32_t)init_debug_console < 0x20000000U))
 
@@ -27,4 +26,4 @@
 void init_debug_console(void);
 
 /* Only used for mbedtls entropy, implemented in board_hash.c */
-void BOARD_GetHash(uint8_t *buf, uint32_t *len);
+void BOARD_GetHash(uint8_t* buf, uint32_t* len);

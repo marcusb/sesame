@@ -236,6 +236,11 @@ ninja -C build sesame.axf && \
 - Device reboots automatically (`-r` option)
 - Verify output and behavior persist through reboot
 
+**IMPORTANT:** Never use `-l board/flash-layout.txt` with `flashprog.py` during development.
+The `-l` flag erases and re-partitions the entire flash, including Boot2 and WiFi firmware.
+Use `--mcufw build/sesame.bin` alone to flash only the application partition.
+The `-l` flag is only needed for initial device provisioning (first-time install).
+
 ### Logs & Debugging
 
 **Log output** – All operations logged via `LOG_*` macros (see `include/app_logging.h`):
@@ -332,7 +337,7 @@ tools/flash_and_monitor.sh [timeout_sec] [logfile]   # defaults: 60 /tmp/sesame_
 ### Device Flashing (first-time install only)
 
 ```sh
-./tools/OpenOCD/flashprog.py -l mw320_sdk/tools/boot2/layout.txt \
+./tools/OpenOCD/flashprog.py -l board/flash_layout.txt \
   --boot2 mw320_sdk/mw320_matter_flash/Matter/boot2.bin \
   --wififw mw320_sdk/mw320_matter_flash/Matter/mw32x_uapsta_W14.88.36.p172.bin \
   --mcufw build/sesame.bin -r
