@@ -166,6 +166,7 @@ static void init_boot_clocks(void) {
 }
 
 void board_init_pins(void) {
+    CLOCK_EnableClock(kCLOCK_Gpio);
 #if !DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash))
     PINMUX_PinMuxSet(BOARD_UART0_TX_PIN,
                      BOARD_UART0_TX_PIN_FUNCTION_ID | PINMUX_MODE_DEFAULT);
