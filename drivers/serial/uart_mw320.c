@@ -51,7 +51,6 @@ static int uart_mw320_init(const struct device *dev)
     const struct uart_mw320_config *config = dev->config;
     uart_config_t uart_cfg;
 
-#if !DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash))
     uint32_t uart_freq = CLOCK_GetSysClkFreq();
     CLOCK_SetClkDiv(kCLOCK_DivUartFast, 1U);
     CLOCK_AttachClk(kSYS_CLK_to_FAST_UART0);
@@ -59,7 +58,6 @@ static int uart_mw320_init(const struct device *dev)
     uart_cfg.enableHighSpeed = false;
     uart_cfg.enable = true;
     UART_Init(config->base, &uart_cfg, uart_freq);
-#endif
 
     return 0;
 }

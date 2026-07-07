@@ -1,4 +1,4 @@
-zephyr_sources(soc.c entry.S)
+zephyr_sources(soc.c)
 zephyr_include_directories(.)
 zephyr_include_directories(${CMAKE_SOURCE_DIR}/mw320_sdk/CMSIS/Include)
 zephyr_include_directories(${CMAKE_SOURCE_DIR}/mw320_sdk/devices/88MW320)
