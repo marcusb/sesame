@@ -59,12 +59,12 @@ include(ExternalProject)
 ExternalProject_Add(ram_variant
     SOURCE_DIR      "${CMAKE_SOURCE_DIR}"
     BINARY_DIR      "${CMAKE_BINARY_DIR}/ram-build"
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND
+    CONFIGURE_COMMAND
         "${CMAKE_COMMAND}" -G Ninja
             -DBOARD=marvell_mw302_ram/88mw320/cpu0
             -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/ram-build"
-        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/ram-build"
+    BUILD_COMMAND
+        "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/ram-build"
     INSTALL_COMMAND ""
     BUILD_ALWAYS    TRUE
 )
