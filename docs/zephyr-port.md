@@ -117,98 +117,31 @@ Compiled DT: `marvell_mw302_88mw320_cpu0.dts` → includes `88mw320.dtsi`
 - Flash @ 0x1f000000, 8 MB with partition table
 - SRAM0 @ 0x00100000, 380 KB (chosen as zephyr,sram)
 
-## Known Issues
+## Current Status
 
-### Critical (boot hang/crash)
+**XIP Boot**: ✅ Working
+**RAM Boot**: ✅ Working
+**Serial Console**: ✅ Working
 
-1. **`soc/Kconfig` line 2: `invalid_syntax`** — garbage text that may confuse
-   the Kconfig parser.
+### Resolved Issues
 
-2. **`prj.conf` duplicates** — `CONFIG_GPIO=y`, `CONFIG_CODE_DATA_RELOCATION=y`,
-   and `CONFIG_CODE_DATA_RELOCATION_SRAM=y` each appear twice.
+#### Flash (XIP) Boot Hang at `UART_GetStatusFlags`
+When executing the XIP build, the device would hang indefinitely without printing the Zephyr boot banner. 
+Through GDB and hardware register inspection, it was discovered that `UART_GetStatusFlags()` was reading `0x00000000` from the UART `LSR` register and looping forever waiting for the `THRE` (Transmit Holding Register Empty) flag to be set.
 
-3. **UART driver double-pinmux** — `uart_mw320_init()` calls `PINMUX_PinMuxSet`
-   twice: first with SDK constants (matching `soc.c`), then with hardcoded magic
-   values (`2 | (1 << 3)`). The second call may corrupt the pinmux config set
-   by the SOC init.
+**Root Cause:**
+The `boot2` bootloader handles all necessary hardware initialization before jumping to the application:
+1. Configures the System clock to use the SFLL at 192MHz.
+2. Turns on the UART APB clock gates and sets the fractional dividers so the baudrate hits exactly 115200.
+3. Configures the GPIO pin muxing for the UART pads.
+4. Outputs its own boot logs (proving the UART is active and transmitting).
 
-4. **`memset` in UART driver without `<string.h>`** — `uart_mw320_init()` calls
-   `memset()` but doesn't include `<zephyr/string.h>` or `<string.h>`. This may
-   compile by luck (transitive include) but is undefined behavior.
+When Zephyr started up, its `soc.c` (`init_boot_clocks`, `board_init_pins`) and `uart_mw320.c` (`uart_mw320_init`) were unconditionally attempting to re-initialize these components. Re-initializing the clock source, APB dividers, or pin muxing while executing from flash clobbered the state left by `boot2`, effectively disabling the UART APB clock and clearing the `IER`/`FCR` registers. As a result, reads to the UART `LSR` returned `0x00`, and `uart_mw320_poll_out` hung infinitely.
 
-5. **Entropy driver hardcodes `DEVICE_DT_INST_DEFINE(0, ...)`** — No DT node
-   exists for `nxp,mw320-entropy`, so the driver should use
-   `DT_INST_FOREACH_STATUS_OKAY` or be removed. Currently it's excluded by the
-   Kconfig dependency on `DT_HAS_NXP_MW320_ENTROPY_ENABLED`, so it's not built.
+**Fix:**
+Hardware re-initialization is now skipped for XIP builds. Conditional blocks (`#if !DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash))`) were added to:
+- `init_boot_clocks()` in `soc.c`
+- `board_init_pins()` in `soc.c`
+- `uart_mw320_init()` in `uart_mw320.c`
 
-6. **Flash layout mismatch** — `board/flash-layout.txt` shows app at 0x30000,
-   but DTS partitions place `image-0` at 0x74000. `CONFIG_ROM_START_OFFSET=0xC8`
-   is a tiny offset that doesn't match either layout.
-
-### Potential root causes for boot hang
-
-- **Clock init infinite loop**: `init_boot_clocks()` has several `while()` loops
-  waiting for hardware ready flags (PLL lock, RC32M ready, ref clock ready,
-  flash exit continuous mode). If the hardware state differs from expectations,
-  these loops hang forever.
-
-- **Flash controller access from non-RAM code**: After `deinit_flashc()`, only
-  `__ramfunc` and RAM-relocated code can execute. The `zephyr_code_relocate`
-  directive relocates all of `soc.c` to RAM, so this should be safe, but the
-  `PINMUX_PinMuxSet` function remains in flash (0x1f002f04) and is called via
-  a veneer from RAM.
-
-- **Vector table address**: VTOR is set to 0x1f000200 (flash). If the bootloader
-  loads the app into RAM and doesn't adjust VTOR, the CPU may fault on the first
-  exception.
-
-## Debugging Boot Hang
-
-### Diagnostic Variable
-
-`boot_diag` (volatile uint32_t) at RAM address `0x100e14`. Check with GDB:
-
-```
-(gdb) print/x *(uint32_t*)0x100e14
-```
-
-Values indicate how far boot progressed:
-
-| Value | Stage | Description |
-|-------|-------|-------------|
-| 0x00 | Uninitialized | Hang before SOC init (Zephyr core issue) |
-| 0x01 | PMU_PAD | VDDIO pad power-on |
-| 0x02 | FLASH_DEINIT | Flash controller deinit (exit continuous mode) |
-| 0x03 | REFCLK_SYS | Reference clock SYS ready wait |
-| 0x04 | RC32M | RC32M oscillator ready wait |
-| 0x05 | REFCLK_OSC | System OSC 38.4M ready wait |
-| 0x06 | SFLL | SFLL PLL lock wait |
-| 0x07 | SYSCLK | System clock switch to SFLL |
-| 0x08 | FLASH_INIT | Flash controller re-init |
-| 0x09 | PINMUX | UART pinmux configuration |
-| 0x0A | DONE | SOC init complete |
-| 0x80+ | Timeout | Stage (lower 7 bits) timed out in hardware ready loop |
-
-### GDB Debug Session
-
-```bash
-# Terminal 1: Start OpenOCD
-openocd -s tools/OpenOCD -f tools/OpenOCD/interface/ftdi.cfg -f tools/OpenOCD/openocd.cfg
-
-# Terminal 2: GDB
-gdb-multiarch -x tools/OpenOCD/gdbinit build/zephyr/zephyr.elf
-(gdb) debug                    # Load to RAM, stop at main()
-(gdb) print/x *(uint32_t*)0x100e14   # Check boot_diag
-(gdb) info registers           # Check CPU state
-(gdb) bt                       # Backtrace
-```
-
-### Fixed Issues
-
-The following issues were found and fixed in the latest commit:
-
-1. ~~`soc/Kconfig` line 2: `invalid_syntax`~~ — removed garbage text
-2. ~~`prj.conf` duplicates~~ — deduplicated CONFIG entries
-3. ~~UART driver double pinmux~~ — removed redundant PINMUX_PinMuxSet calls
-4. ~~UART driver missing `<string.h>`~~ — added include for `memset`
-5. ~~Infinite loops without timeout~~ — added timeout protection with diagnostic markers
+For XIP builds, the application inherits the pristine environment created by `boot2`. For RAM builds (`IS_RAM_BUILD` / no `zephyr_flash`), initialization is preserved as `boot2` is bypassed during RAM debugging.
