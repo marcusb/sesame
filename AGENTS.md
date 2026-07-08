@@ -513,3 +513,7 @@ gdb-multiarch -batch -x tools/OpenOCD/gdbinit build/sesame.axf \
   -ex "quit"
 ```
 *(Note: Use `thbreak` for hardware breakpoints when debugging code running from Flash.)*
+
+### Committing Code
+
+**Always before committing, build and verify both the XIP and RAM builds.**
