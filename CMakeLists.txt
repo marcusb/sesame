@@ -62,6 +62,7 @@ ExternalProject_Add(ram_variant
     CONFIGURE_COMMAND
         "${CMAKE_COMMAND}" -G Ninja
             -DBOARD=marvell_mw302_ram/88mw320/cpu0
+            -DZEPHYR_TOOLCHAIN_VARIANT=${ZEPHYR_TOOLCHAIN_VARIANT}
             -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/ram-build"
     BUILD_COMMAND
         "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/ram-build"
