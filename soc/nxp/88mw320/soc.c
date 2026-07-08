@@ -29,7 +29,11 @@ __attribute__((naked)) void soc_early_reset_hook(void)
 }
 
 // RAM build: flash base is at SRAM1 (0x20000000), skip flash controller ops
-#define IS_RAM_BUILD (!DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash)))
+#ifndef CONFIG_XIP
+#define IS_RAM_BUILD 1
+#else
+#define IS_RAM_BUILD 0
+#endif
 
 #define BOARD_BOOTCLOCKRUN_CORE_CLOCK 200000000U
 
@@ -111,7 +115,7 @@ static void init_boot_clocks(void) {
        deinit_flashc() exits continuous read mode, causing a hardfault 
        when the CPU fetches the next instruction from flash. */
 
-#if !DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash))
+#ifndef CONFIG_XIP
     /* Enable RC32M. */
     BOOT_DIAG_STAGE(BOOT_DIAG_RC32M);
     CLOCK_EnableClock(kCLOCK_Rc32m);
@@ -167,7 +171,7 @@ static void init_boot_clocks(void) {
 
 void board_init_pins(void) {
     CLOCK_EnableClock(kCLOCK_Gpio);
-#if !DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash))
+#ifndef CONFIG_XIP
     PINMUX_PinMuxSet(BOARD_UART0_TX_PIN,
                      BOARD_UART0_TX_PIN_FUNCTION_ID | PINMUX_MODE_DEFAULT);
     PINMUX_PinMuxSet(BOARD_UART0_RX_PIN,
@@ -203,7 +207,7 @@ static int nxp_88mw320_init(void) {
     init_debug_console();
     BOOT_DIAG_STAGE(0x0C);  // UART clock done
 
-#if !DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash))
+#ifndef CONFIG_XIP
     CLOCK_EnableXtal32K(kCLOCK_Osc32k_Internal);
     CLOCK_AttachClk(kXTAL32K_to_RTC);
 #endif
