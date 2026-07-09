@@ -30,8 +30,6 @@ config WIFI_MW320
 	depends on WIFI
 	select WIFI_OFFLOAD
 
-config SOC_EARLY_RESET_HOOK
-	def_bool y
 
 
 

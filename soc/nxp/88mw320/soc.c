@@ -8,12 +8,7 @@
 #include "fsl_pinmux.h"
 #include "88MW320.h"
 
-/**
- * Early reset hook: runs BEFORE any RAM access or flash XIP.
- */
-void soc_early_reset_hook(void)
-{
-}
+
 
 // RAM build: flash base is at SRAM1 (0x20000000), skip flash controller ops
 #ifndef CONFIG_XIP
