@@ -1,6 +1,6 @@
 description: NXP MW320 GPIO controller
 compatible: "nxp,mw320-gpio"
-include: [gpio-controller.yaml, base.yaml]
+include: [gpio-controller.yaml, pinctrl-device.yaml, base.yaml]
 properties:
   reg:
     required: true

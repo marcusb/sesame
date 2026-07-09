@@ -65,6 +65,11 @@
 			ngpios = <18>;
 			status = "disabled";
 		};
+
+		pinctrl: pinctrl@48010000 {
+			compatible = "nxp,mw320-pinctrl";
+			reg = <0x48010000 0x1000>;
+		};
 	};
 };
 
