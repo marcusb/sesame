@@ -1,4 +1,5 @@
 add_subdirectory(gpio)
 add_subdirectory(serial)
 add_subdirectory(entropy)
+add_subdirectory(pinctrl)
 add_subdirectory(wifi/mw320)

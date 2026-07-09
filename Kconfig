@@ -3,3 +3,5 @@
 mainmenu "Sesame"
 
 source "Kconfig.zephyr"
+
+rsource "drivers/Kconfig"

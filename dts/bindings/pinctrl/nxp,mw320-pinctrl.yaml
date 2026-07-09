@@ -1,0 +1,30 @@
+description: NXP Marvell MW320 Pin Controller
+
+compatible: "nxp,mw320-pinctrl"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+child-binding:
+  description: |
+    Pinmux configuration nodes.
+  
+  child-binding:
+    include:
+      - name: pincfg-node.yaml
+        property-allowlist:
+          - bias-pull-up
+          - bias-pull-down
+          - bias-disable
+
+    properties:
+      pinmux:
+        required: true
+        type: array
+        description: |
+          An array of pins sharing the same properties.
+          Use the MW320_PINMUX macro to set the pin and function.
+          Example: pinmux = <MW320_PINMUX(2, 1)>;

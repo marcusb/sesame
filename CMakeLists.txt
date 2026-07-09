@@ -39,6 +39,7 @@ zephyr_library_sources_ifdef(CONFIG_UART_MW320 drivers/serial/uart_mw320.c)
 zephyr_library_sources_ifdef(CONFIG_GPIO_MW320 drivers/gpio/gpio_mw320.c)
 zephyr_library_sources_ifdef(CONFIG_ENTROPY_MW320 drivers/entropy/entropy_mw320.c)
 zephyr_library_sources_ifdef(CONFIG_WIFI_MW320 drivers/wifi/mw320/wifi_mw320.c)
+zephyr_library_sources_ifdef(CONFIG_PINCTRL_MW320 drivers/pinctrl/pinctrl_mw320.c)
 
 # Convert ELF to firmware binary for flashing (XIP only, RAM build uses AXF directly)
 if(NOT CONFIG_BOARD_MARVELL_MW302_RAM)

@@ -1,4 +1,5 @@
 rsource "gpio/Kconfig"
 rsource "serial/Kconfig"
 rsource "entropy/Kconfig"
+rsource "pinctrl/Kconfig"
 rsource "wifi/mw320/Kconfig"
