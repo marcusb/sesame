@@ -196,20 +196,7 @@ static int nxp_88mw320_init(void)
     WDT->WDT_CR = 0;
     init_boot_clocks();
     BOOT_DIAG_STAGE(BOOT_DIAG_PINMUX);
-    CLOCK_EnableClock(kCLOCK_Gpio);
-    gpio_pinmux_fun(2, PINMUX_GPIO2_UART0_TXD | PINMUX_MODE_DEFAULT);
-    CLOCK_EnableClock(kCLOCK_Gpio);
-    gpio_pinmux_fun(3, PINMUX_GPIO3_UART0_RXD | PINMUX_MODE_DEFAULT);
-    CLOCK_AttachClk(kSYS_CLK_to_FAST_UART0);
-    CLOCK_EnableClock(kCLOCK_Uart0);
 
-    /* Mux LED pins to GPIO function */
-    gpio_pinmux_fun(16, PINMUX_GPIO16_GPIO16 | PINMUX_MODE_DEFAULT);
-    gpio_pinmux_fun(27, PINMUX_GPIO27_GPIO27 | PINMUX_MODE_DEFAULT);
-    gpio_pinmux_fun(40, PINMUX_GPIO40_GPIO40 | PINMUX_MODE_DEFAULT);
-    gpio_pinmux_fun(41, PINMUX_GPIO41_GPIO41 | PINMUX_MODE_DEFAULT);
-    gpio_pinmux_fun(42, PINMUX_GPIO42_GPIO42 | PINMUX_MODE_DEFAULT);
-    gpio_pinmux_fun(43, PINMUX_GPIO43_GPIO43 | PINMUX_MODE_DEFAULT);
 
     BOOT_DIAG_STAGE(BOOT_DIAG_DONE);
     return 0;
