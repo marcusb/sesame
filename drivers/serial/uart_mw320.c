@@ -51,15 +51,16 @@ static int uart_mw320_init(const struct device *dev)
     const struct uart_mw320_config *config = dev->config;
     uart_config_t uart_cfg;
 
-#ifndef CONFIG_XIP
-    CLOCK_SetUartClkDiv(kCLOCK_DivUartFast, 1000U, 226U);
+    CLOCK_EnableClock(kCLOCK_Uart0);
+    CLOCK_SetUartClkDiv(kCLOCK_DivUartFast, 2U, 1U);
     CLOCK_AttachClk(kSYS_CLK_to_FAST_UART0);
     uint32_t uart_freq = CLOCK_GetUartClkFreq(0);
     UART_GetDefaultConfig(&uart_cfg);
-    uart_cfg.enableHighSpeed = false;
+    uart_cfg.fifoConfig.resetTxFifo = true;
+    uart_cfg.fifoConfig.resetRxFifo = true;
     uart_cfg.enable = true;
+    uart_cfg.enableHighSpeed = false;
     UART_Init(config->base, &uart_cfg, uart_freq);
-#endif
 
     return 0;
 }
