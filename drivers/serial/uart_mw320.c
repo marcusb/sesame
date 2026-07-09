@@ -5,10 +5,13 @@
 #include "fsl_uart.h"
 #include "fsl_clock.h"
 
+#include <zephyr/drivers/pinctrl.h>
+
 #define DT_DRV_COMPAT nxp_mw320_uart
 
 struct uart_mw320_config {
     UART_Type *base;
+    const struct pinctrl_dev_config *pincfg;
 };
 
 struct uart_mw320_data {
@@ -50,6 +53,12 @@ static int uart_mw320_init(const struct device *dev)
 {
     const struct uart_mw320_config *config = dev->config;
     uart_config_t uart_cfg;
+    int err;
+
+    err = pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
+    if (err < 0) {
+        return err;
+    }
 
     CLOCK_EnableClock(kCLOCK_Uart0);
     CLOCK_SetUartClkDiv(kCLOCK_DivUartFast, 2U, 1U);
@@ -66,11 +75,13 @@ static int uart_mw320_init(const struct device *dev)
 }
 
 #define UART_MW320_INIT(n)                                              \
+    PINCTRL_DT_INST_DEFINE(n);                                          \
     static const struct uart_mw320_config uart_mw320_config_##n = {     \
         .base = (UART_Type *)DT_INST_REG_ADDR(n),                       \
+        .pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),                    \
     };                                                                  \
     static struct uart_mw320_data uart_mw320_data_##n;                  \
-                                                                         \
+                                                                        \
     DEVICE_DT_INST_DEFINE(n, uart_mw320_init, NULL,                     \
                           &uart_mw320_data_##n,                         \
                           &uart_mw320_config_##n,                       \

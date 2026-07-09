@@ -6,10 +6,14 @@
 
 #define DT_DRV_COMPAT nxp_mw320_gpio
 
+#include <zephyr/drivers/pinctrl.h>
+#include "fsl_clock.h"
+
 struct gpio_mw320_config {
     struct gpio_driver_config common;
     GPIO_Type *base;
     uint32_t port;
+    const struct pinctrl_dev_config *pincfg;
 };
 
 struct gpio_mw320_data {
@@ -98,18 +102,30 @@ static const struct gpio_driver_api gpio_mw320_driver_api = {
     .pin_interrupt_configure = gpio_mw320_pin_interrupt_configure,
 };
 
+
+
 static int gpio_mw320_init(const struct device *dev)
 {
+    const struct gpio_mw320_config *config = dev->config;
+
+    CLOCK_EnableClock(kCLOCK_Gpio);
+
+    if (config->pincfg != NULL) {
+        pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
+    }
+
     return 0;
 }
 
 #define GPIO_MW320_INIT(n)                                              \
+    PINCTRL_DT_INST_DEFINE(n);                                          \
     static const struct gpio_mw320_config gpio_mw320_config_##n = {     \
         .common = {                                                     \
             .port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(n),        \
         },                                                              \
         .base = (GPIO_Type *)DT_INST_REG_ADDR(n),                       \
         .port = DT_INST_PROP(n, port),                                  \
+        .pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),                    \
     };                                                                  \
     static struct gpio_mw320_data gpio_mw320_data_##n;                  \
                                                                         \
