@@ -1,16 +1,13 @@
 /dts-v1/;
-#include "../../../soc/nxp/88mw320/88mw320.dtsi"
-#include <dt-bindings/pinctrl/mw320-pinctrl.h>
-#include "genie_idcm.dts"
+#include "marvell_mw302_88mw320_cpu0.dts"
 
 / {
 	model = "Marvell MW302 RAM Execution";
 	compatible = "marvell,mw302-ram", "nxp,88mw320";
 
- chosen {
+	chosen {
 		zephyr,sram = &sram1;
-		zephyr,console = &uart0;
-		zephyr,shell-uart = &uart0;
+		/delete-property/ zephyr,flash;
 	};
 
 	memory@20000000 {
@@ -18,59 +15,4 @@
 		/* Use sram1 for both code and data in RAM build */
 		reg = <0x20000000 0x20000>;
 	};
-
-	
-};
-
-&pinctrl {
-	uart0_default: uart0_default {
-		group0 {
-			pinmux = <MW320_PINMUX(2, 2)>,  /* UART0 TX */
-			         <MW320_PINMUX(3, 2)>;  /* UART0 RX */
-		};
-	};
-
-	uart1_default: uart1_default {
-		group0 {
-			pinmux = <MW320_PINMUX(44, 2)>, /* UART1 TX */
-			         <MW320_PINMUX(45, 2)>; /* UART1 RX */
-		};
-	};
-
-	gpio_default: gpio_default {
-		group0 {
-			pinmux = <MW320_PINMUX(16, 0)>, /* LED OTA BLUE */
-			         <MW320_PINMUX(27, 0)>, /* LED OTA GREEN */
-			         <MW320_PINMUX(40, 0)>, /* LED OTA RED */
-			         <MW320_PINMUX(41, 0)>, /* LED WIFI BLUE */
-			         <MW320_PINMUX(42, 0)>, /* LED WIFI GREEN */
-			         <MW320_PINMUX(43, 0)>, /* LED WIFI RED */
-			         <MW320_PINMUX(22, 0)>, /* SW WIFI */
-			         <MW320_PINMUX(23, 0)>, /* SW OTA */
-			         <MW320_PINMUX(0, 0)>,  /* GPIO0 */
-			         <MW320_PINMUX(1, 0)>,  /* GPIO1 */
-			         <MW320_PINMUX(46, 0)>, /* GPIO46 */
-			         <MW320_PINMUX(48, 0)>, /* GPIO48 */
-			         <MW320_PINMUX(49, 0)>, /* GPIO49 */
-			         <MW320_PINMUX(25, 0)>, /* XTAL32K IN */
-			         <MW320_PINMUX(26, 0)>; /* XTAL32K OUT */
-		};
-	};
-};
-
-&uart0 {
-	status = "okay";
-	current-speed = <115200>;
-	pinctrl-0 = <&uart0_default>;
-	pinctrl-names = "default";
-};
-
-&gpio0 {
-	status = "okay";
-	pinctrl-0 = <&gpio_default>;
-	pinctrl-names = "default";
-};
-
-&gpio1 {
-	status = "okay";
 };
