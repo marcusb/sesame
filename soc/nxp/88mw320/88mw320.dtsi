@@ -70,6 +70,13 @@
 			compatible = "nxp,mw320-pinctrl";
 			reg = <0x48010000 0x1000>;
 		};
+
+		wdt0: watchdog@48040000 {
+			compatible = "nxp,mw320-wdt";
+			reg = <0x48040000 0x1000>;
+			interrupts = <22 0>;
+			status = "disabled";
+		};
 	};
 };
 

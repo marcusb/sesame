@@ -35,3 +35,4 @@ CWSettingsWindows.stg
 
 *.pyc
 .zap/
+tools/axf2firmware/axf2firmware

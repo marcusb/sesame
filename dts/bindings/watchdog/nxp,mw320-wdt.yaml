@@ -1,0 +1,11 @@
+description: NXP MW320 Watchdog Timer
+
+compatible: "nxp,mw320-wdt"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+  interrupts:
+    required: true

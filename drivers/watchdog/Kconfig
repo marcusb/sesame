@@ -1,0 +1,6 @@
+config WATCHDOG_MW320
+	bool "Marvell MW320 Watchdog Timer Driver"
+	default y
+	depends on DT_HAS_NXP_MW320_WDT_ENABLED
+	help
+	  Enable the Watchdog driver for Marvell MW320.

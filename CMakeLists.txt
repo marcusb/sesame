@@ -40,12 +40,14 @@ zephyr_library_sources_ifdef(CONFIG_GPIO_MW320 drivers/gpio/gpio_mw320.c)
 zephyr_library_sources_ifdef(CONFIG_ENTROPY_MW320 drivers/entropy/entropy_mw320.c)
 zephyr_library_sources_ifdef(CONFIG_WIFI_MW320 drivers/wifi/mw320/wifi_mw320.c)
 zephyr_library_sources_ifdef(CONFIG_PINCTRL_MW320 drivers/pinctrl/pinctrl_mw320.c)
+zephyr_library_sources_ifdef(CONFIG_WATCHDOG_MW320 drivers/watchdog/wdt_mw320.c)
 
 # Convert ELF to firmware binary for flashing (XIP only, RAM build uses AXF directly)
 if(NOT CONFIG_BOARD_MARVELL_MW302_RAM)
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/sesame.bin
-    COMMAND ${CMAKE_SOURCE_DIR}/build-native/axf2firmware
+    COMMAND make -C ${CMAKE_SOURCE_DIR}/tools/axf2firmware
+    COMMAND ${CMAKE_SOURCE_DIR}/tools/axf2firmware/axf2firmware
             ${CMAKE_BINARY_DIR}/zephyr/zephyr.elf
             ${CMAKE_BINARY_DIR}/sesame.bin
     DEPENDS zephyr_final ${CMAKE_BINARY_DIR}/zephyr/zephyr.elf
