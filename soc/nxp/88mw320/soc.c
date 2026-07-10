@@ -60,15 +60,11 @@ static void init_flashc(void) {
 }
 
 static void init_boot_clocks(void) {
-    /* Power on VDDIO pads */
-    PMU->IO_PAD_PWR_CFG |= PMU_IO_PAD_PWR_CFG_GPIO_AON_PDB_MASK;
-
-    /* Both pad regulator and IO domain powered on for VddIo0..3 */
-    /* PDB bits 0..3, LOW_VDDB bits 12..15 */
-    PMU->IO_PAD_PWR_CFG |= ((1UL << 12) | (1UL << 0));
-    PMU->IO_PAD_PWR_CFG |= ((1UL << 13) | (1UL << 1));
-    PMU->IO_PAD_PWR_CFG |= ((1UL << 14) | (1UL << 2));
-    PMU->IO_PAD_PWR_CFG |= ((1UL << 15) | (1UL << 3));
+    POWER_PowerOnVddioPad(kPOWER_VddIoAon);
+    POWER_PowerOnVddioPad(kPOWER_VddIo0);
+    POWER_PowerOnVddioPad(kPOWER_VddIo1);
+    POWER_PowerOnVddioPad(kPOWER_VddIo2);
+    POWER_PowerOnVddioPad(kPOWER_VddIo3);
 
     /* Enable GPIO and UART0 clocks */
     CLOCK_EnableClock(kCLOCK_Gpio);
