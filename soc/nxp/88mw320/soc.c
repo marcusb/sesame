@@ -19,23 +19,8 @@
 
 #define BOARD_BOOTCLOCKRUN_CORE_CLOCK 200000000U
 
-// Diagnostic: write here before each init stage. Check with debugger if hang.
-volatile uint32_t __attribute__((used)) boot_diag __attribute__((section(".data"))) = 0;
-
-#define BOOT_DIAG_STAGE(x) (boot_diag = (x))
-#define BOOT_DIAG_PMU_PAD    0x01
-#define BOOT_DIAG_FLASH_DEINIT 0x02
-#define BOOT_DIAG_REFCLK_SYS   0x03
-#define BOOT_DIAG_RC32M        0x04
-#define BOOT_DIAG_REFCLK_OSC   0x05
-#define BOOT_DIAG_SFLL         0x06
-#define BOOT_DIAG_SYSCLK       0x07
-#define BOOT_DIAG_FLASH_INIT   0x08
-#define BOOT_DIAG_DONE         0x0A
-
-// Timeout for hardware ready loops (in iterations). Set diag to 0x80+stage on timeout.
+// Timeout for hardware ready loops (in iterations).
 #define BOOT_TIMEOUT 0xFFFFFFFF
-#define BOOT_TIMEOUT_FLAG 0x80
 
 static clock_sfll_config_t sfll_config = {
     .sfllSrc = kCLOCK_SFllSrcMainXtal, /* XTAL clock */
@@ -58,7 +43,6 @@ static void deinit_flashc(void) {
     timeout = BOOT_TIMEOUT;
     while ((FLASHC->FCSR & FLASHC_FCSR_CONT_RD_MD_EXIT_DONE_MASK) == 0U) {
         if (--timeout == 0) {
-            boot_diag = BOOT_TIMEOUT_FLAG | BOOT_DIAG_FLASH_DEINIT;
             while (1) { }
         }
     }
@@ -90,7 +74,6 @@ static void init_boot_clocks(void) {
     WDT->WDT_CR = 0;
 
     /* Power on VDDIO pads */
-    BOOT_DIAG_STAGE(BOOT_DIAG_PMU_PAD);
     PMU->IO_PAD_PWR_CFG |= PMU_IO_PAD_PWR_CFG_GPIO_AON_PDB_MASK;
 
     /* Both pad regulator and IO domain powered on for VddIo0..3 */
@@ -109,24 +92,20 @@ static void init_boot_clocks(void) {
 
     /* Stop flash controller before changing clock (XIP only, skip for RAM build) */
     if (!IS_RAM_BUILD) {
-        BOOT_DIAG_STAGE(BOOT_DIAG_FLASH_DEINIT);
         deinit_flashc();
     }
 
     /* Enable ref clock SYS */
-    BOOT_DIAG_STAGE(BOOT_DIAG_REFCLK_SYS);
     PMU->WLAN_CTRL |= PMU_WLAN_CTRL_PD_MASK;
     PMU->WLAN_CTRL |= (1U << PMU_WLAN_CTRL_REFCLK_SYS_REQ_SHIFT);
     timeout = BOOT_TIMEOUT;
     while ((PMU->WLAN_CTRL & (1U << (PMU_WLAN_CTRL_REFCLK_SYS_REQ_SHIFT + 3U))) == 0U) {
         if (--timeout == 0) {
-            boot_diag = BOOT_TIMEOUT_FLAG | BOOT_DIAG_REFCLK_SYS;
             while (1) { }
         }
     }
 
     /* Enable RC32M. */
-    BOOT_DIAG_STAGE(BOOT_DIAG_RC32M);
     CLOCK_EnableClock(kCLOCK_Rc32m);
     CLOCK_EnableRC32M(false);
 
@@ -137,11 +116,9 @@ static void init_boot_clocks(void) {
     g_mainXtalFreq = CLK_MAINXTAL_CLK;
 
     /* Enable System OSC 38.4M. */
-    BOOT_DIAG_STAGE(BOOT_DIAG_REFCLK_OSC);
     CLOCK_EnableRefClk(kCLOCK_RefClk_SYS);
 
     /* Initialize SFLL to 200M. */
-    BOOT_DIAG_STAGE(BOOT_DIAG_SFLL);
     CLOCK_InitSFll(&sfll_config);
 
     /* Set dividers */
@@ -156,7 +133,6 @@ static void init_boot_clocks(void) {
     PMU->UART_CLK_SEL |= PMU_UART_CLK_SEL_UART0_CLK_SEL_MASK;
 
     /* Switch system clock source to SFLL before RC32M calibration */
-    BOOT_DIAG_STAGE(BOOT_DIAG_SYSCLK);
     CLOCK_SetSysClkSource(kCLOCK_SysClkSrcSFll);
 
     CLOCK_SetClkDiv(kCLOCK_DivQspi, 4U);
@@ -166,23 +142,19 @@ static void init_boot_clocks(void) {
 
     /* Re-enable flash controller (XIP only, skip for RAM build) */
     if (!IS_RAM_BUILD) {
-        BOOT_DIAG_STAGE(BOOT_DIAG_FLASH_INIT);
         init_flashc();
     }
 
     /* Set SystemCoreClock variable. */
     SystemCoreClock = BOARD_BOOTCLOCKRUN_CORE_CLOCK;
-    BOOT_DIAG_STAGE(0x0B); // DIAG: clocks done
 }
 
 static int nxp_88mw320_init(void)
 {
-    BOOT_DIAG_STAGE(0x01); // DIAG: SOC init entry
     // Disable watchdog timer immediately
     WDT->WDT_CR = 0;
     init_boot_clocks();
 
-    BOOT_DIAG_STAGE(BOOT_DIAG_DONE);
     return 0;
 }
 
