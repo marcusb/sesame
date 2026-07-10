@@ -1,16 +1,7 @@
-#include <zephyr/kernel.h>
-#include <zephyr/device.h>
 #include <zephyr/init.h>
-#include <zephyr/sys/util.h>
-#include <zephyr/devicetree.h>
 #include "fsl_power.h"
 #include "fsl_clock.h"
-#include "fsl_pinmux.h"
-#include "88MW320.h"
 
-
-
-// RAM build: flash base is at SRAM1 (0x20000000), skip flash controller ops
 #ifndef CONFIG_XIP
 #define IS_RAM_BUILD 1
 #else
@@ -75,12 +66,6 @@ static void init_boot_clocks(void) {
         deinit_flashc();
     }
 
-    /* Enable ref clock SYS */
-    PMU->WLAN_CTRL |= PMU_WLAN_CTRL_PD_MASK;
-    PMU->WLAN_CTRL |= (1U << PMU_WLAN_CTRL_REFCLK_SYS_REQ_SHIFT);
-    while ((PMU->WLAN_CTRL & (1U << (PMU_WLAN_CTRL_REFCLK_SYS_REQ_SHIFT + 3U))) == 0U) {
-    }
-
     /* Enable RC32M. */
     CLOCK_EnableClock(kCLOCK_Rc32m);
     CLOCK_EnableRC32M(false);
@@ -89,7 +74,7 @@ static void init_boot_clocks(void) {
     CLOCK_SetClkDiv(kCLOCK_DivPmu, 1U);
 
     /* Set external Xtal frequency to clock driver */
-    g_mainXtalFreq = CLK_MAINXTAL_CLK;
+    CLOCK_SetMainXtalFreq(CLK_MAINXTAL_CLK);
 
     /* Enable System OSC 38.4M. */
     CLOCK_EnableRefClk(kCLOCK_RefClk_SYS);
@@ -102,24 +87,22 @@ static void init_boot_clocks(void) {
     CLOCK_SetClkDiv(kCLOCK_DivApb1, 2U);
     CLOCK_SetClkDiv(kCLOCK_DivPmu, 4U);
 
-    /* Set UART fast clock divider to 1 (nom=1, denom=1) */
-    PMU->UART_FAST_CLK_DIV = (1U << PMU_UART_FAST_CLK_DIV_NOMINATOR_SHIFT) | 1U;
-
-    /* Select UART0 Fast Clock */
-    PMU->UART_CLK_SEL |= PMU_UART_CLK_SEL_UART0_CLK_SEL_MASK;
-
     /* Switch system clock source to SFLL before RC32M calibration */
     CLOCK_SetSysClkSource(kCLOCK_SysClkSrcSFll);
 
     CLOCK_SetClkDiv(kCLOCK_DivQspi, 4U);
 
+
+    /* Calibrate RC32M */
+    CLOCK_CalibrateRC32M(true, 0U);
     /* RC32M enabled, controller clock can be gated. */
     CLOCK_DisableClock(kCLOCK_Rc32m);
 
-    /* Re-enable flash controller (XIP only, skip for RAM build) */
-    if (!IS_RAM_BUILD) {
-        init_flashc();
-    }
+    /* Reset the PMU clock divider to 1 */
+    CLOCK_SetClkDiv(kCLOCK_DivPmu, 1U);
+
+    /* Restart flash controller (needed for XIP and mflash operations) */
+    init_flashc();
 
     /* Set SystemCoreClock variable. */
     SystemCoreClock = BOARD_BOOTCLOCKRUN_CORE_CLOCK;
