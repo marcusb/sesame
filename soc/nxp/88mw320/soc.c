@@ -60,9 +60,6 @@ static void init_flashc(void) {
 }
 
 static void init_boot_clocks(void) {
-    /* Disable watchdog timer immediately */
-    WDT->WDT_CR = 0;
-
     /* Power on VDDIO pads */
     PMU->IO_PAD_PWR_CFG |= PMU_IO_PAD_PWR_CFG_GPIO_AON_PDB_MASK;
 
@@ -72,9 +69,6 @@ static void init_boot_clocks(void) {
     PMU->IO_PAD_PWR_CFG |= ((1UL << 13) | (1UL << 1));
     PMU->IO_PAD_PWR_CFG |= ((1UL << 14) | (1UL << 2));
     PMU->IO_PAD_PWR_CFG |= ((1UL << 15) | (1UL << 3));
-
-    /* Disable watchdog clock (bit 23, active-low: 1=disabled) */
-    PMU->PERI_CLK_EN |= (1UL << 23);
 
     /* Enable GPIO and UART0 clocks */
     CLOCK_EnableClock(kCLOCK_Gpio);
@@ -137,8 +131,6 @@ static void init_boot_clocks(void) {
 
 static int nxp_88mw320_init(void)
 {
-    // Disable watchdog timer immediately
-    WDT->WDT_CR = 0;
     init_boot_clocks();
 
     return 0;
