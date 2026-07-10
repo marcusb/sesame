@@ -31,7 +31,6 @@ volatile uint32_t __attribute__((used)) boot_diag __attribute__((section(".data"
 #define BOOT_DIAG_SFLL         0x06
 #define BOOT_DIAG_SYSCLK       0x07
 #define BOOT_DIAG_FLASH_INIT   0x08
-#define BOOT_DIAG_PINMUX       0x09
 #define BOOT_DIAG_DONE         0x0A
 
 // Timeout for hardware ready loops (in iterations). Set diag to 0x80+stage on timeout.
@@ -176,31 +175,15 @@ static void init_boot_clocks(void) {
     BOOT_DIAG_STAGE(0x0B); // DIAG: clocks done
 }
 
-
-static void gpio_pinmux_fun(uint32_t pin, uint32_t modefunc) {
-    volatile uint32_t *reg = (volatile uint32_t *)(0x48010000 + (pin * 4));
-    uint32_t temp = *reg;
-    temp &= ~7U; /* PINMUX_FUNC_MASK */
-    temp |= (modefunc & 7U);
-    /* Also set default pull-up/pull-down if specified */
-    if (modefunc & (1<<3)) {
-        temp |= (1<<3);
-    }
-    *reg = temp;
-}
-
 static int nxp_88mw320_init(void)
 {
     BOOT_DIAG_STAGE(0x01); // DIAG: SOC init entry
     // Disable watchdog timer immediately
     WDT->WDT_CR = 0;
     init_boot_clocks();
-    BOOT_DIAG_STAGE(BOOT_DIAG_PINMUX);
-
 
     BOOT_DIAG_STAGE(BOOT_DIAG_DONE);
     return 0;
 }
-
 
 SYS_INIT(nxp_88mw320_init, PRE_KERNEL_1, 0);
