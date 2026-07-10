@@ -47,21 +47,35 @@
 &pinctrl {
 	uart0_default: uart0_default {
 		group0 {
-			pinmux = <MW320_PINMUX(2, 2)>,
-			         <MW320_PINMUX(3, 2)>;
-			bias-pull-up;
+			pinmux = <MW320_PINMUX(2, 2)>,  /* UART0 TX */
+			         <MW320_PINMUX(3, 2)>;  /* UART0 RX */
+		};
+	};
+
+	uart1_default: uart1_default {
+		group0 {
+			pinmux = <MW320_PINMUX(44, 2)>, /* UART1 TX */
+			         <MW320_PINMUX(45, 2)>; /* UART1 RX */
 		};
 	};
 
 	gpio_default: gpio_default {
 		group0 {
-			pinmux = <MW320_PINMUX(16, 0)>,
-			         <MW320_PINMUX(27, 0)>,
-			         <MW320_PINMUX(40, 0)>,
-			         <MW320_PINMUX(41, 0)>,
-			         <MW320_PINMUX(42, 0)>,
-			         <MW320_PINMUX(43, 0)>;
-			bias-pull-up;
+			pinmux = <MW320_PINMUX(16, 0)>, /* LED OTA BLUE */
+			         <MW320_PINMUX(27, 0)>, /* LED OTA GREEN */
+			         <MW320_PINMUX(40, 0)>, /* LED OTA RED */
+			         <MW320_PINMUX(41, 0)>, /* LED WIFI BLUE */
+			         <MW320_PINMUX(42, 0)>, /* LED WIFI GREEN */
+			         <MW320_PINMUX(43, 0)>, /* LED WIFI RED */
+			         <MW320_PINMUX(22, 0)>, /* SW WIFI */
+			         <MW320_PINMUX(23, 0)>, /* SW OTA */
+			         <MW320_PINMUX(0, 0)>,  /* GPIO0 */
+			         <MW320_PINMUX(1, 0)>,  /* GPIO1 */
+			         <MW320_PINMUX(46, 0)>, /* GPIO46 */
+			         <MW320_PINMUX(48, 0)>, /* GPIO48 */
+			         <MW320_PINMUX(49, 0)>, /* GPIO49 */
+			         <MW320_PINMUX(25, 0)>, /* XTAL32K IN */
+			         <MW320_PINMUX(26, 0)>; /* XTAL32K OUT */
 		};
 	};
 };
