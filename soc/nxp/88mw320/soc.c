@@ -19,9 +19,6 @@
 
 #define BOARD_BOOTCLOCKRUN_CORE_CLOCK 200000000U
 
-// Timeout for hardware ready loops (in iterations).
-#define BOOT_TIMEOUT 0xFFFFFFFF
-
 static clock_sfll_config_t sfll_config = {
     .sfllSrc = kCLOCK_SFllSrcMainXtal, /* XTAL clock */
     .refDiv = 0x60U,
@@ -31,7 +28,6 @@ static clock_sfll_config_t sfll_config = {
 
 static void deinit_flashc(void) {
     uint32_t reg = FLASHC->FCCR;
-    uint32_t timeout;
 
     /* Disable cache */
     reg &= ~FLASHC_FCCR_CACHE_EN_MASK;
@@ -40,11 +36,7 @@ static void deinit_flashc(void) {
     reg = (reg & ~FLASHC_FCCR_CMD_TYPE_MASK) | FLASHC_FCCR_CMD_TYPE(0xCU);
     FLASHC->FCCR = reg;
     /* Wait exit done */
-    timeout = BOOT_TIMEOUT;
     while ((FLASHC->FCSR & FLASHC_FCSR_CONT_RD_MD_EXIT_DONE_MASK) == 0U) {
-        if (--timeout == 0) {
-            while (1) { }
-        }
     }
     /* Clear exit done flag */
     FLASHC->FCSR = FLASHC_FCSR_CONT_RD_MD_EXIT_DONE_MASK;
@@ -68,8 +60,6 @@ static void init_flashc(void) {
 }
 
 static void init_boot_clocks(void) {
-    uint32_t timeout;
-
     /* Disable watchdog timer immediately */
     WDT->WDT_CR = 0;
 
@@ -98,11 +88,7 @@ static void init_boot_clocks(void) {
     /* Enable ref clock SYS */
     PMU->WLAN_CTRL |= PMU_WLAN_CTRL_PD_MASK;
     PMU->WLAN_CTRL |= (1U << PMU_WLAN_CTRL_REFCLK_SYS_REQ_SHIFT);
-    timeout = BOOT_TIMEOUT;
     while ((PMU->WLAN_CTRL & (1U << (PMU_WLAN_CTRL_REFCLK_SYS_REQ_SHIFT + 3U))) == 0U) {
-        if (--timeout == 0) {
-            while (1) { }
-        }
     }
 
     /* Enable RC32M. */
