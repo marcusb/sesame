@@ -231,9 +231,28 @@ static const struct wifi_mgmt_ops wifi_mw320_mgmt_ops = {
     .ap_disable = wifi_mw320_mgmt_ap_disable,
 };
 
+static int wifi_mw320_set_config(const struct device *dev,
+				 struct net_if *iface,
+				 enum ethernet_config_type type,
+				 const struct ethernet_config *config)
+{
+	if (type == ETHERNET_CONFIG_TYPE_FILTER) {
+		if (config->filter.type == ETHERNET_FILTER_TYPE_DST_MAC_ADDRESS) {
+			if (config->filter.set) {
+				wifi_add_mcast_filter((uint8_t *)config->filter.mac_address.addr);
+			} else {
+				wifi_remove_mcast_filter((uint8_t *)config->filter.mac_address.addr);
+			}
+			return 0;
+		}
+	}
+	return -ENOTSUP;
+}
+
 static const struct net_wifi_mgmt_offload wifi_mw320_api = {
     .wifi_iface.iface_api.init = wifi_mw320_iface_init,
     .wifi_iface.send = wifi_mw320_send,
+    .wifi_iface.set_config = wifi_mw320_set_config,
     .wifi_mgmt_api = &wifi_mw320_mgmt_ops,
 };
 
