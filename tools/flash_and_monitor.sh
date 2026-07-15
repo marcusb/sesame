@@ -16,7 +16,7 @@ sleep 2
 RC=$?
 tail -5 "$FLASHLOG"
 
-# flashprog.py exits 0 even when the embedded flashprog reports errors
+  # flashprog.py exits 0 even when the embedded flashprog reports errors
 # (e.g. "doesn't fit in available flash space"), so scan the output too.
 if [ "$RC" -ne 0 ] || grep -qE "^Error:|doesn't fit" "$FLASHLOG"; then
     echo "=== flashprog FAILED (rc=$RC); see $FLASHLOG ==="

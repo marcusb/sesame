@@ -18,8 +18,13 @@ set(ZEPHYR_TOOLCHAIN_VARIANT "gnuarmemb" CACHE STRING "Zephyr toolchain variant"
 set(GNUARMEMB_TOOLCHAIN_PATH "/usr" CACHE PATH "GNU ARM Embedded toolchain path")
 
 # Load Zephyr build system
+set(MW320_SDK_DIR ${CMAKE_SOURCE_DIR}/mw320_sdk CACHE PATH "MW320 SDK directory" FORCE)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(sesame)
+
+# --- Linker settings ---
+zephyr_linker_sources(DATA_SECTIONS custom_bss.ld)
+target_link_libraries(app PRIVATE -lm)
 
 # Application Sources
 target_sources(app PRIVATE
@@ -30,6 +35,7 @@ target_sources(app PRIVATE
 )
 
 zephyr_include_directories(include)
+zephyr_include_directories(${MW320_SDK_DIR}/components/flash/mflash/mw320)
 
 # MW320 SDK sources are provided by the mw320_sdk Zephyr module
 # via ZEPHYR_EXTRA_MODULES
@@ -38,7 +44,9 @@ zephyr_include_directories(include)
 zephyr_library_sources_ifdef(CONFIG_UART_MW320 drivers/serial/uart_mw320.c)
 zephyr_library_sources_ifdef(CONFIG_GPIO_MW320 drivers/gpio/gpio_mw320.c)
 zephyr_library_sources_ifdef(CONFIG_ENTROPY_MW320 drivers/entropy/entropy_mw320.c)
-zephyr_library_sources_ifdef(CONFIG_WIFI_MW320 drivers/wifi/mw320/wifi_mw320.c)
+if(CONFIG_WIFI_MW320)
+    add_subdirectory(drivers/wifi/mw320)
+endif()
 zephyr_library_sources_ifdef(CONFIG_PINCTRL_MW320 drivers/pinctrl/pinctrl_mw320.c)
 zephyr_library_sources_ifdef(CONFIG_WATCHDOG_MW320 drivers/watchdog/wdt_mw320.c)
 

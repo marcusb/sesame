@@ -52,7 +52,7 @@ target_include_directories(test_stubs
     stubs
     "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_SOURCE_DIR}/src"
-    "${mw320_sdk_dir}/components/boot2_utils")
+    "${MW320_SDK_DIR}/components/boot2_utils")
 target_link_libraries(test_stubs PRIVATE globals mw320_sdk)
 
 # Common ARM link options for tests
@@ -97,9 +97,9 @@ target_include_directories(${test_target}
     "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_SOURCE_DIR}/src"
     "${CMAKE_SOURCE_DIR}/board"
-    "${mw320_sdk_dir}/components/boot2_utils"
-    "${mw320_sdk_dir}/middleware/wifi/incl"
-    "${mw320_sdk_dir}/middleware/wifi/incl/port/os"
+    "${MW320_SDK_DIR}/components/boot2_utils"
+    "${MW320_SDK_DIR}/middleware/wifi/incl"
+    "${MW320_SDK_DIR}/middleware/wifi/incl/port/os"
     "${freertos_plus_tcp_SOURCE_DIR}/source/include"
     "${freertos_plus_tcp_SOURCE_DIR}/source/portable/Compiler/GCC")
 

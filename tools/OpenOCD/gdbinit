@@ -2,7 +2,7 @@
 # All Rights Reserved.
 
 #target extended-remote localhost:3333
-target extended-remote | python ./tools/OpenOCD/openocd.py
+target extended-remote | python3 ./tools/OpenOCD/openocd.py
 
 monitor halt
 

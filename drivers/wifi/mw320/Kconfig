@@ -3,6 +3,7 @@ config WIFI_MW320
 	default y
 	depends on WIFI
 	depends on SOC_88MW320
-	select WIFI_OFFLOAD
+	select WIFI_USE_NATIVE_NETWORKING
+	select NET_L2_ETHERNET
 	help
 	  Enable the Zephyr L2 WiFi driver for NXP MW320 (wlcmgr wrapper).

@@ -6,13 +6,7 @@
 	compatible = "marvell,mw302-ram", "nxp,88mw320";
 
 	chosen {
-		zephyr,sram = &sram1;
+		zephyr,sram = &sram0;
 		/delete-property/ zephyr,flash;
-	};
-
-	memory@20000000 {
-		device_type = "memory";
-		/* Use sram1 for both code and data in RAM build */
-		reg = <0x20000000 0x20000>;
 	};
 };

@@ -1,5 +1,4 @@
 zephyr_library()
-set(MW320_SDK_DIR ${CMAKE_SOURCE_DIR}/mw320_sdk)
 
 zephyr_library_sources(
     ${MW320_SDK_DIR}/devices/88MW320/system_88MW320.c
@@ -11,15 +10,18 @@ zephyr_library_sources(
     ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_pinmux.c
     ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_power.c
     ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_wdt.c
+    ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_flashc.c
     ${MW320_SDK_DIR}/devices/88MW320/utilities/debug_console/fsl_debug_console.c
     ${MW320_SDK_DIR}/devices/88MW320/utilities/str/fsl_str.c
     ${MW320_SDK_DIR}/components/serial_manager/fsl_component_serial_manager.c
     ${MW320_SDK_DIR}/components/serial_manager/fsl_component_serial_port_uart.c
     ${MW320_SDK_DIR}/components/uart/fsl_adapter_mwuart.c
 )
+zephyr_compile_definitions(CONFIG_FLASH_PARTITION_COUNT=10)
 zephyr_include_directories(
     ${MW320_SDK_DIR}/components/serial_manager
     ${MW320_SDK_DIR}/components/uart
+    ${MW320_SDK_DIR}/components/flash/mflash
     ${MW320_SDK_DIR}/devices/88MW320
     ${MW320_SDK_DIR}/devices/88MW320/drivers
     ${MW320_SDK_DIR}/devices/88MW320/utilities/debug_console

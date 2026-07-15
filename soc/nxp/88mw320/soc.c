@@ -57,6 +57,13 @@ static void init_boot_clocks(void) {
     POWER_PowerOnVddioPad(kPOWER_VddIo2);
     POWER_PowerOnVddioPad(kPOWER_VddIo3);
 
+    /* Wait for VDDIO to be ready */
+    volatile uint32_t loop = 0x2000;
+    while (loop--)
+    {
+        __NOP();
+    }
+
     /* Enable GPIO and UART0 clocks */
     CLOCK_EnableClock(kCLOCK_Gpio);
     CLOCK_EnableClock(kCLOCK_Uart0);
