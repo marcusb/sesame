@@ -8,6 +8,7 @@ LOG_MODULE_REGISTER(wifi_mw320, CONFIG_WIFI_LOG_LEVEL);
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <zephyr/devicetree.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/ethernet.h>
@@ -304,118 +305,19 @@ static int wifi_mw320_event_callback(enum wlan_event_reason event, void *data)
 #include <stdbool.h>
 #include "mflash_drv.h"
 
-
-
-#define FL_PART1_START 0x4000
-#define FL_PART2_START 0x5000
-#include "../../../mw320_sdk/components/boot2_utils/partition.h"
-
-struct fw_ptr_debug_info {
-    uint32_t fw_ptr;
-    uint32_t t1_magic;
-    uint32_t t2_magic;
-    uint32_t num_entries;
-    struct partition_entry entries[10];
-};
-
-__ramfunc static void wifi_mw320_get_fw_ptr(struct fw_ptr_debug_info *dbg)
+__ramfunc static void * wifi_mw320_get_fw_ptr(void)
 {
-    unsigned int key = irq_lock();
     uint32_t offset = 0;
-    
-    uint32_t old_fcacr = FLASHC->FCACR;
-    uint32_t old_faoffr = FLASHC->FAOFFR;
-    
     if ((FLASHC->FCACR & FLASHC_FCACR_OFFSET_EN_MASK) != 0U) {
         offset = FLASHC->FAOFFR;
     }
     
-    // Instead of disabling offset, just set it to 0 and flush cache
-    FLASHC->FAOFFR = 0;
+    // The physical address of the Wi-Fi firmware from Device Tree
+    uint32_t phys_addr = DT_REG_ADDR(DT_NODELABEL(wififw_partition));
     
-    // Flush cache so we read from physical 0
-    FLASHC->FCCR |= FLASHC_FCCR_CACHE_LINE_FLUSH_MASK;
-    while (FLASHC->FCCR & FLASHC_FCCR_CACHE_LINE_FLUSH_MASK) {}
-    
-    // Read directly from physical flash using memory mapping
-    struct partition_table t1, t2;
-    uint32_t *dst = (uint32_t *)&t1;
-    uint32_t *src = (uint32_t *)(0x1F000000 + 0x4000);
-    uint32_t t1_words = sizeof(t1) >> 2;
-    for (uint32_t i=0; i<t1_words; i++) dst[i] = src[i];
-    
-    dst = (uint32_t *)&t2;
-    src = (uint32_t *)(0x1F000000 + 0x5000);
-    uint32_t t2_words = sizeof(t2) >> 2;
-    for (uint32_t i=0; i<t2_words; i++) dst[i] = src[i];
-    
-    dbg->t1_magic = t1.magic;
-    dbg->t2_magic = t2.magic;
-    
-    struct partition_table *active_t = NULL;
-    bool t1_valid = (t1.magic == PARTITION_TABLE_MAGIC);
-    bool t2_valid = (t2.magic == PARTITION_TABLE_MAGIC);
-    
-    if (t1_valid && t2_valid) {
-        if (t1.gen_level >= t2.gen_level) {
-            active_t = &t1;
-        } else {
-            active_t = &t2;
-        }
-    } else if (t1_valid) {
-        active_t = &t1;
-    } else if (t2_valid) {
-        active_t = &t2;
-    }
-    
-    uint32_t active_fw_start = 0;
-    dbg->num_entries = 0;
-    if (active_t) {
-        uint32_t active_t_addr = (active_t == &t1) ? 0x4000 : 0x5000;
-        uint32_t entries_addr = active_t_addr + sizeof(struct partition_table);
-        
-        uint32_t num_entries = active_t->partition_entries_no;
-        if (num_entries > 10) num_entries = 10;
-        dbg->num_entries = num_entries;
-        
-        dst = (uint32_t *)dbg->entries;
-        src = (uint32_t *)(0x1F000000 + entries_addr);
-        uint32_t entry_words = (sizeof(struct partition_entry) * num_entries) >> 2;
-        for (uint32_t i=0; i<entry_words; i++) dst[i] = src[i];
-        
-        struct partition_entry *active_fw = NULL;
-        for (int i = 0; i < num_entries; i++) {
-            if (dbg->entries[i].type == FC_COMP_WLAN_FW) {
-                if (!active_fw || dbg->entries[i].gen_level > active_fw->gen_level) {
-                    active_fw = &dbg->entries[i];
-                }
-            }
-        }
-        if (active_fw) {
-            active_fw_start = active_fw->start;
-        }
-    }
-    
-    // Restore offset
-    FLASHC->FAOFFR = old_faoffr;
-    FLASHC->FCACR = old_fcacr;
-    
-    // Flush cache again to ensure instructions are fetched correctly with the new offset
-    FLASHC->FCCR |= FLASHC_FCCR_CACHE_LINE_FLUSH_MASK;
-    while (FLASHC->FCCR & FLASHC_FCCR_CACHE_LINE_FLUSH_MASK) {}
-    
-    irq_unlock(key);
-    
-    dbg->fw_ptr = 0;
-    if (active_fw_start) {
-        offset = 0;
-        if ((FLASHC->FCACR & FLASHC_FCACR_OFFSET_EN_MASK) != 0U) {
-            offset = FLASHC->FAOFFR;
-        }
-        dbg->fw_ptr = 0x1F000000 + active_fw_start - offset;
-    }
+    // Map it to logical address space
+    return (void *)(MFLASH_BASE_ADDRESS + phys_addr - offset);
 }
-
 
 static bool wifi_mw320_is_ip_or_ipv6(const uint8_t *buffer)
 {
@@ -429,17 +331,9 @@ static int wifi_mw320_init(const struct device *dev)
     int ret;
     struct wifi_mw320_config *cfg = (struct wifi_mw320_config *)dev->config;
 
-    struct fw_ptr_debug_info dbg = {0};
-    wifi_mw320_get_fw_ptr(&dbg);
-    
-    void *fw_ptr = (void *)dbg.fw_ptr;
+    void *fw_ptr = wifi_mw320_get_fw_ptr();
     if (!fw_ptr) {
         LOG_ERR("wifi_mw320_get_fw_ptr returned NULL");
-        
-        // Debug read from flash using memory map to see what we actually got
-        uint32_t *magic = (uint32_t *)(0x1F000000 + 0x4000);
-        LOG_ERR("Direct read from 0x1F004000: 0x%08x", *magic);
-        
         return -ENODEV;
     }
 
@@ -462,19 +356,16 @@ static int wifi_mw320_init(const struct device *dev)
 
     /* Initialize WIFI Driver */
     LOG_INF("SDIOC_GetPresentStatus = 0x%08x", SDIOC_GetPresentStatus(SDIOC));
-    
 
-    
-    extern int wifi_register_wrapper_net_is_ip_or_ipv6_callback(bool (*)(const uint8_t *));
     wifi_register_wrapper_net_is_ip_or_ipv6_callback(wifi_mw320_is_ip_or_ipv6);
 
-    LOG_INF("Calling wlan_init...");
+    LOG_INF("loading wlan firmware");
     ret = wlan_init((const uint8_t *)(wififw + 2U), *(wififw + 1U));
-    LOG_INF("wlan_init returned %d", ret);
     if (ret != WM_SUCCESS) {
         LOG_ERR("wlan_init failed: %d", ret);
         return -EIO;
     }
+    LOG_INF("wlan initialized");
 
     ret = wlan_start(wifi_mw320_event_callback);
     if (ret != WM_SUCCESS) {
