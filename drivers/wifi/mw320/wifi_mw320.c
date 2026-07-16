@@ -329,7 +329,6 @@ static bool wifi_mw320_is_ip_or_ipv6(const uint8_t *buffer)
 static int wifi_mw320_init(const struct device *dev)
 {
     int ret;
-    struct wifi_mw320_config *cfg = (struct wifi_mw320_config *)dev->config;
 
     void *fw_ptr = wifi_mw320_get_fw_ptr();
     if (!fw_ptr) {

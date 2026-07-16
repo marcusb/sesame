@@ -1,12 +1,16 @@
 #pragma once
 
+#ifndef SD8801
 #define SD8801
+#endif
 
 #define CONFIG_WIFI_MAX_PRIO (configMAX_PRIORITIES - 1)
 
 #define CONFIG_MAX_AP_ENTRIES 10
 
+#ifndef CONFIG_FLASH_PARTITION_COUNT
 #define CONFIG_FLASH_PARTITION_COUNT 16
+#endif
 
 #if defined(SD8977) || defined(SD8978)
 #define CONFIG_5GHz_SUPPORT 1
