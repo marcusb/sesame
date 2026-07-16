@@ -37,7 +37,12 @@ static void start_ap(void) {
                  sizeof(ap_params))) {
         printk("Failed to start AP\n");
     } else {
-        printk("AP started successfully\n");
+        char ip_str[INET_ADDRSTRLEN];
+        char mask_str[INET_ADDRSTRLEN];
+        net_addr_ntop(AF_INET, &ap_ip, ip_str, sizeof(ip_str));
+        net_addr_ntop(AF_INET, &ap_mask, mask_str, sizeof(mask_str));
+        printk("AP started successfully. IP: %s, Netmask: %s\n", ip_str,
+               mask_str);
     }
 
     struct in_addr dhcp_base_ip;
