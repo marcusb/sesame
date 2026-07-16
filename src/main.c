@@ -2,6 +2,7 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/kernel.h>
+#include <zephyr/net/dhcpv4_server.h>
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_ip.h>
@@ -37,6 +38,14 @@ static void start_ap(void) {
         printk("Failed to start AP\n");
     } else {
         printk("AP started successfully\n");
+    }
+
+    struct in_addr dhcp_base_ip;
+    net_addr_pton(AF_INET, "192.168.4.2", &dhcp_base_ip);
+    if (net_dhcpv4_server_start(iface, &dhcp_base_ip) < 0) {
+        printk("Failed to start DHCPv4 server\n");
+    } else {
+        printk("DHCPv4 server started\n");
     }
 }
 
