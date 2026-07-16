@@ -21,25 +21,30 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 
+        /* these MUST match board/flash-layout.txt */
 		boot2_partition: partition@0 {
 			label = "boot2";
-			reg = <0x00000000 0x00018000>;
+			reg = <0x00000000 0x00010000>;
 		};
-		wififw_partition: partition@18000 {
-			label = "wififw";
-			reg = <0x00018000 0x00044000>;
+		mcuboot_partition: partition@10000 {
+			label = "mcuboot";
+			reg = <0x00010000 0x00020000>;
 		};
-		psm_partition: partition@5c000 {
-			label = "psm";
-			reg = <0x0005C000 0x00018000>;
-		};
-		slot0_partition: partition@74000 {
+		slot0_partition: partition@30000 {
 			label = "image-0";
-			reg = <0x00074000 0x000C8000>;
+			reg = <0x00030000 0x00170000>;
 		};
-		slot1_partition: partition@13c000 {
+		slot1_partition: partition@1a0000 {
 			label = "image-1";
-			reg = <0x0013C000 0x000C8000>;
+			reg = <0x001A0000 0x00170000>;
+		};
+		psm_partition: partition@310000 {
+			label = "psm";
+			reg = <0x00310000 0x00040000>;
+		};
+		wififw_partition: partition@350000 {
+			label = "wififw";
+			reg = <0x00350000 0x000A0000>;
 		};
 	};
 };

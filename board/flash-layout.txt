@@ -1,3 +1,6 @@
+# NOTE! When updating this, the dts file MUST be updated to match!
+#   boards/arm/marvell_mw302/marvell_mw302_88mw320_cpu0.dts
+#
 # Component          Address    Size      device  Name[8]
 FC_COMP_BOOT2      0x0        0x10000   0       boot2
 FC_COMP_USER_APP   0x10000    0x20000   0       mcuboot
