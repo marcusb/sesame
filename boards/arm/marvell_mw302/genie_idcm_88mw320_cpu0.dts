@@ -1,5 +1,6 @@
 /dts-v1/;
 #include "marvell_mw302_88mw320_cpu0.dts"
+#include <zephyr/dt-bindings/gpio/gpio.h>
 
 / {
 	model = "Genie Integrated Door Control Module Board 39732R.S";
@@ -69,5 +70,45 @@
 		         <MW320_PINMUX(46, 0)>, /* GPIO46 */
 		         <MW320_PINMUX(48, 0)>, /* GPIO48 */
 		         <MW320_PINMUX(49, 0)>; /* GPIO49 */
+	};
+};
+
+&gpio0 {
+	ota_blue_hog {
+		gpio-hog;
+		gpios = <16 GPIO_ACTIVE_LOW>;
+		output-high;
+	};
+	
+	ota_green_hog {
+		gpio-hog;
+		gpios = <27 GPIO_ACTIVE_LOW>;
+		output-low;
+	};
+};
+
+&gpio1 {
+	ota_red_hog {
+		gpio-hog;
+		gpios = <8 GPIO_ACTIVE_LOW>;
+		output-low;
+	};
+
+	wifi_blue_hog {
+		gpio-hog;
+		gpios = <9 GPIO_ACTIVE_LOW>;
+		output-high;
+	};
+
+	wifi_green_hog {
+		gpio-hog;
+		gpios = <10 GPIO_ACTIVE_LOW>;
+		output-low;
+	};
+
+	wifi_red_hog {
+		gpio-hog;
+		gpios = <11 GPIO_ACTIVE_LOW>;
+		output-low;
 	};
 };
