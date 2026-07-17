@@ -29,6 +29,7 @@ target_link_libraries(app PRIVATE -lm)
 # Application Sources
 target_sources(app PRIVATE
     src/main.c
+    src/leds.c
     # We will progressively add files as we port them
     # src/network_manager.c (Needs rewrite)
     # src/ota.c (Needs rewrite)
