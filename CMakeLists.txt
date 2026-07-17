@@ -51,7 +51,7 @@ zephyr_library_sources_ifdef(CONFIG_PINCTRL_MW320 drivers/pinctrl/pinctrl_mw320.
 zephyr_library_sources_ifdef(CONFIG_WATCHDOG_MW320 drivers/watchdog/wdt_mw320.c)
 
 # Convert ELF to firmware binary for flashing (XIP only, RAM build uses AXF directly)
-if(NOT CONFIG_BOARD_MARVELL_MW302_RAM)
+if(NOT CONFIG_BOARD_GENIE_IDCM_RAM)
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/sesame.bin
     COMMAND make -C ${CMAKE_SOURCE_DIR}/tools/axf2firmware
@@ -81,8 +81,4 @@ ExternalProject_Add(ram_variant
     BUILD_ALWAYS    TRUE
 )
 
-ExternalProject_Add_Step(ram_variant copy_binaries
-    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/ram-build/zephyr/zephyr.elf" "${CMAKE_BINARY_DIR}/sesame_ram.axf"
-    DEPENDEES build
-)
 endif()
