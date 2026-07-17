@@ -2,6 +2,8 @@
 #define _ZEPHYR_WM_OS_H_
 #define _WM_OS_H_
 
+#include "wifi_config.h"
+
 #include <zephyr/kernel.h>
 #include <string.h>
 #include <stdint.h>

@@ -4,7 +4,10 @@
 #undef wifi_scan_result
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(wifi_mw320, CONFIG_WIFI_LOG_LEVEL);
+LOG_MODULE_REGISTER(wifi_mw320, LOG_LEVEL_DBG);
+
+#include <stdio.h>
+#include <stdarg.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
@@ -36,6 +39,7 @@ LOG_MODULE_REGISTER(wifi_mw320, CONFIG_WIFI_LOG_LEVEL);
 struct wifi_mw320_dev {
     struct net_if *iface;
     uint8_t mac_addr[6];
+    int bss_type;
 };
 
 static struct wifi_mw320_dev mw320_data;
@@ -90,7 +94,7 @@ static int wifi_mw320_send(const struct device *dev, struct net_pkt *pkt)
         return -EIO;
     }
 
-    int ret = wifi_low_level_output(BSS_TYPE_STA, outbuf + hdr_len, pkt_len);
+    int ret = wifi_low_level_output(mw320_data.bss_type, outbuf + hdr_len, pkt_len);
     if (ret != WM_SUCCESS) {
         return -EIO;
     }
@@ -152,6 +156,7 @@ static int wifi_mw320_mgmt_connect(const struct device *dev, struct net_if *ifac
         return -EIO;
     }
 
+    mw320_data.bss_type = BSS_TYPE_STA;
     return 0;
 }
 
@@ -211,6 +216,7 @@ static int wifi_mw320_mgmt_ap_enable(const struct device *dev, struct net_if *if
         return -EIO;
     }
 
+    mw320_data.bss_type = BSS_TYPE_UAP;
     return 0;
 }
 
@@ -250,8 +256,14 @@ static int wifi_mw320_set_config(const struct device *dev,
 	return -ENOTSUP;
 }
 
+static enum ethernet_hw_caps wifi_mw320_get_capabilities(const struct device *dev, struct net_if *iface)
+{
+	return ETHERNET_HW_FILTERING;
+}
+
 static const struct net_wifi_mgmt_offload wifi_mw320_api = {
     .wifi_iface.iface_api.init = wifi_mw320_iface_init,
+    .wifi_iface.get_capabilities = wifi_mw320_get_capabilities,
     .wifi_iface.send = wifi_mw320_send,
     .wifi_iface.set_config = wifi_mw320_set_config,
     .wifi_mgmt_api = &wifi_mw320_mgmt_ops,
@@ -319,6 +331,60 @@ __ramfunc static void * wifi_mw320_get_fw_ptr(void)
     return (void *)(MFLASH_BASE_ADDRESS + phys_addr - offset);
 }
 
+#include <mlan_api.h>
+#include <wifi-internal.h>
+
+static void wifi_mw320_data_input_callback(const uint8_t interface, const uint8_t *buffer, const uint16_t len)
+{
+    struct wifi_mw320_dev *dev = &mw320_data;
+    if (!dev->iface) return;
+
+    RxPD * rxpd = (RxPD *)(buffer + INTF_HEADER_LEN);
+    
+    if (rxpd->rx_pkt_type == PKT_TYPE_AMSDU) {
+        LOG_WRN("AMSDU not supported in Zephyr port yet");
+        return;
+    }
+    
+    uint8_t *payload = (uint8_t *)rxpd + rxpd->rx_pkt_offset;
+    uint16_t payload_len = rxpd->rx_pkt_length;
+    
+    struct net_pkt *pkt = net_pkt_rx_alloc_with_buffer(dev->iface, payload_len, AF_UNSPEC, 0, K_NO_WAIT);
+    if (!pkt) {
+        LOG_ERR("Failed to allocate RX net_pkt");
+        return;
+    }
+    
+    static const uint8_t rfc1042_eth_hdr[] = { 0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00 };
+    if (!memcmp(payload + sizeof(struct net_eth_hdr), rfc1042_eth_hdr, sizeof(rfc1042_eth_hdr))) {
+        struct net_eth_hdr ethhdr;
+        memcpy(&ethhdr, payload, sizeof(ethhdr));
+        ethhdr.type = *(uint16_t *)(payload + sizeof(struct net_eth_hdr) + sizeof(rfc1042_eth_hdr));
+        
+        if (net_pkt_write(pkt, &ethhdr, sizeof(ethhdr)) < 0) {
+            printk("<err> wifi_mw320: Failed to write to net_pkt\n");
+            net_pkt_unref(pkt);
+            return;
+        }
+        if (net_pkt_write(pkt, payload + sizeof(struct net_eth_hdr) + 8, payload_len - sizeof(struct net_eth_hdr) - 8) < 0) {
+            printk("<err> wifi_mw320: Failed to write to net_pkt\n");
+            net_pkt_unref(pkt);
+            return;
+        }
+    } else {
+        if (net_pkt_write(pkt, payload, payload_len) < 0) {
+            printk("<err> wifi_mw320: Failed to write to net_pkt\n");
+            net_pkt_unref(pkt);
+            return;
+        }
+    }
+    
+    if (net_recv_data(dev->iface, pkt) < 0) {
+        LOG_ERR("net_recv_data failed");
+        net_pkt_unref(pkt);
+    }
+}
+
 static bool wifi_mw320_is_ip_or_ipv6(const uint8_t *buffer)
 {
     struct net_eth_hdr *hdr = (struct net_eth_hdr *)buffer;
@@ -357,6 +423,7 @@ static int wifi_mw320_init(const struct device *dev)
     LOG_INF("SDIOC_GetPresentStatus = 0x%08x", SDIOC_GetPresentStatus(SDIOC));
 
     wifi_register_wrapper_net_is_ip_or_ipv6_callback(wifi_mw320_is_ip_or_ipv6);
+    wifi_register_data_input_callback(wifi_mw320_data_input_callback);
 
     LOG_INF("loading wlan firmware");
     ret = wlan_init((const uint8_t *)(wififw + 2U), *(wififw + 1U));
@@ -383,4 +450,5 @@ NET_DEVICE_INIT(wifi_mw320, "WIFI_MW320",
                 ETHERNET_L2,
                 NET_L2_GET_CTX_TYPE(ETHERNET_L2),
                 NET_ETH_MTU);
+
 
