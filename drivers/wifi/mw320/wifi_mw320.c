@@ -213,10 +213,12 @@ static int wifi_mw320_mgmt_ap_enable(const struct device *dev, struct net_if *if
     res = wlan_start_network(network.name);
     if (res != WM_SUCCESS) {
         LOG_ERR("wlan_start_network failed %d", res);
+        wifi_mgmt_raise_ap_enable_result_event(iface, WIFI_STATUS_AP_FAIL);
         return -EIO;
     }
 
     mw320_data.bss_type = BSS_TYPE_UAP;
+    wifi_mgmt_raise_ap_enable_result_event(iface, WIFI_STATUS_AP_SUCCESS);
     return 0;
 }
 
@@ -225,8 +227,10 @@ static int wifi_mw320_mgmt_ap_disable(const struct device *dev, struct net_if *i
     int res = wlan_stop_network("uap");
     if (res != WM_SUCCESS) {
         LOG_ERR("wlan_stop_network failed %d", res);
+        wifi_mgmt_raise_ap_disable_result_event(iface, WIFI_STATUS_AP_FAIL);
         return -EIO;
     }
+    wifi_mgmt_raise_ap_disable_result_event(iface, WIFI_STATUS_AP_SUCCESS);
     return 0;
 }
 
