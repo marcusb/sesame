@@ -1,8 +1,9 @@
-if BOARD_MARVELL_MW302 || BOARD_MARVELL_MW302_GENIE_IDCM || BOARD_MARVELL_MW302_RAM
+if BOARD_MARVELL_MW302 || BOARD_GENIE_IDCM || BOARD_MARVELL_MW302_RAM || BOARD_GENIE_IDCM_RAM
 
 config BOARD
 	default "marvell_mw302" if BOARD_MARVELL_MW302
-	default "marvell_mw302_genie_idcm" if BOARD_MARVELL_MW302_GENIE_IDCM
+	default "genie_idcm" if BOARD_GENIE_IDCM
 	default "marvell_mw302_ram" if BOARD_MARVELL_MW302_RAM
+	default "genie_idcm_ram" if BOARD_GENIE_IDCM_RAM
 
 endif

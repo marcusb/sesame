@@ -11,7 +11,7 @@ set(BOARD_ROOT ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "Board root directory")
 set(SOC_ROOT ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "SOC root directory")
 
 # Board selection (use marvell_mw302 for flash/XIP, marvell_mw302_ram for RAM load)
-set(BOARD marvell_mw302/88mw320/cpu0 CACHE STRING "Zephyr board")
+set(BOARD genie_idcm/88mw320/cpu0 CACHE STRING "Zephyr board")
 
 # Toolchain defaults
 set(ZEPHYR_TOOLCHAIN_VARIANT "gnuarmemb" CACHE STRING "Zephyr toolchain variant")
@@ -72,7 +72,7 @@ ExternalProject_Add(ram_variant
     BINARY_DIR      "${CMAKE_BINARY_DIR}/ram-build"
     CONFIGURE_COMMAND
         "${CMAKE_COMMAND}" -G Ninja
-            -DBOARD=marvell_mw302_ram/88mw320/cpu0
+            -DBOARD=genie_idcm_ram/88mw320/cpu0
             -DZEPHYR_TOOLCHAIN_VARIANT=${ZEPHYR_TOOLCHAIN_VARIANT}
             -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/ram-build"
     BUILD_COMMAND

@@ -1,0 +1,73 @@
+/dts-v1/;
+#include "marvell_mw302_88mw320_cpu0.dts"
+
+/ {
+	model = "Genie Integrated Door Control Module Board 39732R.S";
+	compatible = "marvell,mw302", "nxp,88mw320";
+
+	leds {
+		compatible = "gpio-leds";
+
+		led_ota_blue: led_ota_blue {
+			gpios = <&gpio0 16 1>;
+			label = "OTA LED Blue";
+		};
+
+		led_ota_green: led_ota_green {
+			gpios = <&gpio0 27 1>;
+			label = "OTA LED Green";
+		};
+
+		led_ota_red: led_ota_red {
+			gpios = <&gpio1 8 1>;
+			label = "OTA LED Red";
+		};
+
+		led_wifi_blue: led_wifi_blue {
+			gpios = <&gpio1 9 1>;
+			label = "WiFi LED Blue";
+		};
+
+		led_wifi_green: led_wifi_green {
+			gpios = <&gpio1 10 1>;
+			label = "WiFi LED Green";
+		};
+
+		led_wifi_red: led_wifi_red {
+			gpios = <&gpio1 11 1>;
+			label = "WiFi LED Red";
+		};
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+
+		sw_wifi: sw_wifi {
+			label = "WiFi Button";
+			gpios = <&gpio0 22 1>;
+		};
+
+		sw_ota: sw_ota {
+			label = "OTA Button";
+			gpios = <&gpio0 23 1>;
+		};
+	};
+};
+
+&gpio_default {
+	group1 {
+		pinmux = <MW320_PINMUX(16, 0)>, /* LED OTA BLUE */
+		         <MW320_PINMUX(27, 0)>, /* LED OTA GREEN */
+		         <MW320_PINMUX(40, 0)>, /* LED OTA RED */
+		         <MW320_PINMUX(41, 0)>, /* LED WIFI BLUE */
+		         <MW320_PINMUX(42, 0)>, /* LED WIFI GREEN */
+		         <MW320_PINMUX(43, 0)>, /* LED WIFI RED */
+		         <MW320_PINMUX(22, 0)>, /* SW WIFI */
+		         <MW320_PINMUX(23, 0)>, /* SW OTA */
+		         <MW320_PINMUX(0, 0)>,  /* GPIO0 */
+		         <MW320_PINMUX(1, 0)>,  /* GPIO1 */
+		         <MW320_PINMUX(46, 0)>, /* GPIO46 */
+		         <MW320_PINMUX(48, 0)>, /* GPIO48 */
+		         <MW320_PINMUX(49, 0)>; /* GPIO49 */
+	};
+};

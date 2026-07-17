@@ -28,22 +28,15 @@ apt install cmake ninja-build gcc-arm-none-eabi libstdc++-arm-none-eabi \
 **Clean build:**
 
 ```sh
-rm -rf build-native build && mkdir build-native build
-cd build-native && cmake -G Ninja .. && ninja && cd ..
-cd build && cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Debug \
-  -DUSE_BACKTRACE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
-  -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake -G Ninja \
-  -Daxf2firmware_DIR=~/src/sesame/build-native .. && ninja
+rm -rf build && cmake -B build -G Ninja && ninja -C build
 ```
 
 **Incremental build:**
 
 ```sh
-ninja -C build                     # Build all variants (hardware & QEMU)
-ninja -C build sesame              # Build hardware flash version
-ninja -C build sesame-qemu         # Build QEMU flash version
-ninja -C build sesame_ram          # Build hardware RAM version
-ninja -C build sesame_ram-qemu     # Build QEMU RAM version
+ninja -C build                     # Build all variants (hardware & RAM)
+ninja -C build zephyr/zephyr.elf   # Build only hardware flash version
+ninja -C build ram_variant         # Build RAM variant
 ```
 
 **Iterating on QEMU-only sources (e.g. `test/integration/**`):**
@@ -80,10 +73,8 @@ contents as suspect until you have proven its mtime is fresh.
 
 **Build outputs:**
 
-- `sesame.axf`, `sesame.bin` – Hardware flash version
-- `sesame_ram.axf` – Hardware RAM version
-- `sesame-qemu.axf` – QEMU flash version
-- `sesame_ram-qemu.axf` – QEMU RAM version
+- `build/zephyr/zephyr.elf`, `build/sesame.bin` – Hardware flash version
+- `build/ram-build/zephyr/zephyr.elf` – Hardware RAM version
 - `test/sesame_tests.axf` – Hardware test suite
 - `test/sesame_tests-qemu.axf` – QEMU test suite
 
@@ -174,7 +165,7 @@ pip install pyserial
 
 **Terminal 1** – Build and load to RAM:
 ```sh
-ninja -C build sesame_ram.axf && ./tools/OpenOCD/ramload.py build/sesame_ram.axf
+ninja -C build ram_variant && ./tools/OpenOCD/ramload.py build/ram-build/zephyr/zephyr.elf
 ```
 
 **Terminal 2** – Monitor serial output:
@@ -226,7 +217,7 @@ ninja -C build sesame_tests && ./tools/run_on_device.sh build/test/sesame_tests.
 **3. Flash and Full System Test:**
 Build, flash, and test through full reboot cycle:
 ```bash
-ninja -C build sesame.axf && \
+ninja -C build zephyr/zephyr.elf && \
 ./tools/OpenOCD/flashprog.py --mcufw build/sesame.bin -r && \
 ./tools/monitor.py
 ```
@@ -324,7 +315,7 @@ if __name__ == '__main__':
 
 **Run after flash:**
 ```sh
-ninja -C build sesame.axf && \
+ninja -C build zephyr/zephyr.elf && \
 ./tools/OpenOCD/flashprog.py --mcufw build/sesame.bin -r && \
 python3 test_boot.py
 ```
@@ -348,7 +339,7 @@ tools/flash_and_monitor.sh [timeout_sec] [logfile]   # defaults: 60 /tmp/sesame_
 ### OTA Updates
 
 **Manual flow:**
-1. Build `sesame.axf`
+1. Build `zephyr/zephyr.elf`
 2. Host on HTTP server (not HTTPS)
 3. From device, POST to `/fwupgrade` with FirmwareUpgradeFetchRequest (URL in protobuf)
 4. Device boots test image (OTA LED blinks blue)
@@ -435,6 +426,9 @@ Exceptions:
 
 For library code, follow the style of the library (eg FreeRTOS)
 
+Place `#include`s at the top, never in between functions.
+Prefer including function declarations from headers instead of one-off `extern`s.
+
 ## Tools & IDE Support
 
 - **Language server**: `.ccls` configured for ARM includes and cross-compilation flags
@@ -461,13 +455,13 @@ The project provides a robust serial monitor that handles reconnections and time
 **Method 2: Run and Monitor (RAM Load)**
 Build the RAM target and run it immediately with monitoring until completion:
 ```bash
-./tools/run_on_device.sh build/sesame_ram.axf
+./tools/run_on_device.sh build/ram-build/zephyr/zephyr.elf
 ```
 
 **Method 3: Monitor After Flash**
 Monitor an already flashed (XIP) application without attempting to reload it into RAM:
 ```bash
-./tools/run_on_device.sh build/sesame.axf --no-load
+./tools/run_on_device.sh build/zephyr/zephyr.elf --no-load
 ```
 
 ### Rebooting and Serial Capture
@@ -491,7 +485,7 @@ openocd -s tools/OpenOCD -f tools/OpenOCD/interface/ftdi.cfg -f tools/OpenOCD/op
 
 2. **Launch GDB** using the provided initialization script:
 ```bash
-gdb-multiarch -x tools/OpenOCD/gdbinit build/sesame.axf
+gdb-multiarch -x tools/OpenOCD/gdbinit build/zephyr/zephyr.elf
 ```
 
 ### Common Commands
@@ -505,7 +499,7 @@ The `gdbinit` script provides helper functions for common tasks:
 
 To run automated GDB traces (e.g., in CI or for specific bug hunts):
 ```bash
-gdb-multiarch -batch -x tools/OpenOCD/gdbinit build/sesame.axf \
+gdb-multiarch -batch -x tools/OpenOCD/gdbinit build/zephyr/zephyr.elf \
   -ex "xip-debug" \
   -ex "thbreak mbedtls_ecp_mul" \
   -ex "continue" \

@@ -1,0 +1,3 @@
+config BOARD_GENIE_IDCM
+	bool
+	select SOC_88MW320
