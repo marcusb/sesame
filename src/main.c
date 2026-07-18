@@ -13,7 +13,8 @@
 #include "leds.h"
 
 static struct net_mgmt_event_callback wifi_mgmt_cb;
-
+static const struct device* const wdt = DEVICE_DT_GET(DT_NODELABEL(wdt0));
+static int wdt_channel_id = -1;
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                     uint64_t mgmt_event, struct net_if* iface) {
     switch (mgmt_event) {
@@ -83,8 +84,6 @@ static void start_ap(void) {
 }
 
 static void init_watchdog() {
-    const struct device* const wdt = DEVICE_DT_GET(DT_NODELABEL(wdt0));
-
     if (!device_is_ready(wdt)) {
         printk("Watchdog device not ready\n");
         return;
@@ -97,7 +96,7 @@ static void init_watchdog() {
         .flags = WDT_FLAG_RESET_SOC,
     };
 
-    int wdt_channel_id = wdt_install_timeout(wdt, &wdt_config);
+    wdt_channel_id = wdt_install_timeout(wdt, &wdt_config);
     if (wdt_channel_id < 0) {
         printk("Watchdog install error\n");
         return;
@@ -120,7 +119,9 @@ void main(void) {
     start_ap();
 
     while (1) {
-        wdt_feed(wdt, wdt_channel_id);
+        if (wdt_channel_id >= 0) {
+            wdt_feed(wdt, wdt_channel_id);
+        }
         k_sleep(K_MSEC(1000));
     }
 }
