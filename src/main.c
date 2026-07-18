@@ -17,11 +17,11 @@ static struct net_mgmt_event_callback wifi_mgmt_cb;
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                     uint64_t mgmt_event, struct net_if* iface) {
     switch (mgmt_event) {
-        case NET_EVENT_WIFI_CMD_AP_ENABLE_RESULT:
+        case NET_EVENT_WIFI_AP_ENABLE_RESULT:
             set_wifi_led_pattern(LED_BLUE, LED_OFF, LED_BLUE, LED_OFF);
             printk("WiFi AP enabled\n");
             break;
-        case NET_EVENT_WIFI_CMD_AP_DISABLE_RESULT:
+        case NET_EVENT_WIFI_AP_DISABLE_RESULT:
             set_wifi_led_pattern(LED_OFF, LED_OFF, LED_OFF, LED_OFF);
             printk("WiFi AP disabled\n");
             break;
@@ -82,16 +82,7 @@ static void start_ap(void) {
     }
 }
 
-void main(void) {
-    leds_init();
-
-    net_mgmt_init_event_callback(&wifi_mgmt_cb, wifi_mgmt_event_handler,
-                                 NET_EVENT_WIFI_CMD_AP_ENABLE_RESULT |
-                                     NET_EVENT_WIFI_CMD_AP_DISABLE_RESULT |
-                                     NET_EVENT_WIFI_CONNECT_RESULT |
-                                     NET_EVENT_WIFI_DISCONNECT_RESULT);
-    net_mgmt_add_event_callback(&wifi_mgmt_cb);
-
+static void init_watchdog() {
     const struct device* const wdt = DEVICE_DT_GET(DT_NODELABEL(wdt0));
 
     if (!device_is_ready(wdt)) {
@@ -113,7 +104,19 @@ void main(void) {
     }
 
     wdt_setup(wdt, WDT_OPT_PAUSE_HALTED_BY_DBG);
+}
 
+void main(void) {
+    leds_init();
+
+    net_mgmt_init_event_callback(
+        &wifi_mgmt_cb, wifi_mgmt_event_handler,
+        NET_EVENT_WIFI_AP_ENABLE_RESULT | NET_EVENT_WIFI_AP_DISABLE_RESULT |
+            NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT);
+    net_mgmt_add_event_callback(&wifi_mgmt_cb);
+
+    init_watchdog();
+    set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);
     start_ap();
 
     while (1) {
