@@ -28,19 +28,15 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
     switch (mgmt_event) {
         case NET_EVENT_WIFI_AP_ENABLE_RESULT:
             set_wifi_led_pattern(LED_BLUE, LED_OFF, LED_BLUE, LED_OFF);
-            printk("WiFi AP enabled\n");
             break;
         case NET_EVENT_WIFI_AP_DISABLE_RESULT:
             set_wifi_led_pattern(LED_OFF, LED_OFF, LED_OFF, LED_OFF);
-            printk("WiFi AP disabled\n");
             break;
         case NET_EVENT_WIFI_CONNECT_RESULT:
             set_wifi_led_pattern(LED_GREEN, LED_GREEN, LED_GREEN, LED_GREEN);
-            printk("WiFi Connected\n");
             break;
         case NET_EVENT_WIFI_DISCONNECT_RESULT:
             set_wifi_led_pattern(LED_GREEN, LED_OFF, LED_GREEN, LED_OFF);
-            printk("WiFi Disconnected\n");
             break;
         default:
             break;
@@ -134,14 +130,11 @@ void main(void) {
     set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);
 
     if (gpio_is_ready_dt(&wifi_button)) {
-        int r1 = gpio_pin_configure_dt(&wifi_button, GPIO_INPUT | GPIO_PULL_UP);
-        int r2 = gpio_pin_interrupt_configure_dt(&wifi_button,
-                                                 GPIO_INT_EDGE_TO_ACTIVE);
+        gpio_pin_configure_dt(&wifi_button, GPIO_INPUT | GPIO_PULL_UP);
+        gpio_pin_interrupt_configure_dt(&wifi_button, GPIO_INT_EDGE_TO_ACTIVE);
         gpio_init_callback(&wifi_button_cb_data, wifi_button_pressed,
                            BIT(wifi_button.pin));
-        int r3 = gpio_add_callback(wifi_button.port, &wifi_button_cb_data);
-        printk("GPIO init: config=%d int=%d cb=%d pin=%d\n", r1, r2, r3,
-               wifi_button.pin);
+        gpio_add_callback(wifi_button.port, &wifi_button_cb_data);
     }
 
     while (1) {
@@ -149,7 +142,6 @@ void main(void) {
         if (k_msgq_get(&ctrl_queue, &msg, K_MSEC(1000)) == 0) {
             switch (msg.type) {
                 case CTRL_MSG_WIFI_BUTTON:
-                    printk("Starting AP mode from WIFI button...\n");
                     start_ap();
                     break;
                 default:

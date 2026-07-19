@@ -1,14 +1,13 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/gpio/gpio_utils.h>
+#include <zephyr/drivers/pinctrl.h>
 #include <zephyr/irq.h>
-#include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
 #include "fsl_gpio.h"
+#include "fsl_clock.h"
 
 #define DT_DRV_COMPAT nxp_mw320_gpio
-
-#include <zephyr/drivers/pinctrl.h>
-#include "fsl_clock.h"
 
 struct gpio_mw320_config {
     struct gpio_driver_config common;
@@ -94,8 +93,6 @@ static int gpio_mw320_pin_interrupt_configure(const struct device *dev,
     const struct gpio_mw320_config *config = dev->config;
     uint32_t absolute_pin = (config->port * 32U) + pin;
 
-    printk("gpio_mw320_pin_interrupt_configure: pin=%d abs=%d mode=%x trig=%x\n", pin, absolute_pin, mode, trig);
-
     if (mode == GPIO_INT_MODE_DISABLED) {
         GPIO_PinSetInterruptConfig(config->base, absolute_pin, kGPIO_InterruptStatusFlagDisabled);
         GPIO_PortDisableInterrupts(config->base, config->port, 1U << pin);
@@ -143,7 +140,6 @@ static const struct gpio_driver_api gpio_mw320_driver_api = {
 
 
 
-#include <zephyr/sys/util.h>
 
 #define GPIO_MW320_GET_DEV(n) DEVICE_DT_INST_GET(n),
 static const struct device *const gpio_mw320_devs[] = {
@@ -159,7 +155,6 @@ static void gpio_mw320_isr(const void *arg)
 
         uint32_t int_flags = GPIO_PortGetInterruptFlags(config->base, config->port);
         if (int_flags) {
-            printk("GPIO ISR port %d flags %x\n", config->port, int_flags);
             GPIO_PortClearInterruptFlags(config->base, config->port, int_flags);
             gpio_fire_callbacks(&data->callbacks, dev, int_flags);
         }
