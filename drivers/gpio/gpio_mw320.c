@@ -18,6 +18,7 @@ struct gpio_mw320_config {
 
 struct gpio_mw320_data {
     struct gpio_driver_data common;
+    sys_slist_t callbacks;
 };
 
 static int gpio_mw320_configure(const struct device *dev,
@@ -89,7 +90,41 @@ static int gpio_mw320_pin_interrupt_configure(const struct device *dev,
                                               enum gpio_int_mode mode,
                                               enum gpio_int_trig trig)
 {
-    return -ENOTSUP;
+    const struct gpio_mw320_config *config = dev->config;
+    uint32_t absolute_pin = (config->port * 32U) + pin;
+
+    if (mode == GPIO_INT_MODE_DISABLED) {
+        GPIO_PinSetInterruptConfig(config->base, absolute_pin, kGPIO_InterruptStatusFlagDisabled);
+        GPIO_PortDisableInterrupts(config->base, config->port, 1U << pin);
+        return 0;
+    }
+
+    if (mode != GPIO_INT_MODE_EDGE) {
+        return -ENOTSUP;
+    }
+
+    gpio_interrupt_config_t int_config;
+    if (trig == GPIO_INT_TRIG_BOTH) {
+        int_config = kGPIO_InterruptEitherEdge;
+    } else if (trig == GPIO_INT_TRIG_HIGH) {
+        int_config = kGPIO_InterruptRisingEdge;
+    } else if (trig == GPIO_INT_TRIG_LOW) {
+        int_config = kGPIO_InterruptFallingEdge;
+    } else {
+        return -ENOTSUP;
+    }
+
+    GPIO_PinSetInterruptConfig(config->base, absolute_pin, int_config);
+    GPIO_PortEnableInterrupts(config->base, config->port, 1U << pin);
+
+    return 0;
+}
+
+static int gpio_mw320_manage_callback(const struct device *dev,
+                                      struct gpio_callback *callback, bool set)
+{
+    struct gpio_mw320_data *data = dev->data;
+    return gpio_manage_callback(&data->callbacks, callback, set);
 }
 
 static const struct gpio_driver_api gpio_mw320_driver_api = {
@@ -100,9 +135,32 @@ static const struct gpio_driver_api gpio_mw320_driver_api = {
     .port_clear_bits_raw = gpio_mw320_port_clear_bits_raw,
     .port_toggle_bits = gpio_mw320_port_toggle_bits,
     .pin_interrupt_configure = gpio_mw320_pin_interrupt_configure,
+    .manage_callback = gpio_mw320_manage_callback,
 };
 
 
+
+#include <zephyr/sys/util.h>
+
+#define GPIO_MW320_GET_DEV(n) DEVICE_DT_INST_GET(n),
+static const struct device *const gpio_mw320_devs[] = {
+    DT_INST_FOREACH_STATUS_OKAY(GPIO_MW320_GET_DEV)
+};
+
+static void gpio_mw320_isr(const void *arg)
+{
+    for (int i = 0; i < ARRAY_SIZE(gpio_mw320_devs); i++) {
+        const struct device *dev = gpio_mw320_devs[i];
+        const struct gpio_mw320_config *config = dev->config;
+        struct gpio_mw320_data *data = dev->data;
+
+        uint32_t int_flags = GPIO_PortGetInterruptFlags(config->base, config->port);
+        if (int_flags) {
+            GPIO_PortClearInterruptFlags(config->base, config->port, int_flags);
+            gpio_fire_callbacks(&data->callbacks, dev, int_flags);
+        }
+    }
+}
 
 static int gpio_mw320_init(const struct device *dev)
 {
@@ -112,6 +170,13 @@ static int gpio_mw320_init(const struct device *dev)
 
     if (config->pincfg != NULL) {
         pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
+    }
+
+    static bool irq_connected = false;
+    if (!irq_connected) {
+        irq_connected = true;
+        IRQ_CONNECT(GPIO_IRQn, 0, gpio_mw320_isr, NULL, 0);
+        irq_enable(GPIO_IRQn);
     }
 
     return 0;
