@@ -63,8 +63,8 @@
 		         <MW320_PINMUX(41, 0)>, /* LED WIFI BLUE */
 		         <MW320_PINMUX(42, 0)>, /* LED WIFI GREEN */
 		         <MW320_PINMUX(43, 0)>, /* LED WIFI RED */
-		         <MW320_PINMUX(22, 0)>, /* SW WIFI */
-		         <MW320_PINMUX(23, 0)>, /* SW OTA */
+		         <MW320_PINMUX(22, 1)>, /* SW WIFI */
+		         <MW320_PINMUX(23, 1)>, /* SW OTA */
 		         <MW320_PINMUX(0, 0)>,  /* GPIO0 */
 		         <MW320_PINMUX(1, 0)>,  /* GPIO1 */
 		         <MW320_PINMUX(46, 0)>, /* GPIO46 */
