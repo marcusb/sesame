@@ -428,6 +428,8 @@ For library code, follow the style of the library (eg FreeRTOS)
 
 Place `#include`s at the top, never in between functions.
 Prefer including function declarations from headers instead of one-off `extern`s.
+Always use braces with control flow statements like if, else, for, while, never
+elide the braces even for simple single-line statements.
 
 ## Tools & IDE Support
 
