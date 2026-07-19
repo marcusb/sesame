@@ -1,5 +1,6 @@
 #include <string.h>
 #include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/kernel.h>
 #include <zephyr/net/dhcpv4_server.h>
@@ -10,11 +11,25 @@
 #include <zephyr/net/wifi_mgmt.h>
 #include <zephyr/sys/printk.h>
 
+#include "controller.h"
 #include "leds.h"
+
+K_MSGQ_DEFINE(ctrl_queue, sizeof(ctrl_msg_t), 8, 4);
+
+static const struct gpio_dt_spec wifi_button =
+    GPIO_DT_SPEC_GET(DT_NODELABEL(sw_wifi), gpios);
+static struct gpio_callback wifi_button_cb_data;
 
 static struct net_mgmt_event_callback wifi_mgmt_cb;
 static const struct device* const wdt = DEVICE_DT_GET(DT_NODELABEL(wdt0));
 static int wdt_channel_id = -1;
+
+static void wifi_button_pressed(const struct device* dev,
+                                struct gpio_callback* cb, uint32_t pins) {
+    ctrl_msg_t msg = {.type = CTRL_MSG_WIFI_BUTTON};
+    k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+}
+
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                     uint64_t mgmt_event, struct net_if* iface) {
     switch (mgmt_event) {
@@ -116,12 +131,30 @@ void main(void) {
 
     init_watchdog();
     set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);
-    start_ap();
+
+    if (gpio_is_ready_dt(&wifi_button)) {
+        gpio_pin_configure_dt(&wifi_button, GPIO_INPUT | GPIO_PULL_UP);
+        gpio_pin_interrupt_configure_dt(&wifi_button, GPIO_INT_EDGE_TO_ACTIVE);
+        gpio_init_callback(&wifi_button_cb_data, wifi_button_pressed,
+                           BIT(wifi_button.pin));
+        gpio_add_callback(wifi_button.port, &wifi_button_cb_data);
+    }
 
     while (1) {
+        ctrl_msg_t msg;
+        if (k_msgq_get(&ctrl_queue, &msg, K_MSEC(1000)) == 0) {
+            switch (msg.type) {
+                case CTRL_MSG_WIFI_BUTTON:
+                    printk("Starting AP mode from WIFI button...\n");
+                    start_ap();
+                    break;
+                default:
+                    break;
+            }
+        }
+
         if (wdt_channel_id >= 0) {
             wdt_feed(wdt, wdt_channel_id);
         }
-        k_sleep(K_MSEC(1000));
     }
 }

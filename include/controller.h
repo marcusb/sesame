@@ -1,8 +1,8 @@
 #pragma once
 
-#include "FreeRTOS.h"
-#include "api.pb.h"
-#include "app_config.pb.h"
+#include <zephyr/kernel.h>
+//#include "api.pb.h"
+//#include "app_config.pb.h"
 #include "idcm_msg.h"
 
 typedef enum {
@@ -35,16 +35,15 @@ typedef struct {
     ctrl_msg_type_t type;
 
     union {
-        FirmwareUpgradeFetchRequest ota_upgrade;
-        door_control_msg_t door_control;
-        door_state_msg_t door_state;
-        NetworkConfig network_cfg;
-        MqttConfig mqtt_cfg;
-        LoggingConfig logging_cfg;
+        //FirmwareUpgradeFetchRequest ota_upgrade;
+        //door_control_msg_t door_control;
+        //door_state_msg_t door_state;
+        //NetworkConfig network_cfg;
+        //MqttConfig mqtt_cfg;
+        //LoggingConfig logging_cfg;
     } msg;
 } ctrl_msg_t;
 
-typedef struct QueueDefinition* QueueHandle_t;
-extern QueueHandle_t ctrl_queue;
+extern struct k_msgq ctrl_queue;
 
 void reboot(void);
