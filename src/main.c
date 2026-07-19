@@ -18,17 +18,10 @@ K_MSGQ_DEFINE(ctrl_queue, sizeof(ctrl_msg_t), 8, 4);
 
 static const struct gpio_dt_spec wifi_button =
     GPIO_DT_SPEC_GET(DT_NODELABEL(sw_wifi), gpios);
-static struct gpio_callback wifi_button_cb_data;
 
 static struct net_mgmt_event_callback wifi_mgmt_cb;
 static const struct device* const wdt = DEVICE_DT_GET(DT_NODELABEL(wdt0));
 static int wdt_channel_id = -1;
-
-static void wifi_button_pressed(const struct device* dev,
-                                struct gpio_callback* cb, uint32_t pins) {
-    ctrl_msg_t msg = {.type = CTRL_MSG_WIFI_BUTTON};
-    k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
-}
 
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                     uint64_t mgmt_event, struct net_if* iface) {
@@ -120,6 +113,23 @@ static void init_watchdog() {
     wdt_setup(wdt, WDT_OPT_PAUSE_HALTED_BY_DBG);
 }
 
+static void button_thread_fn(void* p1, void* p2, void* p3) {
+    bool last_state = false;
+    while (1) {
+        if (gpio_is_ready_dt(&wifi_button)) {
+            bool state = gpio_pin_get_dt(&wifi_button);
+            if (state && !last_state) {
+                ctrl_msg_t msg = {.type = CTRL_MSG_WIFI_BUTTON};
+                k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+            }
+            last_state = state;
+        }
+        k_sleep(K_MSEC(50));
+    }
+}
+K_THREAD_DEFINE(button_thread, 1024, button_thread_fn, NULL, NULL, NULL, 5, 0,
+                0);
+
 void main(void) {
     leds_init();
 
@@ -134,10 +144,6 @@ void main(void) {
 
     if (gpio_is_ready_dt(&wifi_button)) {
         gpio_pin_configure_dt(&wifi_button, GPIO_INPUT | GPIO_PULL_UP);
-        gpio_pin_interrupt_configure_dt(&wifi_button, GPIO_INT_EDGE_TO_ACTIVE);
-        gpio_init_callback(&wifi_button_cb_data, wifi_button_pressed,
-                           BIT(wifi_button.pin));
-        gpio_add_callback(wifi_button.port, &wifi_button_cb_data);
     }
 
     while (1) {
