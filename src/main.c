@@ -134,11 +134,14 @@ void main(void) {
     set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);
 
     if (gpio_is_ready_dt(&wifi_button)) {
-        gpio_pin_configure_dt(&wifi_button, GPIO_INPUT | GPIO_PULL_UP);
-        gpio_pin_interrupt_configure_dt(&wifi_button, GPIO_INT_EDGE_TO_ACTIVE);
+        int r1 = gpio_pin_configure_dt(&wifi_button, GPIO_INPUT | GPIO_PULL_UP);
+        int r2 = gpio_pin_interrupt_configure_dt(&wifi_button,
+                                                 GPIO_INT_EDGE_TO_ACTIVE);
         gpio_init_callback(&wifi_button_cb_data, wifi_button_pressed,
                            BIT(wifi_button.pin));
-        gpio_add_callback(wifi_button.port, &wifi_button_cb_data);
+        int r3 = gpio_add_callback(wifi_button.port, &wifi_button_cb_data);
+        printk("GPIO init: config=%d int=%d cb=%d pin=%d\n", r1, r2, r3,
+               wifi_button.pin);
     }
 
     while (1) {

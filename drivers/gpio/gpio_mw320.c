@@ -2,6 +2,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/gpio/gpio_utils.h>
 #include <zephyr/irq.h>
+#include <zephyr/sys/printk.h>
 #include "fsl_gpio.h"
 
 #define DT_DRV_COMPAT nxp_mw320_gpio
@@ -156,6 +157,7 @@ static void gpio_mw320_isr(const void *arg)
 
         uint32_t int_flags = GPIO_PortGetInterruptFlags(config->base, config->port);
         if (int_flags) {
+            printk("GPIO ISR port %d flags %x\n", config->port, int_flags);
             GPIO_PortClearInterruptFlags(config->base, config->port, int_flags);
             gpio_fire_callbacks(&data->callbacks, dev, int_flags);
         }
