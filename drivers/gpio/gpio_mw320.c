@@ -94,6 +94,8 @@ static int gpio_mw320_pin_interrupt_configure(const struct device *dev,
     const struct gpio_mw320_config *config = dev->config;
     uint32_t absolute_pin = (config->port * 32U) + pin;
 
+    printk("gpio_mw320_pin_interrupt_configure: pin=%d abs=%d mode=%x trig=%x\n", pin, absolute_pin, mode, trig);
+
     if (mode == GPIO_INT_MODE_DISABLED) {
         GPIO_PinSetInterruptConfig(config->base, absolute_pin, kGPIO_InterruptStatusFlagDisabled);
         GPIO_PortDisableInterrupts(config->base, config->port, 1U << pin);
@@ -177,7 +179,7 @@ static int gpio_mw320_init(const struct device *dev)
     static bool irq_connected = false;
     if (!irq_connected) {
         irq_connected = true;
-        IRQ_CONNECT(GPIO_IRQn, 0, gpio_mw320_isr, NULL, 0);
+        IRQ_CONNECT(GPIO_IRQn, 2, gpio_mw320_isr, NULL, 0);
         irq_enable(GPIO_IRQn);
     }
 

@@ -133,7 +133,11 @@ void main(void) {
     init_watchdog();
     set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);
 
+#include "fsl_pinmux.h"
     if (gpio_is_ready_dt(&wifi_button)) {
+        PINMUX_PinMuxSet(wifi_button.pin,
+                         PINMUX_GPIO22_GPIO22 | PINMUX_MODE_DEFAULT);
+
         int r1 = gpio_pin_configure_dt(&wifi_button, GPIO_INPUT | GPIO_PULL_UP);
         int r2 = gpio_pin_interrupt_configure_dt(&wifi_button,
                                                  GPIO_INT_EDGE_TO_ACTIVE);
