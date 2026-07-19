@@ -1,8 +1,8 @@
 #pragma once
 
 #include <zephyr/kernel.h>
-//#include "api.pb.h"
-//#include "app_config.pb.h"
+#include "api.pb.h"
+#include "app_config.pb.h"
 #include "idcm_msg.h"
 
 typedef enum {
@@ -17,6 +17,7 @@ typedef enum {
     CTRL_MSG_WIFI_CONFIG,
     CTRL_MSG_MQTT_CONFIG,
     CTRL_MSG_LOGGING_CONFIG,
+    CTRL_MSG_RESTART,
 } ctrl_msg_type_t;
 
 typedef enum { DOOR_CMD_UNKNOWN, DOOR_CMD_OPEN, DOOR_CMD_CLOSE, DOOR_CMD_STOP } door_cmd_t;
@@ -35,12 +36,12 @@ typedef struct {
     ctrl_msg_type_t type;
 
     union {
-        //FirmwareUpgradeFetchRequest ota_upgrade;
-        //door_control_msg_t door_control;
-        //door_state_msg_t door_state;
-        //NetworkConfig network_cfg;
-        //MqttConfig mqtt_cfg;
-        //LoggingConfig logging_cfg;
+        FirmwareUpgradeFetchRequest ota_upgrade;
+        door_control_msg_t door_control;
+        door_state_msg_t door_state;
+        NetworkConfig network_cfg;
+        MqttConfig mqtt_cfg;
+        LoggingConfig logging_cfg;
     } msg;
 } ctrl_msg_t;
 

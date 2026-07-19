@@ -5,3 +5,8 @@ mainmenu "Sesame"
 source "Kconfig.zephyr"
 
 rsource "drivers/Kconfig"
+
+config FORCE_FLASH_PAGE_LAYOUT
+	bool
+	default y
+	select FLASH_HAS_PAGE_LAYOUT

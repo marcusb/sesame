@@ -30,6 +30,7 @@ apt install cmake ninja-build gcc-arm-none-eabi libstdc++-arm-none-eabi \
 ```sh
 rm -rf build && cmake -B build -G Ninja && ninja -C build
 ```
+*(Note: Always run a clean build and delete the `build` directory when changing `prj.conf`, `Kconfig`, or Kconfig variables to ensure Zephyr properly regenerates headers and caches across all multi-stage variant builds.)*
 
 **Incremental build:**
 

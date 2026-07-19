@@ -4,13 +4,16 @@
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/kernel.h>
 #include <zephyr/net/dhcpv4_server.h>
+#include <zephyr/net/http/server.h>
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/wifi_mgmt.h>
 #include <zephyr/sys/printk.h>
+#include <zephyr/sys/reboot.h>
 
+#include "config_manager.h"
 #include "controller.h"
 #include "leds.h"
 
@@ -120,11 +123,19 @@ static void wifi_button_pressed(const struct device* dev,
 void main(void) {
     leds_init();
 
+    if (load_config() == 0) {
+        printk("Config loaded successfully\n");
+    } else {
+        printk("Failed to load config, using defaults\n");
+    }
+
     net_mgmt_init_event_callback(
         &wifi_mgmt_cb, wifi_mgmt_event_handler,
         NET_EVENT_WIFI_AP_ENABLE_RESULT | NET_EVENT_WIFI_AP_DISABLE_RESULT |
             NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT);
     net_mgmt_add_event_callback(&wifi_mgmt_cb);
+
+    http_server_start();
 
     init_watchdog();
     set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);
@@ -143,6 +154,10 @@ void main(void) {
             switch (msg.type) {
                 case CTRL_MSG_WIFI_BUTTON:
                     start_ap();
+                    break;
+                case CTRL_MSG_RESTART:
+                    printk("Restarting system...\n");
+                    sys_reboot(SYS_REBOOT_COLD);
                     break;
                 default:
                     break;

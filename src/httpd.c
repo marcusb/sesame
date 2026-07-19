@@ -1,376 +1,269 @@
 #include "httpd.h"
 
-#include <stdio.h>
-#include <string.h>
+#include <zephyr/logging/log.h>
 
-#include "app_logging.h"
-
-// FreeRTOS
-#include "FreeRTOS.h"
-#include "queue.h"
-#include "task.h"
-
-// FreeRTOS+TCP
-#include "FreeRTOS_IP.h"
-#include "FreeRTOS_Sockets.h"
-
-// application
-#include "api.pb.h"
 #include "app_config.pb.h"
 #include "controller.h"
 #include "pb_decode.h"
-#include "util.h"
-
 #if SESAME_ENABLE_MATTER
 #include "matter_task.h"
 #endif
 
-#define BUF_SIZE 1024
+LOG_MODULE_REGISTER(httpd, LOG_LEVEL_DBG);
 
-typedef enum { HTTP_INIT, HTTP_HEADER, HTTP_BODY } http_state_t;
+#include <ctype.h>
+#include <string.h>
+#include <zephyr/net/http/server.h>
+#include <zephyr/net/http/service.h>
 
-enum {
-    REPLY_OK = 200,
-    NO_CONTENT = 204,
-    BAD_REQUEST = 400,
-    UNAUTHORIZED = 401,
-    NOT_FOUND = 404,
-    GONE = 410,
-    PRECONDITION_FAILED = 412,
-    INTERNAL_SERVER_ERROR = 500,
-};
-
-typedef enum {
-    METHOD_GET,
-    METHOD_HEAD,
-    METHOD_POST,
-    METHOD_PUT,
-    METHOD_DELETE,
-    METHOD_TRACE,
-    METHOD_OPTIONS,
-    METHOD_CONNECT,
-    METHOD_PATCH,
-    METHOD_UNK,
-} http_method_t;
-
-typedef struct http_method_desc {
-    int method_length;
-    const char* name;
-    http_method_t type;
-} http_method_desc_t;
-
-static const http_method_desc_t http_methods[] = {
-    {3, "GET", METHOD_GET},         {4, "HEAD", METHOD_HEAD},
-    {4, "POST", METHOD_POST},       {3, "PUT", METHOD_PUT},
-    {6, "DELETE", METHOD_DELETE},   {5, "TRACE", METHOD_TRACE},
-    {7, "OPTIONS", METHOD_OPTIONS}, {7, "CONNECT", METHOD_CONNECT},
-    {5, "PATCH", METHOD_PATCH},     {0, "", METHOD_UNK},
-};
-
-typedef struct {
-    Socket_t socket;
-    char* buf;
-    http_state_t state;
-    http_method_t method;
-    const char* url;
-    char* header_start;
-    char* body_start;
-    int content_length;
-} http_request_t;
-
-static const char* status_desc(int aCode) {
-    switch (aCode) {
-        case REPLY_OK: /*  = 200, */
-            return "OK";
-
-        case NO_CONTENT: /* 204 */
-            return "No content";
-
-        case BAD_REQUEST: /*  = 400, */
-            return "Bad request";
-
-        case UNAUTHORIZED: /*  = 401, */
-            return "Authorization Required";
-
-        case NOT_FOUND: /*  = 404, */
-            return "Not Found";
-
-        case GONE: /*  = 410, */
-            return "Done";
-
-        case PRECONDITION_FAILED: /*  = 412, */
-            return "Precondition Failed";
-
-        case INTERNAL_SERVER_ERROR: /*  = 500, */
-            return "Internal Server Error";
+int strcasecmp(const char* s1, const char* s2) {
+    while (*s1 && *s2) {
+        int diff = tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
+        if (diff != 0) return diff;
+        s1++;
+        s2++;
     }
-
-    return "Unknown";
+    return tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
 }
 
-static void handle_promote_update() {
-    ctrl_msg_t msg = {CTRL_MSG_OTA_PROMOTE};
-    xQueueSendToBack(ctrl_queue, &msg, 100);
-}
-
-static void send_status(const http_request_t* req, int status) {
-    int len = snprintf(req->buf, BUF_SIZE,
-                       "HTTP/1.1 %d %s\r\n"
-                       "Connection: close\r\n"
-                       "\r\n",
-                       status, status_desc(status));
-    FreeRTOS_send(req->socket, req->buf, len, 0);
-}
-
-static void handle_ctrl_request(const http_request_t* req, ctrl_msg_type_t type,
-                                const pb_msgdesc_t* desc) {
-    ctrl_msg_t msg = {type};
-    pb_istream_t stream = pb_istream_from_buffer(
-        (const pb_byte_t*)req->body_start, req->content_length);
-    bool status = pb_decode(&stream, desc, &msg.msg);
-    send_status(req, status ? REPLY_OK : BAD_REQUEST);
-    xQueueSendToBack(ctrl_queue, &msg, 100);
-}
-
-static void do_request(const http_request_t* req) {
-    switch (req->method) {
-        case METHOD_POST:
-            if (strcmp(req->url, "/fwupgrade") == 0) {
-                handle_ctrl_request(req, CTRL_MSG_OTA_UPGRADE,
-                                    &FirmwareUpgradeFetchRequest_msg);
-            } else if (strcmp(req->url, "/promote") == 0) {
-                handle_promote_update();
-                send_status(req, REPLY_OK);
-            } else if (strcmp(req->url, "/open") == 0) {
-                ctrl_msg_t msg = {CTRL_MSG_DOOR_CONTROL,
-                                  {.door_control = {DOOR_CMD_OPEN}}};
-                xQueueSendToBack(ctrl_queue, &msg, 100);
-                send_status(req, REPLY_OK);
-            } else if (strcmp(req->url, "/close") == 0) {
-                ctrl_msg_t msg = {CTRL_MSG_DOOR_CONTROL,
-                                  {.door_control = {DOOR_CMD_CLOSE}}};
-                xQueueSendToBack(ctrl_queue, &msg, 100);
-                send_status(req, REPLY_OK);
-            } else if (strcmp(req->url, "/cfg/network") == 0) {
-                handle_ctrl_request(req, CTRL_MSG_WIFI_CONFIG,
-                                    &NetworkConfig_msg);
-            } else if (strcmp(req->url, "/cfg/mqtt") == 0) {
-                handle_ctrl_request(req, CTRL_MSG_MQTT_CONFIG, &MqttConfig_msg);
-            } else if (strcmp(req->url, "/cfg/logging") == 0) {
-                handle_ctrl_request(req, CTRL_MSG_LOGGING_CONFIG,
-                                    &LoggingConfig_msg);
-            } else if (strcmp(req->url, "/restart") == 0) {
-                send_status(req, REPLY_OK);
-                LogDebug(("reboot requested, rebooting..."));
-                vTaskDelay(pdMS_TO_TICKS(3000));
-                reboot();
-#if SESAME_ENABLE_MATTER
-            } else if (strcmp(req->url, "/matter/commission") == 0) {
-                /* Re-open the basic commissioning window with the device's
-                 * root passcode. Useful when the controller has dropped the
-                 * commissioning attempt and the window has timed out. */
-                const bool ok = matter_commission_open(900);
-                send_status(req, ok ? REPLY_OK : INTERNAL_SERVER_ERROR);
-            } else if (strcmp(req->url, "/matter/reset") == 0) {
-                /* Factory-reset Matter state: wipe persisted fabrics and
-                 * reboot. The device comes back uncommissioned and
-                 * automatically opens the commissioning window. */
-                send_status(req, REPLY_OK);
-                LogInfo(("matter reset requested"));
-                matter_wipe_fabrics();
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                reboot();
-#endif
-            } else {
-                send_status(req, NOT_FOUND);
-            }
-            break;
-        default:
-            send_status(req, NOT_FOUND);
-            break;
-    }
-}
-
-static int process_request_line(http_request_t* req) {
-    char* p = req->buf;
-    for (const http_method_desc_t* method = http_methods;
-         method->type != METHOD_UNK; method++) {
-        int method_len = method->method_length;
-        if (strncmp(method->name, p, method->method_length) == 0 &&
-            p[method_len] == ' ') {
-            req->method = method->type;
-            p += method_len + 1;
-            req->url = p;
-            while (*p != ' ' && *p != '\0') {
-                p++;
-            }
-            if (*p == '\0') {
-                return -1;
-            }
-            *p++ = '\0';
-            if (strcmp(p, "HTTP/1.1") != 0) {
-                return -1;
-            }
-            LogDebug(("request %s %s", method->name, req->url));
-            return 0;
+char* strpbrk(const char* s, const char* accept) {
+    while (*s) {
+        const char* a = accept;
+        while (*a) {
+            if (*a++ == *s) return (char*)s;
         }
-    }
-    return -1;
-}
-
-static char* get_header(const http_request_t* req, const char* name) {
-    const int name_len = strlen(name);
-    char* p = req->header_start;
-    while (p < req->body_start) {
-        char* q = strchrnul(p, ':');
-        if (*q == ':') {
-            while (*p == ' ') {
-                p++;
-            }
-            if (strncasecmp(p, name, name_len) == 0) {
-                p += name_len;
-                while (*p == ' ') {
-                    p++;
-                }
-                if (p == q) {
-                    p++;
-                    return p;
-                }
-            }
-        }
-        // skip CRLF, to next header field
-        p = q + 2;
+        s++;
     }
     return NULL;
 }
 
-static void request_task(void* params) {
-    Socket_t socket = (Socket_t)params;
-    char* buf = pvPortMalloc(BUF_SIZE);
-    if (!buf) {
-        LogError(("malloc failed"));
-        goto close_conn;
+static uint16_t http_port = 80;
+HTTP_SERVICE_DEFINE(httpd_service, NULL, &http_port, 3, 10, NULL, NULL, NULL);
+
+static int handle_cfg_request(const struct http_request_ctx* req,
+                              ctrl_msg_type_t type, const pb_msgdesc_t* desc) {
+    ctrl_msg_t msg = {type};
+    pb_istream_t stream =
+        pb_istream_from_buffer((const pb_byte_t*)req->data, req->data_len);
+    bool status = pb_decode(&stream, desc, &msg.msg);
+    if (!status) {
+        return 400;  // Bad request
     }
-    const char* buf_end = buf + BUF_SIZE;
-
-    http_request_t req = {socket, buf, HTTP_INIT};
-    char* wr_pos = buf;
-    char* rd_pos = buf;
-    char* mark = buf;
-    BaseType_t res = 0;
-    for (;;) {
-        if (res <= 0) {
-            // Need to read more data
-            res = FreeRTOS_recv(socket, wr_pos, buf_end - wr_pos, 0);
-            wr_pos += res;
-            if (wr_pos == buf_end) {
-                LogDebug(("request too big"));
-                goto close_conn;
-            }
-            if (res <= 0) {
-                goto err;
-            }
-        }
-        mark = rd_pos;
-        switch (req.state) {
-            case HTTP_INIT:
-                for (char* q = buf; q < wr_pos - 1; q++) {
-                    if (*q == '\r' && *(q + 1) == '\n') {
-                        *q = '\0';
-                        process_request_line(&req);
-                        req.state = HTTP_HEADER;
-                        req.header_start = rd_pos = q + 2;
-                        break;
-                    }
-                }
-                break;
-
-            case HTTP_HEADER:
-                if (wr_pos >= rd_pos + 2 && *rd_pos == '\r' &&
-                    *(rd_pos + 1) == '\n') {
-                    rd_pos += 2;
-                    req.body_start = rd_pos;
-                    char* q = get_header(&req, "content-length");
-                    if (q) {
-                        req.content_length = atoi(q);
-                    } else {
-                        req.content_length = 0;
-                    }
-                    req.state = HTTP_BODY;
-                    if (buf_end - wr_pos < req.content_length) {
-                        goto close_conn;
-                    }
-                } else {
-                    for (char* q = rd_pos; q < wr_pos - 1; q++) {
-                        if (*q == '\r' && *(q + 1) == '\n') {
-                            *q = '\0';
-                            rd_pos = q + 2;
-                            break;
-                        }
-                    }
-                }
-                break;
-
-            case HTTP_BODY:
-                if (wr_pos - req.body_start >= req.content_length) {
-                    do_request(&req);
-                    goto close_conn;
-                }
-        }
-        // If rd_pos didn't move, no more data could be consumed — need recv
-        if (mark == rd_pos) {
-            res = 0;
-        }
-    }
-
-err:
-    FreeRTOS_printf(("recv() returned %d\n", res));
-
-close_conn:
-    FreeRTOS_shutdown(socket, FREERTOS_SHUT_RDWR);
-    FreeRTOS_closesocket(socket);
-    if (buf) {
-        vPortFree(buf);
-    }
-    vTaskDelete(NULL);
+    k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+    return 200;  // OK
 }
 
-void httpd_task(void* params) {
-    const BaseType_t backlog = 20;
-    Socket_t socket = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_STREAM,
-                                      FREERTOS_IPPROTO_TCP);
-    configASSERT(socket != FREERTOS_INVALID_SOCKET);
+static int cfg_handler(struct http_client_ctx* client,
+                       enum http_transaction_status status,
+                       const struct http_request_ctx* req,
+                       struct http_response_ctx* res, void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        ctrl_msg_type_t type = (ctrl_msg_type_t)(uintptr_t)user_data;
+        const pb_msgdesc_t* desc = NULL;
+        if (type == CTRL_MSG_WIFI_CONFIG) {
+            desc = &NetworkConfig_msg;
+        } else if (type == CTRL_MSG_MQTT_CONFIG) {
+            desc = &MqttConfig_msg;
+        } else if (type == CTRL_MSG_LOGGING_CONFIG) {
+            desc = &LoggingConfig_msg;
+        }
 
-    const TickType_t recv_tmout = portMAX_DELAY;
-    FreeRTOS_setsockopt(socket, 0, FREERTOS_SO_RCVTIMEO, &recv_tmout, 0);
-
-    uint16_t port = 80;
-    struct freertos_sockaddr bind_addr;
-    memset(&bind_addr, 0, sizeof(bind_addr));
-    bind_addr.sin_port = FreeRTOS_htons(port);
-    bind_addr.sin_family = FREERTOS_AF_INET;
-    BaseType_t res = FreeRTOS_bind(socket, &bind_addr, sizeof(bind_addr));
-    if (res) {
-        LogError(("bind failed %d", res));
-        goto ret;
-    }
-    FreeRTOS_listen(socket, backlog);
-    LogInfo(("HTTP server listening on port %d", port));
-
-    for (;;) {
-        struct freertos_sockaddr client;
-        socklen_t sz = sizeof(client);
-        Socket_t conn = FreeRTOS_accept(socket, &client, &sz);
-        configASSERT(conn != FREERTOS_INVALID_SOCKET);
-
-        BaseType_t r = xTaskCreate(request_task, "HttpWorker", 2048,
-                                   (void*)conn, tskIDLE_PRIORITY + 2, NULL);
-        if (r != pdPASS) {
-            LogError(("xTaskCreate HttpWorker failed: %d", (int)r));
-            FreeRTOS_closesocket(conn);
+        if (desc) {
+            res->status = handle_cfg_request(req, type, desc);
+        } else {
+            res->status = 500;
         }
     }
-
-ret:
-    vTaskDelete(NULL);
+    return 0;
 }
+
+static int restart_handler(struct http_client_ctx* client,
+                           enum http_transaction_status status,
+                           const struct http_request_ctx* request_ctx,
+                           struct http_response_ctx* response_ctx,
+                           void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        ctrl_msg_t msg = {.type = CTRL_MSG_RESTART};
+        k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+        response_ctx->status = 200;
+    }
+    return 0;
+}
+
+static int fwupgrade_handler(struct http_client_ctx* client,
+                             enum http_transaction_status status,
+                             const struct http_request_ctx* req,
+                             struct http_response_ctx* res, void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        res->status = handle_cfg_request(req, CTRL_MSG_OTA_UPGRADE,
+                                         &FirmwareUpgradeFetchRequest_msg);
+    }
+    return 0;
+}
+
+static int promote_handler(struct http_client_ctx* client,
+                           enum http_transaction_status status,
+                           const struct http_request_ctx* req,
+                           struct http_response_ctx* res, void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        ctrl_msg_t msg = {.type = CTRL_MSG_OTA_PROMOTE};
+        k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+        res->status = 200;
+    }
+    return 0;
+}
+
+static int open_handler(struct http_client_ctx* client,
+                        enum http_transaction_status status,
+                        const struct http_request_ctx* req,
+                        struct http_response_ctx* res, void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        ctrl_msg_t msg = {.type = CTRL_MSG_DOOR_CONTROL,
+                          .msg.door_control = {DOOR_CMD_OPEN}};
+        k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+        res->status = 200;
+    }
+    return 0;
+}
+
+static int close_handler(struct http_client_ctx* client,
+                         enum http_transaction_status status,
+                         const struct http_request_ctx* req,
+                         struct http_response_ctx* res, void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        ctrl_msg_t msg = {.type = CTRL_MSG_DOOR_CONTROL,
+                          .msg.door_control = {DOOR_CMD_CLOSE}};
+        k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+        res->status = 200;
+    }
+    return 0;
+}
+
+#if SESAME_ENABLE_MATTER
+static int matter_commission_handler(struct http_client_ctx* client,
+                                     enum http_transaction_status status,
+                                     const struct http_request_ctx* req,
+                                     struct http_response_ctx* res,
+                                     void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        const bool ok = matter_commission_open(900);
+        res->status = ok ? 200 : 500;
+    }
+    return 0;
+}
+
+static int matter_reset_handler(struct http_client_ctx* client,
+                                enum http_transaction_status status,
+                                const struct http_request_ctx* req,
+                                struct http_response_ctx* res,
+                                void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        matter_wipe_fabrics();
+        ctrl_msg_t msg = {.type = CTRL_MSG_RESTART};
+        k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+        res->status = 200;
+    }
+    return 0;
+}
+#endif
+
+/* --- HTTP Resource Details --- */
+
+static struct http_resource_detail_dynamic cfg_network_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
+    .cb = cfg_handler,
+    .user_data = (void*)(uintptr_t)CTRL_MSG_WIFI_CONFIG,
+};
+
+static struct http_resource_detail_dynamic cfg_mqtt_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
+    .cb = cfg_handler,
+    .user_data = (void*)(uintptr_t)CTRL_MSG_MQTT_CONFIG,
+};
+
+static struct http_resource_detail_dynamic cfg_logging_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
+    .cb = cfg_handler,
+    .user_data = (void*)(uintptr_t)CTRL_MSG_LOGGING_CONFIG,
+};
+
+static struct http_resource_detail_dynamic restart_resource_detail = {
+    .common =
+        {
+            .type = HTTP_RESOURCE_TYPE_DYNAMIC,
+            .bitmask_of_supported_http_methods = BIT(HTTP_POST) | BIT(HTTP_GET),
+        },
+    .cb = restart_handler,
+    .user_data = NULL,
+};
+
+static struct http_resource_detail_dynamic fwupgrade_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
+    .cb = fwupgrade_handler,
+    .user_data = NULL,
+};
+
+static struct http_resource_detail_dynamic promote_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
+    .cb = promote_handler,
+    .user_data = NULL,
+};
+
+static struct http_resource_detail_dynamic open_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
+    .cb = open_handler,
+    .user_data = NULL,
+};
+
+static struct http_resource_detail_dynamic close_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
+    .cb = close_handler,
+    .user_data = NULL,
+};
+
+#if SESAME_ENABLE_MATTER
+static struct http_resource_detail_dynamic matter_commission_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
+    .cb = matter_commission_handler,
+    .user_data = NULL,
+};
+
+static struct http_resource_detail_dynamic matter_reset_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
+    .cb = matter_reset_handler,
+    .user_data = NULL,
+};
+#endif
+
+/* --- HTTP Resources Definitions --- */
+
+HTTP_RESOURCE_DEFINE(cfg_network_res, httpd_service, "/cfg/network",
+                     &cfg_network_detail);
+HTTP_RESOURCE_DEFINE(cfg_mqtt_res, httpd_service, "/cfg/mqtt",
+                     &cfg_mqtt_detail);
+HTTP_RESOURCE_DEFINE(cfg_logging_res, httpd_service, "/cfg/logging",
+                     &cfg_logging_detail);
+HTTP_RESOURCE_DEFINE(restart_resource, httpd_service, "/restart",
+                     &restart_resource_detail);
+HTTP_RESOURCE_DEFINE(fwupgrade_resource, httpd_service, "/fwupgrade",
+                     &fwupgrade_detail);
+HTTP_RESOURCE_DEFINE(promote_resource, httpd_service, "/promote",
+                     &promote_detail);
+HTTP_RESOURCE_DEFINE(open_resource, httpd_service, "/open", &open_detail);
+HTTP_RESOURCE_DEFINE(close_resource, httpd_service, "/close", &close_detail);
+
+#if SESAME_ENABLE_MATTER
+HTTP_RESOURCE_DEFINE(matter_commission_resource, httpd_service,
+                     "/matter/commission", &matter_commission_detail);
+HTTP_RESOURCE_DEFINE(matter_reset_resource, httpd_service, "/matter/reset",
+                     &matter_reset_detail);
+#endif

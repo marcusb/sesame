@@ -24,6 +24,7 @@ project(sesame)
 
 # --- Linker settings ---
 zephyr_linker_sources(DATA_SECTIONS custom_bss.ld)
+zephyr_linker_sources(RODATA custom_rodata.ld)
 target_link_libraries(app PRIVATE -lm)
 
 # Application Sources
@@ -31,6 +32,7 @@ target_sources(app PRIVATE
     src/config_manager.c
     src/leds.c
     src/main.c
+    src/httpd.c
 )
 
 zephyr_include_directories(include)
@@ -49,8 +51,9 @@ list(APPEND CMAKE_MODULE_PATH "${nanopb_SOURCE_DIR}/extra")
 find_package(Nanopb REQUIRED)
 
 # Generate nanopb sources
-nanopb_generate_cpp(TARGET proto_app RELPATH proto proto/app_config.proto)
+nanopb_generate_cpp(TARGET proto_app RELPATH proto proto/app_config.proto proto/api.proto)
 target_include_directories(app PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries(nanopb PRIVATE zephyr_interface)
 target_link_libraries(app PRIVATE proto_app nanopb)
 
 # Custom drivers (added directly in application mode)
