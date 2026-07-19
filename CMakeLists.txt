@@ -28,11 +28,9 @@ target_link_libraries(app PRIVATE -lm)
 
 # Application Sources
 target_sources(app PRIVATE
-    src/main.c
+    src/config_manager.c
     src/leds.c
-    # We will progressively add files as we port them
-    # src/network_manager.c (Needs rewrite)
-    # src/ota.c (Needs rewrite)
+    src/main.c
 )
 
 zephyr_include_directories(include)
@@ -40,6 +38,20 @@ zephyr_include_directories(${MW320_SDK_DIR}/components/flash/mflash/mw320)
 
 # MW320 SDK sources are provided by the mw320_sdk Zephyr module
 # via ZEPHYR_EXTRA_MODULES
+
+include(FetchContent)
+FetchContent_Declare(nanopb
+    GIT_REPOSITORY https://github.com/nanopb/nanopb.git
+    GIT_TAG        0.4.9.1
+)
+FetchContent_MakeAvailable(nanopb)
+list(APPEND CMAKE_MODULE_PATH "${nanopb_SOURCE_DIR}/extra")
+find_package(Nanopb REQUIRED)
+
+# Generate nanopb sources
+nanopb_generate_cpp(TARGET proto_app RELPATH proto proto/app_config.proto)
+target_include_directories(app PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries(app PRIVATE proto_app nanopb)
 
 # Custom drivers (added directly in application mode)
 zephyr_library_sources_ifdef(CONFIG_UART_MW320 drivers/serial/uart_mw320.c)
