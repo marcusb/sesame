@@ -181,29 +181,19 @@ The firmware can be built on Linux.
 
 On Debian:
 ```sh
-apt install cmake ninja-build gcc-arm-none-eabi libstdc++-arm-none-eabi \
-    binutils-arm-none-eabi python3-protobuf openocd qemu-system-arm
+apt install cmake ninja-build python3-protobuf openocd qemu-system-arm
 ```
 
-The cross-compiler is specified in the `toolchain.cmake` file.
+Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rtos/sdk-ng/releases) installed (e.g. in `~/zephyr-sdk`) and the `west` tool installed (`pip install west`).
 
 ### Building
 
-Two builds are required: A native build to compile the axf2firmware tool,
-and a cross-compile of the firmware.
+The Zephyr build system handles both the flash variant and the RAM variant natively.
 
 ```sh
-mkdir build-native
-cd build-native
-cmake -G Ninja ..
-ninja
-cd ..
-mkdir build
-cd build
-cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Debug -DUSE_BACKTRACE=ON \
-  -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake \
-  -G Ninja -Daxf2firmware_DIR=$(pwd)/../build-native ..
-ninja
+rm -rf build
+cmake -B build -G Ninja
+ninja -C build
 ```
 
 ### QEMU Emulation

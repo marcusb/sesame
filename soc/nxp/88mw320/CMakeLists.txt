@@ -1,10 +1,8 @@
 zephyr_sources(soc.c)
 zephyr_include_directories(.)
-zephyr_include_directories(${MW320_SDK_DIR}/CMSIS/Include)
 zephyr_include_directories(${MW320_SDK_DIR}/devices/88MW320)
 zephyr_include_directories(${MW320_SDK_DIR}/devices/88MW320/drivers)
-zephyr_include_directories(${ZEPHYR_BASE}/modules/cmsis_6)
-zephyr_include_directories(${ZEPHYR_BASE}/modules/cmsis_6/CMSIS/Core/Include)
+
 zephyr_compile_definitions(CPU_88MW320_A0_NAPC)
 zephyr_compile_definitions(SERIAL_PORT_TYPE_UART=1)
 

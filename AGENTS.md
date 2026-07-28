@@ -12,16 +12,17 @@ See docs/teardown.md for hardware information.
 
 ## Build System
 
-The project uses CMake with two-stage builds: a native build produces the `axf2firmware` tool, then a cross-compile builds the ARM firmware.
+The project uses the standard Zephyr build system natively for both flash and RAM variants.
 
 ### Prerequisites
 
 **Debian/Ubuntu:**
 
 ```sh
-apt install cmake ninja-build gcc-arm-none-eabi libstdc++-arm-none-eabi \
-    binutils-arm-none-eabi protobuf-compiler python3-protobuf openocd qemu-system-arm
+apt install cmake ninja-build protobuf-compiler python3-protobuf openocd qemu-system-arm
 ```
+
+Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rtos/sdk-ng/releases) installed (e.g. in `~/zephyr-sdk`) and the `west` tool installed (`pip install west`).
 
 ### Build Commands
 
@@ -406,7 +407,6 @@ sesame/
 │   ├── api.proto       # OTA request/response
 │   └── app_config.proto # Configuration schema
 ├── CMakeLists.txt      # Main build configuration
-├── toolchain.cmake     # ARM cross-compiler settings
 └── mw320_sdk/          # (submodule) Hardware drivers, WiFi firmware, bootloader
 ```
 
