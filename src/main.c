@@ -1,14 +1,19 @@
 #include <string.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
+
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
-#include <zephyr/net/dhcpv4.h>
 #include <zephyr/net/dhcpv4_server.h>
 #include <zephyr/net/http/server.h>
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_if.h>
+// clang-format off
+#include <zephyr/net/dhcpv4.h>
+// clang-format on
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/wifi_mgmt.h>
@@ -49,17 +54,16 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
             set_wifi_led_pattern(LED_OFF, LED_OFF, LED_OFF, LED_OFF);
             break;
         case NET_EVENT_WIFI_CONNECT_RESULT:
-            printk("WiFi connected! Starting DHCP client...\n");
             set_wifi_led_pattern(LED_GREEN, LED_GREEN, LED_GREEN, LED_GREEN);
             net_dhcpv4_start(net_if_get_default());
             break;
         case NET_EVENT_IPV4_ADDR_ADD: {
             char buf[NET_IPV4_ADDR_LEN];
-            printk("WiFi DHCP success! IP address added: %s\n",
-                   net_addr_ntop(
-                       AF_INET,
-                       &iface->config.ip.ipv4->unicast[0].ipv4.address.in_addr,
-                       buf, sizeof(buf)));
+            LOG_INF("WiFi DHCP success! IP address added: %s",
+                    net_addr_ntop(
+                        AF_INET,
+                        &iface->config.ip.ipv4->unicast[0].ipv4.address.in_addr,
+                        buf, sizeof(buf)));
             break;
         }
         case NET_EVENT_WIFI_DISCONNECT_RESULT:
@@ -113,17 +117,14 @@ SYS_INIT(init_mflash_sys, POST_KERNEL, 10);
 void main(void) {
     leds_init();
 
-    bool wifi_configured = false;
     if (load_config() == 0) {
         printk("Config loaded successfully\n");
-        if (strlen(app_config.network_config.ssid) > 0) {
-            wifi_configured = true;
-        }
     } else {
         printk("Failed to load config, using defaults\n");
     }
 
-    if (wifi_configured) {
+    if (app_config.has_network_config &&
+        strlen(app_config.network_config.ssid) > 0) {
         is_sta_mode = true;
         start_sta();
     } else {
@@ -167,29 +168,23 @@ void main(void) {
                     start_ap();
                     break;
                 case CTRL_MSG_WIFI_CONFIG:
-                    printk("Persisting WiFi config...\n");
                     app_config.network_config = msg.msg.network_cfg;
                     app_config.has_network_config = true;
-                    int ret_net = save_config();
-                    printk("save_config returned: %d\n", ret_net);
+                    save_config();
                     k_msleep(1000);
                     sys_reboot(SYS_REBOOT_COLD);
                     break;
                 case CTRL_MSG_MQTT_CONFIG:
-                    printk("Persisting MQTT config...\n");
                     app_config.mqtt_config = msg.msg.mqtt_cfg;
                     app_config.has_mqtt_config = true;
-                    int ret_mqtt = save_config();
-                    printk("save_config returned: %d\n", ret_mqtt);
+                    save_config();
                     k_msleep(1000);
                     sys_reboot(SYS_REBOOT_COLD);
                     break;
                 case CTRL_MSG_LOGGING_CONFIG:
-                    printk("Persisting Logging config...\n");
                     app_config.logging_config = msg.msg.logging_cfg;
                     app_config.has_logging_config = true;
-                    int ret_log = save_config();
-                    printk("save_config returned: %d\n", ret_log);
+                    save_config();
                     k_msleep(1000);
                     sys_reboot(SYS_REBOOT_COLD);
                     break;

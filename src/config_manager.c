@@ -38,8 +38,6 @@ int load_config(void) {
         NVS_PARTITION_OFFSET, sizeof(config_header_t));
 
     if (header->magic != CONFIG_MAGIC || header->length > sizeof(buf)) {
-        printk("config_manager: magic=0x%08x len=%u\n", header->magic,
-               header->length);
         LOG_WRN("No valid config found");
         return -1;
     }
@@ -79,14 +77,11 @@ int save_config(void) {
     total_len = (total_len + 3) & ~3;
 
     // Erase sectors
-    int32_t erase_ret =
-        mflash_drv_erase(NVS_PARTITION_OFFSET, MFLASH_SECTOR_SIZE);
-    printk("erase ret: %d\n", erase_ret);
+    mflash_drv_erase(NVS_PARTITION_OFFSET, MFLASH_SECTOR_SIZE);
 
     // Write data
     int write_ret =
         mflash_drv_write(NVS_PARTITION_OFFSET, (uint32_t*)buf, total_len);
-    printk("write ret: %d\n", write_ret);
     if (write_ret != 0) {
         LOG_ERR("mflash write config failed %d", write_ret);
         return -1;
