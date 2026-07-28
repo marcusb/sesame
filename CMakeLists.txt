@@ -33,6 +33,7 @@ target_sources(app PRIVATE
     src/leds.c
     src/main.c
     src/httpd.c
+    src/network_manager.c
 )
 
 zephyr_include_directories(include)

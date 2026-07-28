@@ -1,13 +1,5 @@
 #pragma once
 
-typedef enum {
-    NM_CMD_UNKNOWN = 0,
-    NM_CMD_AP_MODE = 1,
-} nm_msg_type_t;
-
-typedef struct {
-    nm_msg_type_t type;
-} nm_msg_t;
-
-void network_manager_task(void *params);
-int init_wifi_driver();
+void start_ap(void);
+void start_sta(void);
+void network_manager_reconnect(void);

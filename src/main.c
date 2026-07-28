@@ -2,7 +2,9 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/watchdog.h>
+#include <zephyr/init.h>
 #include <zephyr/kernel.h>
+#include <zephyr/net/dhcpv4.h>
 #include <zephyr/net/dhcpv4_server.h>
 #include <zephyr/net/http/server.h>
 #include <zephyr/net/net_core.h>
@@ -16,6 +18,8 @@
 #include "config_manager.h"
 #include "controller.h"
 #include "leds.h"
+#include "mflash_drv.h"
+#include "network.h"
 
 K_MSGQ_DEFINE(ctrl_queue, sizeof(ctrl_msg_t), 8, 4);
 
@@ -25,6 +29,15 @@ static const struct gpio_dt_spec wifi_button =
 static struct net_mgmt_event_callback wifi_mgmt_cb;
 static const struct device* const wdt = DEVICE_DT_GET(DT_NODELABEL(wdt0));
 static int wdt_channel_id = -1;
+
+static struct k_work_delayable reconnect_work;
+static bool is_sta_mode = false;
+
+static void reconnect_work_handler(struct k_work* work) {
+    if (is_sta_mode) {
+        network_manager_reconnect();
+    }
+}
 
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                     uint64_t mgmt_event, struct net_if* iface) {
@@ -36,57 +49,28 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
             set_wifi_led_pattern(LED_OFF, LED_OFF, LED_OFF, LED_OFF);
             break;
         case NET_EVENT_WIFI_CONNECT_RESULT:
+            printk("WiFi connected! Starting DHCP client...\n");
             set_wifi_led_pattern(LED_GREEN, LED_GREEN, LED_GREEN, LED_GREEN);
+            net_dhcpv4_start(net_if_get_default());
             break;
+        case NET_EVENT_IPV4_ADDR_ADD: {
+            char buf[NET_IPV4_ADDR_LEN];
+            printk("WiFi DHCP success! IP address added: %s\n",
+                   net_addr_ntop(
+                       AF_INET,
+                       &iface->config.ip.ipv4->unicast[0].ipv4.address.in_addr,
+                       buf, sizeof(buf)));
+            break;
+        }
         case NET_EVENT_WIFI_DISCONNECT_RESULT:
             set_wifi_led_pattern(LED_GREEN, LED_OFF, LED_GREEN, LED_OFF);
+            if (is_sta_mode) {
+                // Reconnect after 5 seconds backoff
+                k_work_reschedule(&reconnect_work, K_SECONDS(5));
+            }
             break;
         default:
             break;
-    }
-}
-
-static void start_ap(void) {
-    struct net_if* iface = net_if_get_default();
-    if (!iface) {
-        printk("No default network interface\n");
-        return;
-    }
-
-    struct in_addr ap_ip;
-    net_addr_pton(AF_INET, "192.168.4.1", &ap_ip);
-
-    struct in_addr ap_mask;
-    net_addr_pton(AF_INET, "255.255.255.0", &ap_mask);
-
-    net_if_ipv4_addr_add(iface, &ap_ip, NET_ADDR_MANUAL, 0);
-    net_if_ipv4_set_netmask_by_addr(iface, &ap_ip, &ap_mask);
-
-    struct wifi_connect_req_params ap_params = {0};
-    ap_params.ssid = (uint8_t*)"sesame";
-    ap_params.ssid_length = strlen("sesame");
-    ap_params.channel = 6;
-    ap_params.security = WIFI_SECURITY_TYPE_NONE;
-
-    printk("Starting WiFi AP...\n");
-    if (net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, iface, &ap_params,
-                 sizeof(ap_params))) {
-        printk("Failed to start AP\n");
-    } else {
-        char ip_str[INET_ADDRSTRLEN];
-        char mask_str[INET_ADDRSTRLEN];
-        net_addr_ntop(AF_INET, &ap_ip, ip_str, sizeof(ip_str));
-        net_addr_ntop(AF_INET, &ap_mask, mask_str, sizeof(mask_str));
-        printk("AP started successfully. IP: %s, Netmask: %s\n", ip_str,
-               mask_str);
-    }
-
-    struct in_addr dhcp_base_ip;
-    net_addr_pton(AF_INET, "192.168.4.2", &dhcp_base_ip);
-    if (net_dhcpv4_server_start(iface, &dhcp_base_ip) < 0) {
-        printk("Failed to start DHCPv4 server\n");
-    } else {
-        printk("DHCPv4 server started\n");
     }
 }
 
@@ -120,13 +104,31 @@ static void wifi_button_pressed(const struct device* dev,
     k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
 }
 
+static int init_mflash_sys(void) {
+    mflash_drv_init();
+    return 0;
+}
+SYS_INIT(init_mflash_sys, POST_KERNEL, 10);
+
 void main(void) {
     leds_init();
 
+    bool wifi_configured = false;
     if (load_config() == 0) {
         printk("Config loaded successfully\n");
+        if (strlen(app_config.network_config.ssid) > 0) {
+            wifi_configured = true;
+        }
     } else {
         printk("Failed to load config, using defaults\n");
+    }
+
+    if (wifi_configured) {
+        is_sta_mode = true;
+        start_sta();
+    } else {
+        is_sta_mode = false;
+        start_ap();
     }
 
     net_mgmt_init_event_callback(
@@ -134,6 +136,13 @@ void main(void) {
         NET_EVENT_WIFI_AP_ENABLE_RESULT | NET_EVENT_WIFI_AP_DISABLE_RESULT |
             NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT);
     net_mgmt_add_event_callback(&wifi_mgmt_cb);
+
+    static struct net_mgmt_event_callback ipv4_mgmt_cb;
+    net_mgmt_init_event_callback(&ipv4_mgmt_cb, wifi_mgmt_event_handler,
+                                 NET_EVENT_IPV4_ADDR_ADD);
+    net_mgmt_add_event_callback(&ipv4_mgmt_cb);
+
+    k_work_init_delayable(&reconnect_work, reconnect_work_handler);
 
     http_server_start();
 
@@ -153,10 +162,40 @@ void main(void) {
         if (k_msgq_get(&ctrl_queue, &msg, K_MSEC(1000)) == 0) {
             switch (msg.type) {
                 case CTRL_MSG_WIFI_BUTTON:
+                    is_sta_mode = false;
+                    k_work_cancel_delayable(&reconnect_work);
                     start_ap();
+                    break;
+                case CTRL_MSG_WIFI_CONFIG:
+                    printk("Persisting WiFi config...\n");
+                    app_config.network_config = msg.msg.network_cfg;
+                    app_config.has_network_config = true;
+                    int ret_net = save_config();
+                    printk("save_config returned: %d\n", ret_net);
+                    k_msleep(1000);
+                    sys_reboot(SYS_REBOOT_COLD);
+                    break;
+                case CTRL_MSG_MQTT_CONFIG:
+                    printk("Persisting MQTT config...\n");
+                    app_config.mqtt_config = msg.msg.mqtt_cfg;
+                    app_config.has_mqtt_config = true;
+                    int ret_mqtt = save_config();
+                    printk("save_config returned: %d\n", ret_mqtt);
+                    k_msleep(1000);
+                    sys_reboot(SYS_REBOOT_COLD);
+                    break;
+                case CTRL_MSG_LOGGING_CONFIG:
+                    printk("Persisting Logging config...\n");
+                    app_config.logging_config = msg.msg.logging_cfg;
+                    app_config.has_logging_config = true;
+                    int ret_log = save_config();
+                    printk("save_config returned: %d\n", ret_log);
+                    k_msleep(1000);
+                    sys_reboot(SYS_REBOOT_COLD);
                     break;
                 case CTRL_MSG_RESTART:
                     printk("Restarting system...\n");
+                    k_msleep(500);
                     sys_reboot(SYS_REBOOT_COLD);
                     break;
                 default:

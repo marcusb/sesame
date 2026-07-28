@@ -55,7 +55,12 @@ void net_interface_down(void *intrfc_handle) {
     }
 }
 void net_interface_dhcp_stop(void *intrfc_handle) {}
-int net_configure_address(struct wlan_ip_config *addr, void *intrfc_handle) { return 0; }
+int net_configure_address(struct wlan_ip_config *addr, void *intrfc_handle) {
+    int event = (mw320_data.bss_type == BSS_TYPE_STA) ? WIFI_EVENT_NET_STA_ADDR_CONFIG
+                                                      : WIFI_EVENT_UAP_NET_ADDR_CONFIG;
+    wlan_wlcmgr_send_msg(event, WIFI_EVENT_REASON_SUCCESS, NULL);
+    return 0;
+}
 void *net_get_mlan_handle(void) { return NULL; }
 void *net_get_uap_handle(void) { return NULL; }
 
@@ -65,7 +70,12 @@ static void wifi_mw320_iface_init(struct net_if *iface)
     dev->iface = iface;
 
     /* Read MAC address from wlan.h API and set it in Zephyr */
-    /* wlan_get_mac_address(dev->mac_addr); */
+    wifi_mac_addr_t mac;
+    if (wifi_get_device_mac_addr(&mac) == WM_SUCCESS) {
+        memcpy(dev->mac_addr, mac.mac, 6);
+    } else {
+        LOG_ERR("Failed to get MAC address");
+    }
     
     net_if_set_link_addr(iface, dev->mac_addr, 6, NET_LINK_ETHERNET);
     ethernet_init(iface);
@@ -382,7 +392,8 @@ static void wifi_mw320_data_input_callback(const uint8_t interface, const uint8_
             return;
         }
     }
-    
+
+    net_pkt_cursor_init(pkt);
     if (net_recv_data(dev->iface, pkt) < 0) {
         LOG_ERR("net_recv_data failed");
         net_pkt_unref(pkt);
@@ -391,9 +402,11 @@ static void wifi_mw320_data_input_callback(const uint8_t interface, const uint8_
 
 static bool wifi_mw320_is_ip_or_ipv6(const uint8_t *buffer)
 {
-    struct net_eth_hdr *hdr = (struct net_eth_hdr *)buffer;
-    uint16_t type = ntohs(hdr->type);
-    return (type == NET_ETH_PTYPE_IP || type == NET_ETH_PTYPE_IPV6);
+    /* Always return false to disable AMPDU. The FreeRTOS implementation
+     * seems to have an endianness bug here that caused it to always return
+     * false, preventing ADDBA requests from being sent and avoiding AP
+     * disconnects. */
+    return false;
 }
 
 static int wifi_mw320_init(const struct device *dev)

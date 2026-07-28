@@ -11,11 +11,13 @@ zephyr_library_sources(
     ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_power.c
     ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_wdt.c
     ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_flashc.c
+    ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_qspi.c
     fsl_debug_console.c
     ${MW320_SDK_DIR}/devices/88MW320/utilities/str/fsl_str.c
     ${MW320_SDK_DIR}/components/serial_manager/fsl_component_serial_manager.c
     ${MW320_SDK_DIR}/components/serial_manager/fsl_component_serial_port_uart.c
     ${MW320_SDK_DIR}/components/uart/fsl_adapter_mwuart.c
+    ${MW320_SDK_DIR}/components/flash/mflash/mw320/mflash_drv.c
 )
 zephyr_compile_definitions(CONFIG_FLASH_PARTITION_COUNT=10)
 zephyr_include_directories(
@@ -26,6 +28,7 @@ zephyr_include_directories(
     ${MW320_SDK_DIR}/devices/88MW320/drivers
     ${MW320_SDK_DIR}/devices/88MW320/utilities/debug_console
     ${MW320_SDK_DIR}/devices/88MW320/utilities/str
+    ${CMAKE_CURRENT_SOURCE_DIR}/dummy_includes
 )
 
 zephyr_library_sources_ifdef(CONFIG_MBEDTLS_AES_C ${MW320_SDK_DIR}/middleware/mbedtls/port/mw/aes_alt.c)
@@ -36,5 +39,8 @@ if(NOT CONFIG_BOARD_MARVELL_MW302_RAM)
 zephyr_code_relocate(FILES 
     ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_clock.c
     ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_power.c
+    ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_flashc.c
+    ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_qspi.c
+    ${MW320_SDK_DIR}/components/flash/mflash/mw320/mflash_drv.c
     LOCATION RAM)
 endif()
