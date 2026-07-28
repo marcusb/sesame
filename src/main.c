@@ -2,6 +2,14 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
+extern char __sram1_bss_start[];
+extern char __sram1_bss_end[];
+static int zero_sram1_bss(void) {
+    memset(__sram1_bss_start, 0, __sram1_bss_end - __sram1_bss_start);
+    return 0;
+}
+SYS_INIT(zero_sram1_bss, PRE_KERNEL_1, 0);
+
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/watchdog.h>

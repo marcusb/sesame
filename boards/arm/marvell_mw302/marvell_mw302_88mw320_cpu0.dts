@@ -91,3 +91,8 @@
 &wdt0 {
 	status = "okay";
 };
+
+&sram1 {
+	compatible = "zephyr,memory-region", "mmio-sram";
+	zephyr,memory-region = "SRAM1";
+};
