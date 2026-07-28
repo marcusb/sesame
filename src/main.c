@@ -108,7 +108,7 @@ static void wifi_button_pressed(const struct device* dev,
     k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
 }
 
-void main(void) {
+int main(void) {
     leds_init();
 
     if (load_config() == 0) {
@@ -208,4 +208,5 @@ void main(void) {
             wdt_feed(wdt, wdt_channel_id);
         }
     }
+    return 0;
 }
