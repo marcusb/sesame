@@ -64,7 +64,7 @@ and Sesame.
 ./tools/OpenOCD/flashprog.py -l mw320_sdk/tools/boot2/layout.txt \
   --boot2 mw320_sdk/mw320_matter_flash/Matter/boot2.bin \
   --wififw mw320_sdk/mw320_matter_flash/Matter/mw32x_uapsta_W14.88.36.p172.bin \
-  --mcufw sesame.bin -r
+  --mcufw build/sesame.bin -r
 ```
 
 After successful flash, the device should reboot and sound the buzzer. Logs from Sesame
@@ -204,7 +204,7 @@ The QEMU build isolates board-dependent modules and uses semihosting for I/O. Bo
 ```bash
 ninja -C build
 qemu-system-arm -M mps2-an386 -nographic -semihosting \
-  -kernel build/sesame-qemu.axf \
+  -kernel build/test/sesame_tests-qemu.axf \
   -serial none -monitor none \
   -net nic,model=lan9118 -net user,hostfwd=tcp::8080-:80
 ```

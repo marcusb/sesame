@@ -95,10 +95,9 @@ contents as suspect until you have proven its mtime is fresh.
 
 | Component                | File(s)                 | Purpose  |
 | ------------------------ | ----------------------- | -------------------- |
-| **App startup**          | `main.c`                | Initializes generic app tasks, FreeRTOS                             |
+| **App startup**          | `main.c`                | Initializes generic app tasks, Zephyr OS                             |
 | **Board Entry**          | `board_main.c`          | Hardware-specific init, starts WiFi network manager                 |
-| **QEMU Entry**           | `qemu_main.c`           | QEMU-specific init, starts Ethernet driver via semihosting          |
-| **Network Manager**      | `network_manager.c`     | WiFi state machine, IP configuration (DHCP/static), hardware only   |
+| **Network Manager**      | `network_manager.c`     | WiFi state machine, IP configuration (DHCP), hardware only   |
 | **HTTP Server**          | `httpd.c`               | Receives config and OTA requests via REST, protobuf payloads                |
 | **MQTT**                 | `mqtt.c`                | MQTT agent for pub/sub, topic structure, reconnection logic                 |
 | **Config Manager**       | `config_manager.c`      | Read/write AppConfig (network, MQTT, logging) stored in PSM         |
@@ -110,13 +109,13 @@ contents as suspect until you have proven its mtime is fresh.
 | **QEMU Stubs**           | `qemu_stubs.c`          | Mocked peripherals for QEMU emulation                               |
 | **QEMU PSM**             | `qemu_psm.c`            | Persistent storage via semihosting file I/O                         |
 
-### Task Hierarchy (FreeRTOS)
+### Task Hierarchy (Zephyr)
 
-- **Main task** – Initialization, runs in idle; calls application task starts
-- **Network Manager task** – Manages WiFi and TCP/IP stack events
-- **MQTT Agent task** – Maintains MQTT connection, publishes door status
-- **OTA task** – Handles firmware download and flashing
-- **HTTP server** runs in callback (coreHTTP, event-driven within network stack)
+- **Main thread** – Initialization, runs in idle; calls application task starts
+- **System workqueue** – Handles delayed works (e.g. WiFi reconnect)
+- **MQTT Agent thread** – Maintains MQTT connection, publishes door status
+- **OTA thread** – Handles firmware download and flashing
+- **HTTP server** runs in its own Zephyr socket thread
 
 ### Data Flow Example: Open Door via MQTT
 
@@ -371,12 +370,12 @@ ser.close()
 
 ## Dependencies
 
-### External Libraries (via CMakeLists.txt / FetchContent)
+### External Libraries (via Zephyr / FetchContent)
 
 | Library           | Purpose                                   |
 | ----------------- | ----------------------------------------- |
-| FreeRTOS Kernel   | RTOS scheduler, tasks, queues, semaphores |
-| FreeRTOS-Plus-TCP | IPv4/IPv6 TCP/IP stack                    |
+| Zephyr RTOS       | Kernel, scheduler, threads, queues        |
+| Zephyr Net Stack  | IPv4/IPv6 TCP/IP stack                    |
 | coreMQTT          | MQTT client                               |
 | coreMQTT-Agent    | MQTT task wrapper for thread-safety       |
 | coreHTTP          | HTTP/1.1 client & server                  |
@@ -389,8 +388,8 @@ ser.close()
 ```
 sesame/
 ├── src/                 # Application C source
-│   ├── main.c          # Entry point, FreeRTOS init
-│   ├── mqtt.c          # MQTT agent (task + publish)
+│   ├── main.c          # Entry point, Zephyr init
+│   ├── mqtt.c          # MQTT agent (thread + publish)
 │   ├── httpd.c         # HTTP server callbacks
 │   ├── network_manager.c # WiFi & TCP/IP state machine
 │   ├── config_manager.c  # Flash config I/O
@@ -399,7 +398,6 @@ sesame/
 ├── include/            # Public headers
 │   ├── controller.h    # Common data structues for controller queue
 │   ├── mqtt.h, httpd.h, network.h, etc.
-│   └── config/         # FreeRTOS config headers
 ├── board/              # Board support
 │   ├── board.c, clock_config.c, pin_mux.c
 │   └── 88MW320_xx_xxxx_flash.ld (linker script)
@@ -414,7 +412,7 @@ sesame/
 
 - **C99 standard** – See `target_compile_options` in CMakeLists.txt
 - **Logging** – Use `LOG_ERROR`, `LOG_WARN`, `LOG_INFO`, `LOG_DEBUG` macros (defined in `app_logging.h`)
-- **Task communication** – Via FreeRTOS queues (see `main.c` for queue definitions)
+- **Task communication** – Via Zephyr message queues (see `main.c` for queue definitions)
 - **Protobuf messages** – Use nanopb for encode/decode; see `proto/` for schemas and `.options` for size hints
 - **Error handling** – Check return codes from WiFi/MQTT/HTTP APIs; many return status enums
 - **Comments** – Omit obvious comments; clarify non-obvious logic
