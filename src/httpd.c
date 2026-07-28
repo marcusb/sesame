@@ -42,14 +42,22 @@ HTTP_SERVICE_DEFINE(httpd_service, NULL, &http_port, 3, 10, NULL, NULL, NULL);
 
 static int handle_cfg_request(const struct http_request_ctx* req,
                               ctrl_msg_type_t type, const pb_msgdesc_t* desc) {
-    ctrl_msg_t msg = {type};
+    LOG_INF("Handling cfg request type %d", type);
+    ctrl_msg_t msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = type;
     pb_istream_t stream =
         pb_istream_from_buffer((const pb_byte_t*)req->data, req->data_len);
     bool status = pb_decode(&stream, desc, &msg.msg);
     if (!status) {
+        LOG_ERR("pb_decode failed: %s", PB_GET_ERROR(&stream));
         return 400;  // Bad request
     }
-    k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+    LOG_INF("pb_decode succeeded, enqueuing msg");
+    int ret = k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+    if (ret != 0) {
+        LOG_ERR("Failed to enqueue ctrl message: %d", ret);
+    }
     return 200;  // OK
 }
 
@@ -73,6 +81,9 @@ static int cfg_handler(struct http_client_ctx* client,
         } else {
             res->status = 500;
         }
+        res->body_len = 0;
+        res->body = NULL;
+        res->final_chunk = true;
     }
     return 0;
 }
@@ -83,9 +94,13 @@ static int restart_handler(struct http_client_ctx* client,
                            struct http_response_ctx* response_ctx,
                            void* user_data) {
     if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        LOG_INF("restart_handler called!");
         ctrl_msg_t msg = {.type = CTRL_MSG_RESTART};
         k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
         response_ctx->status = 200;
+        response_ctx->body_len = 0;
+        response_ctx->body = NULL;
+        response_ctx->final_chunk = true;
     }
     return 0;
 }
@@ -97,6 +112,9 @@ static int fwupgrade_handler(struct http_client_ctx* client,
     if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
         res->status = handle_cfg_request(req, CTRL_MSG_OTA_UPGRADE,
                                          &FirmwareUpgradeFetchRequest_msg);
+        res->body_len = 0;
+        res->body = NULL;
+        res->final_chunk = true;
     }
     return 0;
 }
@@ -109,6 +127,9 @@ static int promote_handler(struct http_client_ctx* client,
         ctrl_msg_t msg = {.type = CTRL_MSG_OTA_PROMOTE};
         k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
         res->status = 200;
+        res->body_len = 0;
+        res->body = NULL;
+        res->final_chunk = true;
     }
     return 0;
 }
@@ -122,6 +143,9 @@ static int open_handler(struct http_client_ctx* client,
                           .msg.door_control = {DOOR_CMD_OPEN}};
         k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
         res->status = 200;
+        res->body_len = 0;
+        res->body = NULL;
+        res->final_chunk = true;
     }
     return 0;
 }
@@ -135,6 +159,9 @@ static int close_handler(struct http_client_ctx* client,
                           .msg.door_control = {DOOR_CMD_CLOSE}};
         k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
         res->status = 200;
+        res->body_len = 0;
+        res->body = NULL;
+        res->final_chunk = true;
     }
     return 0;
 }
@@ -148,6 +175,9 @@ static int matter_commission_handler(struct http_client_ctx* client,
     if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
         const bool ok = matter_commission_open(900);
         res->status = ok ? 200 : 500;
+        res->body_len = 0;
+        res->body = NULL;
+        res->final_chunk = true;
     }
     return 0;
 }
@@ -162,6 +192,9 @@ static int matter_reset_handler(struct http_client_ctx* client,
         ctrl_msg_t msg = {.type = CTRL_MSG_RESTART};
         k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
         res->status = 200;
+        res->body_len = 0;
+        res->body = NULL;
+        res->final_chunk = true;
     }
     return 0;
 }
