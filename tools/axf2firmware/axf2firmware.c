@@ -287,6 +287,20 @@ static void write_data(uint8_t endian, uint16_t elf_seg_cnt,
 		if (cur_sh->type != PT_LOAD || cur_sh->len == 0)
 			continue;
 
+		if (cur_sh->laddr >= 0x1F000000) {
+			uint32_t expected_offset = cur_sh->laddr - 0x1F000000;
+			uint32_t current_offset = ftell(out);
+			if (current_offset < expected_offset) {
+				uint32_t align_pad = expected_offset - current_offset;
+				uint8_t *pad_buf = calloc(1, align_pad);
+				if (!pad_buf) die("out of memory");
+				memset(pad_buf, 0xff, align_pad);
+				if (fwrite(pad_buf, align_pad, 1, out) != 1) die_perror("pad write failed");
+				free(pad_buf);
+				cur_sh->offset = expected_offset;
+			}
+		}
+
 		if (fseek(in, seg_offs, SEEK_SET) != 0)
 			die_perror("cannot seek to ELF segment");
 
