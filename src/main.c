@@ -108,19 +108,13 @@ static void wifi_button_pressed(const struct device* dev,
     k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
 }
 
-static int init_mflash_sys(void) {
-    mflash_drv_init();
-    return 0;
-}
-SYS_INIT(init_mflash_sys, POST_KERNEL, 10);
-
 void main(void) {
     leds_init();
 
     if (load_config() == 0) {
-        printk("Config loaded successfully\n");
+        LOG_INF("Config loaded successfully");
     } else {
-        printk("Failed to load config, using defaults\n");
+        LOG_WRN("Failed to load config, using defaults");
     }
 
     if (app_config.has_network_config &&
@@ -160,7 +154,8 @@ void main(void) {
 
     while (1) {
         ctrl_msg_t msg;
-        if (k_msgq_get(&ctrl_queue, &msg, K_MSEC(1000)) == 0) {
+        int get_ret = k_msgq_get(&ctrl_queue, &msg, K_MSEC(1000));
+        if (get_ret == 0) {
             switch (msg.type) {
                 case CTRL_MSG_WIFI_BUTTON:
                     is_sta_mode = false;
@@ -170,26 +165,37 @@ void main(void) {
                 case CTRL_MSG_WIFI_CONFIG:
                     app_config.network_config = msg.msg.network_cfg;
                     app_config.has_network_config = true;
-                    save_config();
-                    k_msleep(1000);
-                    sys_reboot(SYS_REBOOT_COLD);
+                    if (save_network_config() == 0) {
+                        k_msleep(1000);
+                        sys_reboot(SYS_REBOOT_COLD);
+                    } else {
+                        LOG_ERR(
+                            "Failed to save network config, aborting reboot");
+                    }
                     break;
                 case CTRL_MSG_MQTT_CONFIG:
                     app_config.mqtt_config = msg.msg.mqtt_cfg;
                     app_config.has_mqtt_config = true;
-                    save_config();
-                    k_msleep(1000);
-                    sys_reboot(SYS_REBOOT_COLD);
+                    if (save_mqtt_config() == 0) {
+                        k_msleep(1000);
+                        sys_reboot(SYS_REBOOT_COLD);
+                    } else {
+                        LOG_ERR("Failed to save mqtt config, aborting reboot");
+                    }
                     break;
                 case CTRL_MSG_LOGGING_CONFIG:
                     app_config.logging_config = msg.msg.logging_cfg;
                     app_config.has_logging_config = true;
-                    save_config();
-                    k_msleep(1000);
-                    sys_reboot(SYS_REBOOT_COLD);
+                    if (save_logging_config() == 0) {
+                        k_msleep(1000);
+                        sys_reboot(SYS_REBOOT_COLD);
+                    } else {
+                        LOG_ERR(
+                            "Failed to save logging config, aborting reboot");
+                    }
                     break;
                 case CTRL_MSG_RESTART:
-                    printk("Restarting system...\n");
+                    LOG_INF("Restarting system...");
                     k_msleep(500);
                     sys_reboot(SYS_REBOOT_COLD);
                     break;
