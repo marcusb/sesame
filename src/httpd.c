@@ -11,31 +11,9 @@
 
 LOG_MODULE_REGISTER(httpd, LOG_LEVEL_DBG);
 
-#include <ctype.h>
 #include <string.h>
 #include <zephyr/net/http/server.h>
 #include <zephyr/net/http/service.h>
-
-int strcasecmp(const char* s1, const char* s2) {
-    while (*s1 && *s2) {
-        int diff = tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
-        if (diff != 0) return diff;
-        s1++;
-        s2++;
-    }
-    return tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
-}
-
-char* strpbrk(const char* s, const char* accept) {
-    while (*s) {
-        const char* a = accept;
-        while (*a) {
-            if (*a++ == *s) return (char*)s;
-        }
-        s++;
-    }
-    return NULL;
-}
 
 static uint16_t http_port = 80;
 HTTP_SERVICE_DEFINE(httpd_service, NULL, &http_port, 3, 10, NULL, NULL, NULL);

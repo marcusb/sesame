@@ -13,9 +13,7 @@ set(SOC_ROOT ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "SOC root directory")
 # Board selection (use marvell_mw302 for flash/XIP, marvell_mw302_ram for RAM load)
 set(BOARD genie_idcm/88mw320/cpu0 CACHE STRING "Zephyr board")
 
-# Toolchain defaults
-set(ZEPHYR_TOOLCHAIN_VARIANT "gnuarmemb" CACHE STRING "Zephyr toolchain variant")
-set(GNUARMEMB_TOOLCHAIN_PATH "/usr" CACHE PATH "GNU ARM Embedded toolchain path")
+# Toolchain defaults are managed by Zephyr automatically
 
 # Load Zephyr build system
 set(MW320_SDK_DIR ${CMAKE_SOURCE_DIR}/mw320_sdk CACHE PATH "MW320 SDK directory" FORCE)
