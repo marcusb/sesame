@@ -7,6 +7,7 @@
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/wifi_mgmt.h>
+#include <zephyr/random/random.h>
 
 #include "config_manager.h"
 #include "network.h"
@@ -22,12 +23,28 @@ void start_ap(void) {
 
     struct in_addr ap_ip;
     net_addr_pton(AF_INET, "192.168.4.1", &ap_ip);
-
     struct in_addr ap_mask;
     net_addr_pton(AF_INET, "255.255.255.0", &ap_mask);
-
     net_if_ipv4_addr_add(iface, &ap_ip, NET_ADDR_MANUAL, 0);
     net_if_ipv4_set_netmask_by_addr(iface, &ap_ip, &ap_mask);
+
+    struct in6_addr ula_addr;
+    memset(&ula_addr, 0, sizeof(ula_addr));
+    // Use the host's ULA prefix fd74:3d9b:9b33:c8e9::/64
+    ula_addr.s6_addr[0] = 0xfd;
+    ula_addr.s6_addr[1] = 0x74;
+    ula_addr.s6_addr[2] = 0x3d;
+    ula_addr.s6_addr[3] = 0x9b;
+    ula_addr.s6_addr[4] = 0x9b;
+    ula_addr.s6_addr[5] = 0x33;
+    ula_addr.s6_addr[6] = 0xc8;
+    ula_addr.s6_addr[7] = 0xe9;
+    // Randomize the 64-bit Interface Identifier
+    uint32_t r1 = sys_rand32_get();
+    uint32_t r2 = sys_rand32_get();
+    memcpy(&ula_addr.s6_addr[8], &r1, 4);
+    memcpy(&ula_addr.s6_addr[12], &r2, 4);
+    net_if_ipv6_addr_add(iface, &ula_addr, NET_ADDR_AUTOCONF, 0);
 
     struct wifi_connect_req_params ap_params = {0};
     ap_params.ssid = (uint8_t*)"sesame";
@@ -63,6 +80,26 @@ void start_sta(void) {
         LOG_ERR("No default network interface");
         return;
     }
+
+    // Link-local address is automatically assigned by Zephyr via SLAAC/ND.
+    // Generate a random ULA according to RFC 4193
+    struct in6_addr ula_addr;
+    memset(&ula_addr, 0, sizeof(ula_addr));
+    // Use the host's ULA prefix fd74:3d9b:9b33:c8e9::/64
+    ula_addr.s6_addr[0] = 0xfd;
+    ula_addr.s6_addr[1] = 0x74;
+    ula_addr.s6_addr[2] = 0x3d;
+    ula_addr.s6_addr[3] = 0x9b;
+    ula_addr.s6_addr[4] = 0x9b;
+    ula_addr.s6_addr[5] = 0x33;
+    ula_addr.s6_addr[6] = 0xc8;
+    ula_addr.s6_addr[7] = 0xe9;
+    // Randomize the 64-bit Interface Identifier
+    uint32_t r1 = sys_rand32_get();
+    uint32_t r2 = sys_rand32_get();
+    memcpy(&ula_addr.s6_addr[8], &r1, 4);
+    memcpy(&ula_addr.s6_addr[12], &r2, 4);
+    net_if_ipv6_addr_add(iface, &ula_addr, NET_ADDR_AUTOCONF, 0);
 
     struct wifi_connect_req_params sta_params = {0};
     sta_params.ssid = (uint8_t*)app_config.network_config.ssid;

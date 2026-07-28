@@ -21,6 +21,7 @@ SYS_INIT(zero_sram1_bss, PRE_KERNEL_1, 0);
 #include <zephyr/net/net_if.h>
 // clang-format off
 #include <zephyr/net/dhcpv4.h>
+#include <zephyr/net/dhcpv6.h>
 // clang-format on
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/net_mgmt.h>
@@ -52,6 +53,31 @@ static void reconnect_work_handler(struct k_work* work) {
     }
 }
 
+static void log_all_ip_addresses(struct net_if* iface) {
+    for (int i = 0; i < NET_IF_MAX_IPV4_ADDR; i++) {
+        if (iface->config.ip.ipv4 &&
+            iface->config.ip.ipv4->unicast[i].ipv4.is_used) {
+            char buf[NET_IPV4_ADDR_LEN];
+            LOG_INF("IPv4 address: %s",
+                    net_addr_ntop(
+                        AF_INET,
+                        &iface->config.ip.ipv4->unicast[i].ipv4.address.in_addr,
+                        buf, sizeof(buf)));
+        }
+    }
+    for (int i = 0; i < NET_IF_MAX_IPV6_ADDR; i++) {
+        if (iface->config.ip.ipv6 &&
+            iface->config.ip.ipv6->unicast[i].is_used) {
+            char buf[NET_IPV6_ADDR_LEN];
+            LOG_INF("IPv6 address: %s",
+                    net_addr_ntop(
+                        AF_INET6,
+                        &iface->config.ip.ipv6->unicast[i].address.in6_addr,
+                        buf, sizeof(buf)));
+        }
+    }
+}
+
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                     uint64_t mgmt_event, struct net_if* iface) {
     switch (mgmt_event) {
@@ -61,17 +87,21 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
         case NET_EVENT_WIFI_AP_DISABLE_RESULT:
             set_wifi_led_pattern(LED_OFF, LED_OFF, LED_OFF, LED_OFF);
             break;
-        case NET_EVENT_WIFI_CONNECT_RESULT:
+        case NET_EVENT_WIFI_CONNECT_RESULT: {
+            k_work_cancel_delayable(&reconnect_work);
             set_wifi_led_pattern(LED_GREEN, LED_GREEN, LED_GREEN, LED_GREEN);
             net_dhcpv4_start(net_if_get_default());
+            struct net_dhcpv6_params params = {.request_addr = true,
+                                               .request_prefix = false};
+            net_dhcpv6_start(net_if_get_default(), &params);
             break;
+        }
         case NET_EVENT_IPV4_ADDR_ADD: {
-            char buf[NET_IPV4_ADDR_LEN];
-            LOG_INF("WiFi DHCP success! IP address added: %s",
-                    net_addr_ntop(
-                        AF_INET,
-                        &iface->config.ip.ipv4->unicast[0].ipv4.address.in_addr,
-                        buf, sizeof(buf)));
+            log_all_ip_addresses(iface);
+            break;
+        }
+        case NET_EVENT_IPV6_ADDR_ADD: {
+            log_all_ip_addresses(iface);
             break;
         }
         case NET_EVENT_WIFI_DISCONNECT_RESULT:
@@ -140,10 +170,13 @@ int main(void) {
             NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT);
     net_mgmt_add_event_callback(&wifi_mgmt_cb);
 
-    static struct net_mgmt_event_callback ipv4_mgmt_cb;
-    net_mgmt_init_event_callback(&ipv4_mgmt_cb, wifi_mgmt_event_handler,
-                                 NET_EVENT_IPV4_ADDR_ADD);
-    net_mgmt_add_event_callback(&ipv4_mgmt_cb);
+    static struct net_mgmt_event_callback ip_mgmt_cb;
+    net_mgmt_init_event_callback(
+        &ip_mgmt_cb, wifi_mgmt_event_handler,
+        NET_EVENT_IPV4_ADDR_ADD | NET_EVENT_IPV6_ADDR_ADD);
+    net_mgmt_add_event_callback(&ip_mgmt_cb);
+
+    log_all_ip_addresses(net_if_get_default());
 
     k_work_init_delayable(&reconnect_work, reconnect_work_handler);
 
