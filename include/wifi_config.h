@@ -8,10 +8,6 @@
 
 #define CONFIG_MAX_AP_ENTRIES 10
 
-#ifndef CONFIG_FLASH_PARTITION_COUNT
-#define CONFIG_FLASH_PARTITION_COUNT 16
-#endif
-
 #if defined(SD8977) || defined(SD8978)
 #define CONFIG_5GHz_SUPPORT 1
 #endif
