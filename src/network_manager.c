@@ -1,20 +1,181 @@
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/net/dhcpv4_server.h>
-#include <zephyr/net/net_core.h>
+// clang-format off
 #include <zephyr/net/net_if.h>
+#include <zephyr/net/net_core.h>
 #include <zephyr/net/net_ip.h>
+#include <zephyr/net/dhcpv4.h>
+#include <zephyr/net/dhcpv4_server.h>
+#include <zephyr/net/dhcpv6.h>
+#include <zephyr/net/dns_resolve.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/wifi_mgmt.h>
+// clang-format on
 #include <zephyr/random/random.h>
 
 #include "config_manager.h"
+#include "leds.h"
 #include "network.h"
 
 LOG_MODULE_REGISTER(network_manager, LOG_LEVEL_INF);
 
+static bool is_sta_mode = false;
+static struct k_work_delayable reconnect_work;
+static struct net_mgmt_event_callback wifi_mgmt_cb;
+static struct net_mgmt_event_callback ipv4_mgmt_cb;
+static struct net_mgmt_event_callback ipv6_mgmt_cb;
+static struct net_mgmt_event_callback dns_mgmt_cb;
+
+static void reconnect_work_handler(struct k_work* work) {
+    if (is_sta_mode) {
+        network_manager_reconnect();
+    }
+}
+
+static void log_existing_ipv6_addresses(struct net_if* iface) {
+    if (iface && iface->config.ip.ipv6) {
+        for (int i = 0; i < NET_IF_MAX_IPV6_ADDR; i++) {
+            if (iface->config.ip.ipv6->unicast[i].is_used) {
+                static char buf[NET_IPV6_ADDR_LEN];
+                LOG_INF("IPv6 address: %s",
+                        net_addr_ntop(
+                            AF_INET6,
+                            &iface->config.ip.ipv6->unicast[i].address.in6_addr,
+                            buf, sizeof(buf)));
+            }
+        }
+    }
+}
+
+static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
+                                    uint64_t mgmt_event, struct net_if* iface) {
+    switch (mgmt_event) {
+        case NET_EVENT_WIFI_AP_ENABLE_RESULT:
+            set_wifi_led_pattern(LED_BLUE, LED_OFF, LED_BLUE, LED_OFF);
+            break;
+        case NET_EVENT_WIFI_AP_DISABLE_RESULT:
+            set_wifi_led_pattern(LED_OFF, LED_OFF, LED_OFF, LED_OFF);
+            break;
+        case NET_EVENT_WIFI_CONNECT_RESULT: {
+            k_work_cancel_delayable(&reconnect_work);
+            set_wifi_led_pattern(LED_GREEN, LED_GREEN, LED_GREEN, LED_GREEN);
+            net_dhcpv4_start(net_if_get_default());
+            struct net_dhcpv6_params params = {.request_addr = false,
+                                               .request_prefix = false};
+            net_dhcpv6_start(net_if_get_default(), &params);
+
+#if defined(CONFIG_NET_IPV6_ND) && defined(CONFIG_NET_NATIVE_IPV6)
+            struct net_if* def_iface = net_if_get_default();
+            if (def_iface && def_iface->config.ip.ipv6) {
+                def_iface->config.ip.ipv6->rs_count = 0;
+                net_if_start_rs(def_iface);
+            }
+#endif
+            break;
+        }
+        case NET_EVENT_IPV4_ADDR_ADD: {
+            if (cb->info) {
+                static char buf[NET_IPV4_ADDR_LEN];
+                LOG_INF("IPv4 address: %s",
+                        net_addr_ntop(AF_INET, cb->info, buf, sizeof(buf)));
+            }
+            break;
+        }
+        case NET_EVENT_IPV6_ADDR_ADD: {
+            if (cb->info) {
+                static char buf[NET_IPV6_ADDR_LEN];
+                LOG_INF("IPv6 address: %s",
+                        net_addr_ntop(AF_INET6, cb->info, buf, sizeof(buf)));
+            }
+            break;
+        }
+        case NET_EVENT_IPV4_ROUTER_ADD: {
+            if (cb->info) {
+                static char buf[NET_IPV4_ADDR_LEN];
+                LOG_INF("IPv4 gateway: %s",
+                        net_addr_ntop(AF_INET, cb->info, buf, sizeof(buf)));
+            }
+            break;
+        }
+        case NET_EVENT_IPV6_ROUTER_ADD: {
+            if (cb->info) {
+                static struct in6_addr last_gw;
+                if (memcmp(&last_gw, cb->info, sizeof(struct in6_addr)) != 0) {
+                    memcpy(&last_gw, cb->info, sizeof(struct in6_addr));
+                    static char buf[NET_IPV6_ADDR_LEN];
+                    LOG_INF(
+                        "IPv6 gateway: %s",
+                        net_addr_ntop(AF_INET6, cb->info, buf, sizeof(buf)));
+                }
+            }
+            break;
+        }
+        case NET_EVENT_DNS_SERVER_ADD: {
+            if (cb->info) {
+                struct sockaddr* addr = (struct sockaddr*)cb->info;
+                if (addr->sa_family == AF_INET) {
+                    static char buf[NET_IPV4_ADDR_LEN];
+                    LOG_INF("DNS server: %s",
+                            net_addr_ntop(AF_INET, &net_sin(addr)->sin_addr,
+                                          buf, sizeof(buf)));
+                } else if (addr->sa_family == AF_INET6) {
+                    static char buf[NET_IPV6_ADDR_LEN];
+                    LOG_INF("DNS server: %s",
+                            net_addr_ntop(AF_INET6, &net_sin6(addr)->sin6_addr,
+                                          buf, sizeof(buf)));
+                }
+            }
+            break;
+        }
+        case NET_EVENT_IPV6_DAD_SUCCEED:
+        case NET_EVENT_IPV6_DHCP_BOUND:
+        case NET_EVENT_IPV4_DHCP_BOUND:
+            break;
+        case NET_EVENT_WIFI_DISCONNECT_RESULT:
+            set_wifi_led_pattern(LED_GREEN, LED_OFF, LED_GREEN, LED_OFF);
+            if (is_sta_mode) {
+                // Reconnect after 5 seconds backoff
+                k_work_reschedule(&reconnect_work, K_SECONDS(5));
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+void network_manager_init(void) {
+    k_work_init_delayable(&reconnect_work, reconnect_work_handler);
+
+    net_mgmt_init_event_callback(
+        &wifi_mgmt_cb, wifi_mgmt_event_handler,
+        NET_EVENT_WIFI_AP_ENABLE_RESULT | NET_EVENT_WIFI_AP_DISABLE_RESULT |
+            NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT);
+    net_mgmt_add_event_callback(&wifi_mgmt_cb);
+
+    net_mgmt_init_event_callback(&ipv4_mgmt_cb, wifi_mgmt_event_handler,
+                                 NET_EVENT_IPV4_ADDR_ADD |
+                                     NET_EVENT_IPV4_ROUTER_ADD |
+                                     NET_EVENT_IPV4_DHCP_BOUND);
+    net_mgmt_add_event_callback(&ipv4_mgmt_cb);
+
+    net_mgmt_init_event_callback(
+        &ipv6_mgmt_cb, wifi_mgmt_event_handler,
+        NET_EVENT_IPV6_ADDR_ADD | NET_EVENT_IPV6_ROUTER_ADD |
+            NET_EVENT_IPV6_DAD_SUCCEED | NET_EVENT_IPV6_DHCP_BOUND);
+    net_mgmt_add_event_callback(&ipv6_mgmt_cb);
+
+    net_mgmt_init_event_callback(&dns_mgmt_cb, wifi_mgmt_event_handler,
+                                 NET_EVENT_DNS_SERVER_ADD);
+    net_mgmt_add_event_callback(&dns_mgmt_cb);
+
+    log_existing_ipv6_addresses(net_if_get_default());
+}
+
 void start_ap(void) {
+    is_sta_mode = false;
+    k_work_cancel_delayable(&reconnect_work);
+
     struct net_if* iface = net_if_get_default();
     if (!iface) {
         LOG_ERR("No default network interface");
@@ -27,24 +188,6 @@ void start_ap(void) {
     net_addr_pton(AF_INET, "255.255.255.0", &ap_mask);
     net_if_ipv4_addr_add(iface, &ap_ip, NET_ADDR_MANUAL, 0);
     net_if_ipv4_set_netmask_by_addr(iface, &ap_ip, &ap_mask);
-
-    struct in6_addr ula_addr;
-    memset(&ula_addr, 0, sizeof(ula_addr));
-    // Use the host's ULA prefix fd74:3d9b:9b33:c8e9::/64
-    ula_addr.s6_addr[0] = 0xfd;
-    ula_addr.s6_addr[1] = 0x74;
-    ula_addr.s6_addr[2] = 0x3d;
-    ula_addr.s6_addr[3] = 0x9b;
-    ula_addr.s6_addr[4] = 0x9b;
-    ula_addr.s6_addr[5] = 0x33;
-    ula_addr.s6_addr[6] = 0xc8;
-    ula_addr.s6_addr[7] = 0xe9;
-    // Randomize the 64-bit Interface Identifier
-    uint32_t r1 = sys_rand32_get();
-    uint32_t r2 = sys_rand32_get();
-    memcpy(&ula_addr.s6_addr[8], &r1, 4);
-    memcpy(&ula_addr.s6_addr[12], &r2, 4);
-    net_if_ipv6_addr_add(iface, &ula_addr, NET_ADDR_AUTOCONF, 0);
 
     struct wifi_connect_req_params ap_params = {0};
     ap_params.ssid = (uint8_t*)"sesame";
@@ -75,31 +218,14 @@ void start_ap(void) {
 }
 
 void start_sta(void) {
+    is_sta_mode = true;
+    k_work_cancel_delayable(&reconnect_work);
+
     struct net_if* iface = net_if_get_default();
     if (!iface) {
         LOG_ERR("No default network interface");
         return;
     }
-
-    // Link-local address is automatically assigned by Zephyr via SLAAC/ND.
-    // Generate a random ULA according to RFC 4193
-    struct in6_addr ula_addr;
-    memset(&ula_addr, 0, sizeof(ula_addr));
-    // Use the host's ULA prefix fd74:3d9b:9b33:c8e9::/64
-    ula_addr.s6_addr[0] = 0xfd;
-    ula_addr.s6_addr[1] = 0x74;
-    ula_addr.s6_addr[2] = 0x3d;
-    ula_addr.s6_addr[3] = 0x9b;
-    ula_addr.s6_addr[4] = 0x9b;
-    ula_addr.s6_addr[5] = 0x33;
-    ula_addr.s6_addr[6] = 0xc8;
-    ula_addr.s6_addr[7] = 0xe9;
-    // Randomize the 64-bit Interface Identifier
-    uint32_t r1 = sys_rand32_get();
-    uint32_t r2 = sys_rand32_get();
-    memcpy(&ula_addr.s6_addr[8], &r1, 4);
-    memcpy(&ula_addr.s6_addr[12], &r2, 4);
-    net_if_ipv6_addr_add(iface, &ula_addr, NET_ADDR_AUTOCONF, 0);
 
     struct wifi_connect_req_params sta_params = {0};
     sta_params.ssid = (uint8_t*)app_config.network_config.ssid;

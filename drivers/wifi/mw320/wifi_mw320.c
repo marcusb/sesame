@@ -63,6 +63,38 @@ int net_configure_address(struct wlan_ip_config *addr, void *intrfc_handle) {
 }
 void *net_get_mlan_handle(void) { return NULL; }
 void *net_get_uap_handle(void) { return NULL; }
+static struct net_if_mcast_monitor mcast_monitor;
+
+static void wifi_mcast_cb(struct net_if *iface, const struct net_addr *addr, bool is_joined)
+{
+	if (net_if_l2(iface) != &NET_L2_GET_NAME(ETHERNET)) {
+		return;
+	}
+
+#if defined(CONFIG_NET_IPV6)
+	if (addr->family == AF_INET6) {
+		struct net_eth_addr mac;
+		net_eth_ipv6_mcast_to_mac_addr(&addr->in6_addr, &mac);
+		if (is_joined) {
+			wifi_add_mcast_filter(mac.addr);
+		} else {
+			wifi_remove_mcast_filter(mac.addr);
+		}
+	}
+#endif
+#if defined(CONFIG_NET_IPV4)
+	if (addr->family == AF_INET) {
+		struct net_eth_addr mac;
+		net_eth_ipv4_mcast_to_mac_addr(&addr->in_addr, &mac);
+		if (is_joined) {
+			wifi_add_mcast_filter(mac.addr);
+		} else {
+			wifi_remove_mcast_filter(mac.addr);
+		}
+	}
+#endif
+}
+
 
 static void wifi_mw320_iface_init(struct net_if *iface)
 {
@@ -78,6 +110,12 @@ static void wifi_mw320_iface_init(struct net_if *iface)
     }
     
     net_if_set_link_addr(iface, dev->mac_addr, 6, NET_LINK_ETHERNET);
+    static bool mcast_registered = false;
+    if (!mcast_registered) {
+        net_if_mcast_mon_register(&mcast_monitor, NULL, wifi_mcast_cb);
+        mcast_registered = true;
+    }
+
     ethernet_init(iface);
     
     struct ethernet_context *eth_ctx = net_if_l2_data(iface);
@@ -252,6 +290,7 @@ static const struct wifi_mgmt_ops wifi_mw320_mgmt_ops = {
     .ap_disable = wifi_mw320_mgmt_ap_disable,
 };
 
+
 static int wifi_mw320_set_config(const struct device *dev,
 				 struct net_if *iface,
 				 enum ethernet_config_type type,
@@ -294,12 +333,13 @@ static int wifi_mw320_event_callback(enum wlan_event_reason event, void *data)
         /* Zephyr manages network connections via mgmt API, so we just report interface up. */
         if (dev->iface) {
             net_if_up(dev->iface);
-            net_eth_carrier_on(dev->iface);
+            net_eth_carrier_off(dev->iface);
         }
         break;
     case WLAN_REASON_SUCCESS:
         LOG_INF("WLAN Connected");
         if (dev->iface) {
+            net_eth_carrier_on(dev->iface);
             wifi_mgmt_raise_connect_result_event(dev->iface, 0);
         }
         break;
@@ -308,6 +348,7 @@ static int wifi_mw320_event_callback(enum wlan_event_reason event, void *data)
     case WLAN_REASON_NETWORK_AUTH_FAILED:
         LOG_ERR("WLAN Connect Failed: %d", event);
         if (dev->iface) {
+            net_eth_carrier_off(dev->iface);
             wifi_mgmt_raise_connect_result_event(dev->iface, -1);
         }
         break;
@@ -316,7 +357,15 @@ static int wifi_mw320_event_callback(enum wlan_event_reason event, void *data)
     case WLAN_REASON_USER_DISCONNECT:
         LOG_INF("WLAN Disconnected: %d", event);
         if (dev->iface) {
+            net_eth_carrier_off(dev->iface);
             wifi_mgmt_raise_disconnect_result_event(dev->iface, 0);
+        }
+        break;
+    case WLAN_REASON_UAP_SUCCESS:
+        LOG_INF("WLAN AP Started");
+        if (dev->iface) {
+            net_eth_carrier_on(dev->iface);
+            wifi_mgmt_raise_ap_enable_result_event(dev->iface, 0);
         }
         break;
     default:

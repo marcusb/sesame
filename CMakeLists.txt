@@ -20,7 +20,7 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(sesame)
 
 # --- Linker settings ---
-zephyr_linker_sources(DATA_SECTIONS custom_bss.ld)
+zephyr_linker_sources(SECTIONS custom_bss.ld)
 zephyr_linker_sources(RODATA custom_rodata.ld)
 target_link_libraries(app PRIVATE -lm)
 
