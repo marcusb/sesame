@@ -6,6 +6,12 @@
 	model = "Genie Integrated Door Control Module Board 39732R.S";
 	compatible = "marvell,mw302", "nxp,88mw320";
 
+	aliases {
+		pic-uart = &uart1;
+		pic-rst = &pic_rst;
+		pic-wake = &pic_wake;
+	};
+
 	leds {
 		compatible = "gpio-leds";
 
@@ -52,8 +58,20 @@
 			label = "OTA Button";
 			gpios = <&gpio0 23 1>;
 		};
+
+		pic_rst: pic_rst {
+			label = "PIC Reset";
+			gpios = <&gpio1 16 GPIO_ACTIVE_LOW>;
+		};
+
+		pic_wake: pic_wake {
+			label = "PIC Wake";
+			gpios = <&gpio1 17 GPIO_ACTIVE_HIGH>;
+		};
 	};
 };
+
+
 
 &gpio_default {
 	group1 {

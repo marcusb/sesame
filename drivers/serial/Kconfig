@@ -4,5 +4,6 @@ config UART_MW320
 	depends on DT_HAS_NXP_MW320_UART_ENABLED
 	depends on SERIAL
 	select SERIAL_HAS_DRIVER
+	select SERIAL_SUPPORT_INTERRUPT
 	help
 	  Enable the UART driver for NXP MW320 SoCs.

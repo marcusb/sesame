@@ -24,6 +24,7 @@ SYS_INIT(zero_sram1_bss, PRE_KERNEL_1, 0);
 #include "leds.h"
 #include "mflash_drv.h"
 #include "network.h"
+#include "pic_uart.h"
 
 K_MSGQ_DEFINE(ctrl_queue, sizeof(ctrl_msg_t), 8, 4);
 
@@ -138,6 +139,27 @@ int main(void) {
                     k_msleep(500);
                     sys_reboot(SYS_REBOOT_COLD);
                     break;
+                case CTRL_MSG_DOOR_CONTROL: {
+                    pic_cmd_t pcmd = PIC_CMD_UNKNOWN;
+                    switch (msg.msg.door_control.command) {
+                        case DOOR_CMD_OPEN:
+                            pcmd = PIC_CMD_OPEN;
+                            break;
+                        case DOOR_CMD_CLOSE:
+                            pcmd = PIC_CMD_CLOSE;
+                            break;
+                        case DOOR_CMD_STOP:
+                            pcmd = PIC_CMD_STOP;
+                            break;
+                        default:
+                            break;
+                    }
+
+                    if (pcmd != PIC_CMD_UNKNOWN) {
+                        k_msgq_put(&pic_queue, &pcmd, K_NO_WAIT);
+                    }
+                    break;
+                }
                 default:
                     break;
             }

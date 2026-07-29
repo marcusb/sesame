@@ -31,6 +31,7 @@ target_sources(app PRIVATE
     src/main.c
     src/httpd.c
     src/network_manager.c
+    src/pic_uart.c
 )
 
 zephyr_include_directories(include)

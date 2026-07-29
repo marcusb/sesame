@@ -44,6 +44,13 @@
 			status = "disabled";
 		};
 
+		uart1: uart@460c0000 {
+			compatible = "nxp,mw320-uart";
+			reg = <0x460c0000 0x1000>;
+			interrupts = <19 0>;
+			status = "disabled";
+		};
+
 		gpio0: gpio@46060000 {
 			compatible = "nxp,mw320-gpio";
 			reg = <0x46060000 0x1000>;
