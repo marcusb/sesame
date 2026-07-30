@@ -38,7 +38,7 @@ static int wdt_channel_id = -1;
 
 static void init_watchdog() {
     if (!device_is_ready(wdt)) {
-        printk("Watchdog device not ready\n");
+        LOG_ERR("Watchdog device not ready");
         return;
     }
 
@@ -51,7 +51,7 @@ static void init_watchdog() {
 
     wdt_channel_id = wdt_install_timeout(wdt, &wdt_config);
     if (wdt_channel_id < 0) {
-        printk("Watchdog install error\n");
+        LOG_ERR("Watchdog install error");
         return;
     }
 

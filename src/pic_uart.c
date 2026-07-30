@@ -74,8 +74,12 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
     if (down_limit != up_limit) {
         int32_t val = 100 * (int32_t)(up_limit - raw_pos) /
                       (int32_t)(up_limit - down_limit);
-        if (val < 0) val = 0;
-        if (val > 100) val = 100;
+        if (val < 0) {
+            val = 0;
+        }
+        if (val > 100) {
+            val = 100;
+        }
         pos = val;
     }
     uint32_t now = k_uptime_get_32();

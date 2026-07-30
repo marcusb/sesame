@@ -10,6 +10,10 @@
 #include <zephyr/random/random.h>
 LOG_MODULE_REGISTER(mqtt, LOG_LEVEL_DBG);
 
+#include <zephyr/sys/sys_heap.h>
+
+extern struct k_heap _system_heap;
+
 #include "app_config.pb.h"
 #include "config_manager.h"
 #include "controller.h"
@@ -229,8 +233,6 @@ static int client_init(const MqttConfig* cfg) {
 }
 
 void mqtt_task(void* p1, void* p2, void* p3) {
-    printk("MQTT TASK STARTED!!!! has_config=%d, enabled=%d\n",
-           app_config.has_mqtt_config, app_config.mqtt_config.enabled);
     LOG_INF("MQTT task started, has_config=%d", app_config.has_mqtt_config);
     if (app_config.has_mqtt_config) {
         LOG_INF("enabled=%d, broker=%s", app_config.mqtt_config.enabled,
@@ -346,8 +348,14 @@ void publish_state(const door_state_msg_t* msg) {
                  tm.tm_min, tm.tm_sec);
     }
     static char payload[128];
+    struct sys_memory_stats stats;
+    size_t free_heap = 0;
+    if (sys_heap_runtime_stats_get(&_system_heap.heap, &stats) == 0) {
+        free_heap = stats.free_bytes;
+    }
+
     snprintf(payload, sizeof(payload), fmt, state, dir, msg->pos, days, tm_hms,
-             uptime_s, 0);  // No xPortGetFreeHeapSize() in zephyr trivially
+             uptime_s, (unsigned int)free_heap);
     LOG_INF("Publishing to %s: %s", state_topic, payload);
     publish(state_topic, payload, false);
 }
