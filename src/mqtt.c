@@ -195,18 +195,25 @@ static int client_init(const MqttConfig* cfg) {
     client_ctx.client_id.utf8 =
         (uint8_t*)(cfg->client_id[0] ? cfg->client_id : MQTT_CLIENTID);
     client_ctx.client_id.size = strlen(client_ctx.client_id.utf8);
-    client_ctx.password =
-        cfg->password[0]
-            ? (struct mqtt_utf8*)&(
-                  struct mqtt_utf8){.utf8 = (uint8_t*)cfg->password,
-                                    .size = strlen(cfg->password)}
-            : NULL;
-    client_ctx.user_name =
-        cfg->username[0]
-            ? (struct mqtt_utf8*)&(
-                  struct mqtt_utf8){.utf8 = (uint8_t*)cfg->username,
-                                    .size = strlen(cfg->username)}
-            : NULL;
+    static struct mqtt_utf8 mqtt_username;
+    static struct mqtt_utf8 mqtt_password;
+
+    if (cfg->password[0]) {
+        mqtt_password.utf8 = (uint8_t*)cfg->password;
+        mqtt_password.size = strlen(cfg->password);
+        client_ctx.password = &mqtt_password;
+    } else {
+        client_ctx.password = NULL;
+    }
+
+    if (cfg->username[0]) {
+        mqtt_username.utf8 = (uint8_t*)cfg->username;
+        mqtt_username.size = strlen(cfg->username);
+        client_ctx.user_name = &mqtt_username;
+    } else {
+        client_ctx.user_name = NULL;
+    }
+
     client_ctx.protocol_version = MQTT_VERSION_3_1_1;
 
     client_ctx.rx_buf = rx_buffer;
