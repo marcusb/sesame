@@ -11,13 +11,13 @@
 LOG_MODULE_REGISTER(mqtt, LOG_LEVEL_DBG);
 
 #include <zephyr/sys/sys_heap.h>
-
-extern struct k_heap _system_heap;
+#include <zephyr/sys/util.h>
 
 #include "app_config.pb.h"
 #include "config_manager.h"
 #include "controller.h"
 #include "mqtt.h"
+#include "system_heap.h"
 #include "time_util.h"
 
 #define MQTT_CLIENTID "sesame_client"
