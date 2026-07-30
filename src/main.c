@@ -23,8 +23,10 @@ SYS_INIT(zero_sram1_bss, PRE_KERNEL_1, 0);
 #include "controller.h"
 #include "leds.h"
 #include "mflash_drv.h"
+#include "mqtt.h"
 #include "network.h"
 #include "pic_uart.h"
+#include "syslog.h"
 
 K_MSGQ_DEFINE(ctrl_queue, sizeof(ctrl_msg_t), 8, 4);
 
@@ -160,6 +162,9 @@ int main(void) {
                     }
                     break;
                 }
+                case CTRL_MSG_DOOR_STATE_UPDATE:
+                    publish_state(&msg.msg.door_state);
+                    break;
                 default:
                     break;
             }

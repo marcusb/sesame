@@ -32,6 +32,7 @@ target_sources(app PRIVATE
     src/httpd.c
     src/network_manager.c
     src/pic_uart.c
+    src/mqtt.c
 )
 
 zephyr_include_directories(include)

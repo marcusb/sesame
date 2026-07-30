@@ -29,7 +29,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "FreeRTOS.h"
+#include <zephyr/kernel.h>
 #include "logging_levels.h"
 
 typedef struct {
@@ -37,8 +37,8 @@ typedef struct {
     uint8_t level;
     const char *filename;
     size_t line_num;
-    TickType_t ticks;
-    char task_name[configMAX_TASK_NAME_LEN + 1];
+    uint32_t ticks;
+    char task_name[32 + 1]; // Zephyr thread name limit
     char *msg;
 } log_msg_t;
 
@@ -50,8 +50,8 @@ typedef void (*log_backend_func)(const log_msg_t *log);
  * Called once to create the logging task and queue.  Must be called before any
  * calls to vLoggingPrintf().
  */
-BaseType_t init_logging(uint16_t stack_size, UBaseType_t priority,
-                        UBaseType_t queue_length);
+int init_logging(uint16_t stack_size, unsigned int priority,
+                 unsigned int queue_length);
 
 int register_log_backend(log_backend_func f);
 

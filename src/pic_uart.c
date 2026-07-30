@@ -16,7 +16,7 @@ K_MSGQ_DEFINE(pic_queue, sizeof(pic_cmd_t), 10, 4);
 #define READ_TIMEOUT_TICKS 10000
 #define DOOR_POLL_TICKS (30 * 1000)
 #define DOOR_MOVE_ALERT_TICKS 6000
-#define STATE_UPDATE_INTERVAL (60 * 1000)
+#define STATE_UPDATE_INTERVAL (30 * 1000)
 
 static bool self_test_done;
 static door_open_state_t state = DCM_DOOR_STATE_UNKNOWN;

@@ -31,8 +31,6 @@
 /* Include header for logging level macros. */
 #include "logging_levels.h"
 
-/* FreeRTOS Include. */
-#include "FreeRTOS.h"
 #include "logging.h"
 
 /* Standard Include. */
