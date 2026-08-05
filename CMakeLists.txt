@@ -33,6 +33,7 @@ target_sources(app PRIVATE
     src/network_manager.c
     src/pic_uart.c
     src/mqtt.c
+    src/syslog.c
 )
 
 zephyr_include_directories(include)

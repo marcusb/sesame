@@ -1,92 +1,107 @@
-#include <time.h>
-
-// FreeRTOS
-#include "FreeRTOS.h"
-#include "FreeRTOS_IP.h"
-#include "FreeRTOS_IP_Utils.h"
-#include "FreeRTOS_Sockets.h"
-
-// Application
-#include "app_config.pb.h"
-#include "logging.h"
 #include "syslog.h"
 
-#define LOG_FACILITY_LOCAL0 16
+#include <stdbool.h>
+#include <string.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/logging/log_backend_net.h>
+#include <zephyr/net/dns_resolve.h>
+#include <zephyr/net/net_ip.h>
 
-static struct freertos_sockaddr udp_log_addr;
-static Socket_t syslog_sock = FREERTOS_INVALID_SOCKET;
+#include "app_config.pb.h"
+#include "config_manager.h"
 
-static void do_configure(void* p1, uint32_t p2) {
-    const SyslogConfig* cfg = (const SyslogConfig*)p1;
+LOG_MODULE_REGISTER(syslog, LOG_LEVEL_INF);
 
-    uint32_t host_ip = FreeRTOS_gethostbyname(cfg->syslog_host);
-    if (!host_ip) {
-        return;
-    }
-    udp_log_addr = (struct freertos_sockaddr){sizeof(struct freertos_sockaddr),
-                                              FREERTOS_AF_INET,
-                                              FreeRTOS_htons(cfg->syslog_port),
-                                              0,
-                                              {.ulIP_IPv4 = host_ip}};
+static struct k_work_delayable retry_work;
+static bool backend_active;
 
-    Socket_t sock = FreeRTOS_socket(FREERTOS_AF_INET, FREERTOS_SOCK_DGRAM,
-                                    FREERTOS_IPPROTO_UDP);
-    if (sock != FREERTOS_INVALID_SOCKET) {
-        static const TickType_t send_to = pdMS_TO_TICKS(0);
-        FreeRTOS_setsockopt(sock, 0, FREERTOS_SO_SNDTIMEO, &send_to,
-                            sizeof(send_to));
-        FreeRTOS_bind(sock, NULL, 0);
-        syslog_sock = sock;
+static void set_log_backend(const struct net_sockaddr* sa, const char* host) {
+    if (log_backend_net_set_ip(sa)) {
+        k_work_cancel_delayable(&retry_work);
+        log_backend_net_start();
+        backend_active = true;
+        LOG_INF("Syslog host set: %s", host);
     }
 }
 
-void configure_logging(const SyslogConfig* cfg) {
-    if (!cfg->enabled) {
+static void dns_resolve_cb(enum dns_resolve_status status,
+                           struct dns_addrinfo* info, void* user_data) {
+    const SyslogConfig* scfg = &app_config.logging_config.syslog_config;
+    const char* query = (const char*)user_data;
+
+    switch (status) {
+        case DNS_EAI_CANCELED:
+            return;
+        case DNS_EAI_NODATA:
+            LOG_INF("host not found: %s", query);
+            return;
+        case DNS_EAI_ALLDONE:
+            LOG_DBG("DNS resolving finished");
+            return;
+        case DNS_EAI_INPROGRESS:
+            break;
+        case DNS_EAI_AGAIN:
+            LOG_DBG("DNS lookup temp fail, retrying after backoff: %s", query);
+            k_work_reschedule(&retry_work, K_SECONDS(5));
+            break;
+        default:
+            LOG_DBG("DNS lookup status (%d): %s", status, query);
+            return;
+    }
+
+    if (!info) {
         return;
     }
 
-    // Schedule socket creation because this function is called from the IP task
-    // and the IP task cannot itself wait for a socket to bind.
-    xTimerPendFunctionCall(do_configure, (void*)cfg, 0, 100);
+    char addr_str[NET_IPV6_ADDR_LEN];
+    uint16_t port = scfg->syslog_port ? scfg->syslog_port : 514;
+    struct net_sockaddr sa;
+    memcpy(&sa, &info->ai_addr, sizeof(sa));
+    if (sa.sa_family == AF_INET) {
+        LOG_INF("%s IPv4 address: %s", query,
+                net_addr_ntop(info->ai_family, &net_sin(&sa)->sin_addr,
+                              addr_str, sizeof(addr_str)));
+        net_sin(&sa)->sin_port = net_htons(port);
+    } else if (sa.sa_family == AF_INET6) {
+        LOG_INF("%s IPv6 address: %s", query,
+                net_addr_ntop(info->ai_family, &net_sin6(&sa)->sin6_addr,
+                              addr_str, sizeof(addr_str)));
+        net_sin6(&sa)->sin6_port = net_htons(port);
+    }
+    set_log_backend(&sa, query);
 }
 
-void log_syslog(const log_msg_t* log) {
-    // allocate some extra space for metadata
-    char buf[strlen(log->msg) + 64];
-    static const int severities[] = {7, 3, 4, 6, 7};
-    configASSERT(log->level < sizeof(severities));
-    int severity = severities[log->level];
-    int pri = (LOG_FACILITY_LOCAL0 << 3) + severity;
+static void retry_work_handler(struct k_work* work) {
+    ARG_UNUSED(work);
 
-    char* p = buf;
-    int remaining = sizeof(buf);
-    int n = snprintf(p, remaining, "<%03d>1 ", pri);
-    if (n < 0 || n >= remaining) {
-        return;
+    const SyslogConfig* scfg = &app_config.logging_config.syslog_config;
+    if (dns_get_addr_info(scfg->syslog_host, DNS_QUERY_TYPE_A, NULL,
+                          dns_resolve_cb, (void*)scfg->syslog_host,
+                          10000) < 0) {
+        LOG_WRN("DNS resolve failed to send for %s, retrying in 5s",
+                scfg->syslog_host);
+        k_work_reschedule(&retry_work, K_SECONDS(5));
     }
-    p += n;
-    remaining -= n;
+}
 
-    // include timestamp if it's realistic
-    // struct tm tm;
-    // if (wmtime_time_get(&tm) == 0 && tm.tm_year > 2024 &&
-    //     (n = strftime(p, remaining, "%FT%T%z", &tm)) > 0) {
-    //     p += n;
-    //     remaining -= n;
-    // } else {
-    *p++ = '-';
-    remaining--;
-    // }
-
-    n = snprintf(p, remaining, " %s sesame %s %lu - %s",
-                 pcApplicationHostnameHook(), log->task_name, log->msg_id,
-                 log->msg);
-    if (n < 0) {
+void syslog_init(void) {
+    const SyslogConfig* scfg = &app_config.logging_config.syslog_config;
+    if (backend_active || !scfg->enabled || strlen(scfg->syslog_host) == 0) {
         return;
     }
 
-    if (syslog_sock != FREERTOS_INVALID_SOCKET) {
-        FreeRTOS_sendto(syslog_sock, buf, strlen(buf), 0, &udp_log_addr,
-                        sizeof(udp_log_addr));
+    k_work_init_delayable(&retry_work, retry_work_handler);
+
+    struct net_sockaddr sa = {0};
+    if (net_ipaddr_parse(scfg->syslog_host, strlen(scfg->syslog_host), &sa)) {
+        uint16_t port = scfg->syslog_port ? scfg->syslog_port : 514;
+        sa.sa_family = AF_INET;
+        net_sin(&sa)->sin_port = net_htons(port);
+
+        set_log_backend(&sa, scfg->syslog_host);
+        return;
     }
+
+    k_work_reschedule(&retry_work, K_USEC(0));
 }

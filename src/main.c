@@ -2,14 +2,6 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
-extern char __sram1_bss_start[];
-extern char __sram1_bss_end[];
-static int zero_sram1_bss(void) {
-    memset(__sram1_bss_start, 0, __sram1_bss_end - __sram1_bss_start);
-    return 0;
-}
-SYS_INIT(zero_sram1_bss, PRE_KERNEL_1, 0);
-
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/watchdog.h>
@@ -35,6 +27,14 @@ static const struct gpio_dt_spec wifi_button =
 
 static const struct device* const wdt = DEVICE_DT_GET(DT_NODELABEL(wdt0));
 static int wdt_channel_id = -1;
+
+extern char __sram1_bss_start[];
+extern char __sram1_bss_end[];
+static int zero_sram1_bss(void) {
+    memset(__sram1_bss_start, 0, __sram1_bss_end - __sram1_bss_start);
+    return 0;
+}
+SYS_INIT(zero_sram1_bss, PRE_KERNEL_1, 0);
 
 static void init_watchdog() {
     if (!device_is_ready(wdt)) {
@@ -78,6 +78,7 @@ int main(void) {
     }
 
     network_manager_init();
+    syslog_init();
 
     if (app_config.has_network_config &&
         strlen(app_config.network_config.ssid) > 0) {
