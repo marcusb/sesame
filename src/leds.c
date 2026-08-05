@@ -4,6 +4,11 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_event.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/wifi_mgmt.h>
 
 LOG_MODULE_REGISTER(leds, LOG_LEVEL_DBG);
 
@@ -15,6 +20,9 @@ static struct k_thread led_thread_data;
 
 static uint16_t ota_led_pattern = 0x0101;
 static uint16_t wifi_led_pattern = 0x0000;
+
+static struct net_mgmt_event_callback l4_mgmt_cb;
+static struct net_mgmt_event_callback wifi_mgmt_cb;
 
 static const struct gpio_dt_spec ota_red =
     GPIO_DT_SPEC_GET(DT_NODELABEL(led_ota_red), gpios);
@@ -73,8 +81,38 @@ static void led_thread(void* p1, void* p2, void* p3) {
     }
 }
 
+static void led_event_handler(struct net_mgmt_event_callback* cb,
+                              uint64_t mgmt_event, struct net_if* iface) {
+    switch (mgmt_event) {
+        case NET_EVENT_L4_CONNECTED:
+            set_wifi_led_pattern(LED_GREEN, LED_GREEN, LED_GREEN, LED_GREEN);
+            break;
+        case NET_EVENT_L4_DISCONNECTED:
+            set_wifi_led_pattern(LED_GREEN, LED_OFF, LED_GREEN, LED_OFF);
+            break;
+        case NET_EVENT_WIFI_AP_ENABLE_RESULT:
+            set_wifi_led_pattern(LED_BLUE, LED_OFF, LED_BLUE, LED_OFF);
+            break;
+        case NET_EVENT_WIFI_AP_DISABLE_RESULT:
+            set_wifi_led_pattern(LED_OFF, LED_OFF, LED_OFF, LED_OFF);
+            break;
+        default:
+            break;
+    }
+}
+
 void leds_init(void) {
     k_thread_create(&led_thread_data, led_stack_area,
                     K_THREAD_STACK_SIZEOF(led_stack_area), led_thread, NULL,
                     NULL, NULL, LED_PRIORITY, 0, K_NO_WAIT);
+
+    net_mgmt_init_event_callback(
+        &l4_mgmt_cb, led_event_handler,
+        NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED);
+    net_mgmt_add_event_callback(&l4_mgmt_cb);
+
+    net_mgmt_init_event_callback(
+        &wifi_mgmt_cb, led_event_handler,
+        NET_EVENT_WIFI_AP_ENABLE_RESULT | NET_EVENT_WIFI_AP_DISABLE_RESULT);
+    net_mgmt_add_event_callback(&wifi_mgmt_cb);
 }

@@ -77,7 +77,7 @@ int main(void) {
         LOG_WRN("Failed to load config, using defaults");
     }
 
-    network_manager_init();
+    network_init();
     syslog_init();
 
     if (app_config.has_network_config &&

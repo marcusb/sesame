@@ -30,7 +30,7 @@ target_sources(app PRIVATE
     src/leds.c
     src/main.c
     src/httpd.c
-    src/network_manager.c
+    src/network.c
     src/pic_uart.c
     src/mqtt.c
     src/syslog.c

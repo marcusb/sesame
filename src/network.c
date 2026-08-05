@@ -18,62 +18,16 @@
 #include "leds.h"
 #include "network.h"
 
-LOG_MODULE_REGISTER(network_manager, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(network, LOG_LEVEL_INF);
 
-static bool is_sta_mode = false;
-static struct k_work_delayable reconnect_work;
-static struct net_mgmt_event_callback wifi_mgmt_cb;
 static struct net_mgmt_event_callback ipv4_mgmt_cb;
 static struct net_mgmt_event_callback ipv6_mgmt_cb;
 static struct net_mgmt_event_callback dns_mgmt_cb;
+static struct net_mgmt_event_callback wifi_mgmt_cb;
 
-static void reconnect_work_handler(struct k_work* work) {
-    if (is_sta_mode) {
-        network_manager_reconnect();
-    }
-}
-
-static void log_existing_ipv6_addresses(struct net_if* iface) {
-    if (iface && iface->config.ip.ipv6) {
-        for (int i = 0; i < NET_IF_MAX_IPV6_ADDR; i++) {
-            if (iface->config.ip.ipv6->unicast[i].is_used) {
-                static char buf[NET_IPV6_ADDR_LEN];
-                LOG_INF("IPv6 address: %s",
-                        net_addr_ntop(
-                            AF_INET6,
-                            &iface->config.ip.ipv6->unicast[i].address.in6_addr,
-                            buf, sizeof(buf)));
-            }
-        }
-    }
-}
-
-static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
-                                    uint64_t mgmt_event, struct net_if* iface) {
+static void ip_mgmt_event_handler(struct net_mgmt_event_callback* cb,
+                                  uint64_t mgmt_event, struct net_if* iface) {
     switch (mgmt_event) {
-        case NET_EVENT_WIFI_AP_ENABLE_RESULT:
-            set_wifi_led_pattern(LED_BLUE, LED_OFF, LED_BLUE, LED_OFF);
-            break;
-        case NET_EVENT_WIFI_AP_DISABLE_RESULT:
-            set_wifi_led_pattern(LED_OFF, LED_OFF, LED_OFF, LED_OFF);
-            break;
-        case NET_EVENT_WIFI_CONNECT_RESULT: {
-            k_work_cancel_delayable(&reconnect_work);
-            set_wifi_led_pattern(LED_GREEN, LED_GREEN, LED_GREEN, LED_GREEN);
-            net_dhcpv4_start(net_if_get_default());
-            struct net_dhcpv6_params params = {.request_addr = false,
-                                               .request_prefix = false};
-            net_dhcpv6_start(net_if_get_default(), &params);
-
-#if defined(CONFIG_NET_IPV6_ND) && defined(CONFIG_NET_NATIVE_IPV6)
-            struct net_if* def_iface = net_if_get_default();
-            if (def_iface && def_iface->config.ip.ipv6) {
-                def_iface->config.ip.ipv6->rs_count = 0;
-                net_if_start_rs(def_iface);
-            }
-#endif
-            break;
-        }
         case NET_EVENT_IPV4_ADDR_ADD: {
             if (cb->info) {
                 static char buf[NET_IPV4_ADDR_LEN];
@@ -128,54 +82,69 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
             }
             break;
         }
-        case NET_EVENT_IPV6_DAD_SUCCEED:
-        case NET_EVENT_IPV6_DHCP_BOUND:
-        case NET_EVENT_IPV4_DHCP_BOUND:
-            break;
-        case NET_EVENT_WIFI_DISCONNECT_RESULT:
-            set_wifi_led_pattern(LED_GREEN, LED_OFF, LED_GREEN, LED_OFF);
-            if (is_sta_mode) {
-                // Reconnect after 5 seconds backoff
-                k_work_reschedule(&reconnect_work, K_SECONDS(5));
-            }
-            break;
         default:
             break;
     }
 }
 
-void network_manager_init(void) {
-    k_work_init_delayable(&reconnect_work, reconnect_work_handler);
+static void log_existing_ipv6_addresses(struct net_if* iface) {
+    if (iface && iface->config.ip.ipv6) {
+        for (int i = 0; i < NET_IF_MAX_IPV6_ADDR; i++) {
+            if (iface->config.ip.ipv6->unicast[i].is_used) {
+                static char buf[NET_IPV6_ADDR_LEN];
+                LOG_INF("IPv6 address: %s",
+                        net_addr_ntop(
+                            AF_INET6,
+                            &iface->config.ip.ipv6->unicast[i].address.in6_addr,
+                            buf, sizeof(buf)));
+            }
+        }
+    }
+}
 
+static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
+                                    uint64_t mgmt_event, struct net_if* iface) {
+    if (mgmt_event == NET_EVENT_WIFI_CONNECT_RESULT) {
+        LOG_INF("WiFi connected, starting DHCP");
+        net_dhcpv4_start(net_if_get_default());
+
+        struct net_dhcpv6_params params = {.request_addr = false,
+                                           .request_prefix = false};
+        net_dhcpv6_start(net_if_get_default(), &params);
+
+#if defined(CONFIG_NET_IPV6_ND) && defined(CONFIG_NET_NATIVE_IPV6)
+        struct net_if* def_iface = net_if_get_default();
+        if (def_iface && def_iface->config.ip.ipv6) {
+            def_iface->config.ip.ipv6->rs_count = 0;
+            net_if_start_rs(def_iface);
+        }
+#endif
+    }
+}
+
+void network_init(void) {
     net_mgmt_init_event_callback(
-        &wifi_mgmt_cb, wifi_mgmt_event_handler,
-        NET_EVENT_WIFI_AP_ENABLE_RESULT | NET_EVENT_WIFI_AP_DISABLE_RESULT |
-            NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT);
-    net_mgmt_add_event_callback(&wifi_mgmt_cb);
-
-    net_mgmt_init_event_callback(&ipv4_mgmt_cb, wifi_mgmt_event_handler,
-                                 NET_EVENT_IPV4_ADDR_ADD |
-                                     NET_EVENT_IPV4_ROUTER_ADD |
-                                     NET_EVENT_IPV4_DHCP_BOUND);
+        &ipv4_mgmt_cb, ip_mgmt_event_handler,
+        NET_EVENT_IPV4_ADDR_ADD | NET_EVENT_IPV4_ROUTER_ADD);
     net_mgmt_add_event_callback(&ipv4_mgmt_cb);
 
     net_mgmt_init_event_callback(
-        &ipv6_mgmt_cb, wifi_mgmt_event_handler,
-        NET_EVENT_IPV6_ADDR_ADD | NET_EVENT_IPV6_ROUTER_ADD |
-            NET_EVENT_IPV6_DAD_SUCCEED | NET_EVENT_IPV6_DHCP_BOUND);
+        &ipv6_mgmt_cb, ip_mgmt_event_handler,
+        NET_EVENT_IPV6_ADDR_ADD | NET_EVENT_IPV6_ROUTER_ADD);
     net_mgmt_add_event_callback(&ipv6_mgmt_cb);
 
-    net_mgmt_init_event_callback(&dns_mgmt_cb, wifi_mgmt_event_handler,
+    net_mgmt_init_event_callback(&dns_mgmt_cb, ip_mgmt_event_handler,
                                  NET_EVENT_DNS_SERVER_ADD);
     net_mgmt_add_event_callback(&dns_mgmt_cb);
+
+    net_mgmt_init_event_callback(&wifi_mgmt_cb, wifi_mgmt_event_handler,
+                                 NET_EVENT_WIFI_CONNECT_RESULT);
+    net_mgmt_add_event_callback(&wifi_mgmt_cb);
 
     log_existing_ipv6_addresses(net_if_get_default());
 }
 
 void start_ap(void) {
-    is_sta_mode = false;
-    k_work_cancel_delayable(&reconnect_work);
-
     struct net_if* iface = net_if_get_default();
     if (!iface) {
         LOG_ERR("No default network interface");
@@ -218,9 +187,6 @@ void start_ap(void) {
 }
 
 void start_sta(void) {
-    is_sta_mode = true;
-    k_work_cancel_delayable(&reconnect_work);
-
     struct net_if* iface = net_if_get_default();
     if (!iface) {
         LOG_ERR("No default network interface");
@@ -240,20 +206,10 @@ void start_sta(void) {
         sta_params.security = WIFI_SECURITY_TYPE_NONE;
     }
 
-    // We want DHCP for STA mode, Zephyr handles DHCP automatically if
-    // configured on the interface Note: Zephyr requires DHCP client to be
-    // enabled in prj.conf (CONFIG_NET_DHCPV4=y) We start the DHCP client when
-    // the interface goes up, or it might be auto-started.
-
     LOG_INF("Starting WiFi STA connection to %s...",
             app_config.network_config.ssid);
     if (net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &sta_params,
                  sizeof(sta_params))) {
         LOG_ERR("Failed to request STA connect");
     }
-}
-
-void network_manager_reconnect(void) {
-    LOG_INF("Attempting to reconnect WiFi STA...");
-    start_sta();
 }
