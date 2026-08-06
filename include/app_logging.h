@@ -13,3 +13,4 @@
 #endif
 
 #include "logging_stack.h"
+void syslog_stop(void);

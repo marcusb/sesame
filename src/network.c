@@ -1,6 +1,9 @@
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+
+#include "app_logging.h"
+#include "mqtt.h"
 // clang-format off
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_core.h>
@@ -205,6 +208,8 @@ void start_ap(void) {
     ap_params.security = WIFI_SECURITY_TYPE_NONE;
 
     LOG_INF("Starting WiFi AP...");
+    mqtt_stop();
+    syslog_stop();
     if (net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, iface, &ap_params,
                  sizeof(ap_params))) {
         LOG_ERR("Failed to start AP");

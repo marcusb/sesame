@@ -10,6 +10,7 @@
 #include <zephyr/random/random.h>
 LOG_MODULE_REGISTER(mqtt, LOG_LEVEL_DBG);
 
+#include <zephyr/sys/atomic.h>
 #include <zephyr/sys/sys_heap.h>
 #include <zephyr/sys/util.h>
 
@@ -17,6 +18,10 @@ LOG_MODULE_REGISTER(mqtt, LOG_LEVEL_DBG);
 #include "config_manager.h"
 #include "controller.h"
 #include "mqtt.h"
+
+static atomic_t mqtt_stopped = ATOMIC_INIT(0);
+
+void mqtt_stop(void) { atomic_set(&mqtt_stopped, 1); }
 #include "network.h"
 #include "system_heap.h"
 #include "time_util.h"
@@ -260,6 +265,10 @@ void mqtt_task(void* p1, void* p2, void* p3) {
     const MqttConfig* cfg = &app_config.mqtt_config;
 
     while (1) {
+        if (atomic_get(&mqtt_stopped)) {
+            k_msleep(1000);
+            continue;
+        }
         if (!app_config.has_mqtt_config || !app_config.mqtt_config.enabled ||
             !app_config.mqtt_config.broker_host[0]) {
             k_msleep(5000);

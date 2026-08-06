@@ -4,7 +4,9 @@
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/logging/log_backend.h>
 #include <zephyr/logging/log_backend_net.h>
+#include <zephyr/logging/log_ctrl.h>
 #include <zephyr/net/dns_resolve.h>
 #include <zephyr/net/net_ip.h>
 
@@ -140,4 +142,13 @@ void syslog_init(void) {
     k_work_init_delayable(&retry_work, retry_work_handler);
 
     k_work_reschedule(&retry_work, K_USEC(0));
+}
+
+void syslog_stop(void) {
+    if (backend_active) {
+        backend_active = false;
+        k_work_cancel_delayable(&retry_work);
+        log_backend_deactivate(log_backend_net_get());
+        LOG_INF("Syslog backend stopped");
+    }
 }
