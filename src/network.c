@@ -137,9 +137,10 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
         if (status->status == 0) {
             struct in_addr dhcp_base_ip;
             net_addr_pton(AF_INET, "192.168.4.2", &dhcp_base_ip);
-            if (net_dhcpv4_server_start(iface, &dhcp_base_ip) < 0) {
-                LOG_ERR("Failed to start DHCPv4 server");
-            } else {
+            int ret = net_dhcpv4_server_start(iface, &dhcp_base_ip);
+            if (ret < 0 && ret != -EALREADY) {
+                LOG_ERR("Failed to start DHCPv4 server: %d", ret);
+            } else if (ret == 0) {
                 LOG_INF("DHCPv4 server started");
             }
         }
@@ -210,7 +211,9 @@ void start_ap(void) {
     net_addr_pton(AF_INET, "192.168.4.1", &ap_ip);
     struct in_addr ap_mask;
     net_addr_pton(AF_INET, "255.255.255.0", &ap_mask);
-    net_if_ipv4_addr_add(iface, &ap_ip, NET_ADDR_MANUAL, 0);
+    if (!net_if_ipv4_addr_add(iface, &ap_ip, NET_ADDR_MANUAL, 0)) {
+        LOG_ERR("Failed to add IPv4 address");
+    }
     net_if_ipv4_set_netmask_by_addr(iface, &ap_ip, &ap_mask);
 
     struct wifi_connect_req_params ap_params = {0};
