@@ -24,6 +24,10 @@ static struct net_mgmt_event_callback ipv4_mgmt_cb;
 static struct net_mgmt_event_callback ipv6_mgmt_cb;
 static struct net_mgmt_event_callback dns_mgmt_cb;
 static struct net_mgmt_event_callback wifi_mgmt_cb;
+static struct net_mgmt_event_callback l4_mgmt_cb;
+
+static K_EVENT_DEFINE(network_events);
+#define L4_UP_EVENT BIT(0)
 
 static void ip_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                   uint64_t mgmt_event, struct net_if* iface) {
@@ -122,6 +126,15 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
     }
 }
 
+static void l4_event_handler(struct net_mgmt_event_callback* cb,
+                             uint64_t mgmt_event, struct net_if* iface) {
+    if (mgmt_event == NET_EVENT_L4_CONNECTED) {
+        k_event_post(&network_events, L4_UP_EVENT);
+    } else if (mgmt_event == NET_EVENT_L4_DISCONNECTED) {
+        k_event_set(&network_events, 0);
+    }
+}
+
 void network_init(void) {
     net_mgmt_init_event_callback(
         &ipv4_mgmt_cb, ip_mgmt_event_handler,
@@ -141,7 +154,20 @@ void network_init(void) {
                                  NET_EVENT_WIFI_CONNECT_RESULT);
     net_mgmt_add_event_callback(&wifi_mgmt_cb);
 
+    net_mgmt_init_event_callback(
+        &l4_mgmt_cb, l4_event_handler,
+        NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED);
+    net_mgmt_add_event_callback(&l4_mgmt_cb);
+
     log_existing_ipv6_addresses(net_if_get_default());
+}
+
+void network_wait_for_up(void) {
+    k_event_wait(&network_events, L4_UP_EVENT, false, K_FOREVER);
+}
+
+bool network_is_up(void) {
+    return (k_event_test(&network_events, L4_UP_EVENT) != 0);
 }
 
 void start_ap(void) {

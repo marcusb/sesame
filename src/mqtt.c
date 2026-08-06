@@ -17,6 +17,7 @@ LOG_MODULE_REGISTER(mqtt, LOG_LEVEL_DBG);
 #include "config_manager.h"
 #include "controller.h"
 #include "mqtt.h"
+#include "network.h"
 #include "system_heap.h"
 #include "time_util.h"
 
@@ -258,6 +259,8 @@ void mqtt_task(void* p1, void* p2, void* p3) {
         snprintf(state_topic, sizeof(state_topic), "%s/state", prefix);
         snprintf(lwt_topic, sizeof(lwt_topic), "%s/availability", prefix);
         snprintf(cmd_topic, sizeof(cmd_topic), "%s/cmd", prefix);
+
+        network_wait_for_up();
 
         if (client_init(cfg) != 0) {
             k_msleep(5000);

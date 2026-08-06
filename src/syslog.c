@@ -10,6 +10,7 @@
 
 #include "app_config.pb.h"
 #include "config_manager.h"
+#include "network.h"
 
 LOG_MODULE_REGISTER(syslog, LOG_LEVEL_INF);
 
@@ -80,6 +81,12 @@ static void retry_work_handler(struct k_work* work) {
     ARG_UNUSED(work);
 
     const SyslogConfig* scfg = &app_config.logging_config.syslog_config;
+
+    if (!network_is_up()) {
+        k_work_reschedule(&retry_work, K_SECONDS(5));
+        return;
+    }
+
     int ret_a =
         dns_get_addr_info(scfg->syslog_host, DNS_QUERY_TYPE_A, NULL,
                           dns_resolve_cb, (void*)scfg->syslog_host, 10000);
