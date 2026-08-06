@@ -132,6 +132,17 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
             net_if_start_rs(def_iface);
         }
 #endif
+    } else if (mgmt_event == NET_EVENT_WIFI_AP_ENABLE_RESULT) {
+        struct wifi_status* status = (struct wifi_status*)cb->info;
+        if (status->status == 0) {
+            struct in_addr dhcp_base_ip;
+            net_addr_pton(AF_INET, "192.168.4.2", &dhcp_base_ip);
+            if (net_dhcpv4_server_start(iface, &dhcp_base_ip) < 0) {
+                LOG_ERR("Failed to start DHCPv4 server");
+            } else {
+                LOG_INF("DHCPv4 server started");
+            }
+        }
     }
 }
 
@@ -159,8 +170,9 @@ void network_init(void) {
                                  NET_EVENT_DNS_SERVER_ADD);
     net_mgmt_add_event_callback(&dns_mgmt_cb);
 
-    net_mgmt_init_event_callback(&wifi_mgmt_cb, wifi_mgmt_event_handler,
-                                 NET_EVENT_WIFI_CONNECT_RESULT);
+    net_mgmt_init_event_callback(
+        &wifi_mgmt_cb, wifi_mgmt_event_handler,
+        NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_AP_ENABLE_RESULT);
     net_mgmt_add_event_callback(&wifi_mgmt_cb);
 
     net_mgmt_init_event_callback(
@@ -210,6 +222,9 @@ void start_ap(void) {
     LOG_INF("Starting WiFi AP...");
     mqtt_stop();
     syslog_stop();
+
+    net_dhcpv4_stop(iface);
+
     if (net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, iface, &ap_params,
                  sizeof(ap_params))) {
         LOG_ERR("Failed to start AP");
@@ -220,14 +235,6 @@ void start_ap(void) {
         net_addr_ntop(AF_INET, &ap_mask, mask_str, sizeof(mask_str));
         LOG_INF("AP started successfully. IP: %s, Netmask: %s", ip_str,
                 mask_str);
-    }
-
-    struct in_addr dhcp_base_ip;
-    net_addr_pton(AF_INET, "192.168.4.2", &dhcp_base_ip);
-    if (net_dhcpv4_server_start(iface, &dhcp_base_ip) < 0) {
-        LOG_ERR("Failed to start DHCPv4 server");
-    } else {
-        LOG_INF("DHCPv4 server started");
     }
 }
 
