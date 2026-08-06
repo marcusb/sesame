@@ -28,7 +28,7 @@ LOG_MODULE_REGISTER(mqtt, LOG_LEVEL_DBG);
 static uint8_t rx_buffer[MQTT_RX_BUF_SIZE];
 static uint8_t tx_buffer[MQTT_TX_BUF_SIZE];
 static struct mqtt_client client_ctx;
-static struct sockaddr_in broker;
+static struct sockaddr_storage broker;
 static struct zsock_pollfd fds[1];
 static int nfds;
 static bool connected = false;
@@ -165,7 +165,7 @@ static int subscribe(void) {
 
 static int broker_init(const MqttConfig* cfg) {
     struct zsock_addrinfo hints = {
-        .ai_family = AF_INET,
+        .ai_family = AF_UNSPEC,
         .ai_socktype = SOCK_STREAM,
     };
     struct zsock_addrinfo* res;

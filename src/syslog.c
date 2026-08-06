@@ -30,11 +30,15 @@ static void dns_resolve_cb(enum dns_resolve_status status,
     const SyslogConfig* scfg = &app_config.logging_config.syslog_config;
     const char* query = (const char*)user_data;
 
+    if (backend_active) {
+        return;
+    }
+
     switch (status) {
         case DNS_EAI_CANCELED:
             return;
         case DNS_EAI_NODATA:
-            LOG_INF("host not found: %s", query);
+            LOG_DBG("No data for DNS query: %s", query);
             return;
         case DNS_EAI_ALLDONE:
             LOG_DBG("DNS resolving finished");
@@ -76,9 +80,13 @@ static void retry_work_handler(struct k_work* work) {
     ARG_UNUSED(work);
 
     const SyslogConfig* scfg = &app_config.logging_config.syslog_config;
-    if (dns_get_addr_info(scfg->syslog_host, DNS_QUERY_TYPE_A, NULL,
-                          dns_resolve_cb, (void*)scfg->syslog_host,
-                          10000) < 0) {
+    int ret_a =
+        dns_get_addr_info(scfg->syslog_host, DNS_QUERY_TYPE_A, NULL,
+                          dns_resolve_cb, (void*)scfg->syslog_host, 10000);
+    int ret_aaaa =
+        dns_get_addr_info(scfg->syslog_host, DNS_QUERY_TYPE_AAAA, NULL,
+                          dns_resolve_cb, (void*)scfg->syslog_host, 10000);
+    if (ret_a < 0 && ret_aaaa < 0) {
         LOG_WRN("DNS resolve failed to send for %s, retrying in 5s",
                 scfg->syslog_host);
         k_work_reschedule(&retry_work, K_SECONDS(5));
@@ -96,8 +104,11 @@ void syslog_init(void) {
     struct net_sockaddr sa = {0};
     if (net_ipaddr_parse(scfg->syslog_host, strlen(scfg->syslog_host), &sa)) {
         uint16_t port = scfg->syslog_port ? scfg->syslog_port : 514;
-        sa.sa_family = AF_INET;
-        net_sin(&sa)->sin_port = net_htons(port);
+        if (sa.sa_family == AF_INET) {
+            net_sin(&sa)->sin_port = net_htons(port);
+        } else if (sa.sa_family == AF_INET6) {
+            net_sin6(&sa)->sin6_port = net_htons(port);
+        }
 
         set_log_backend(&sa, scfg->syslog_host);
         return;
