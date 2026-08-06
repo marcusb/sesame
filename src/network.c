@@ -227,6 +227,7 @@ void start_ap(void) {
     syslog_stop();
 
     net_dhcpv4_stop(iface);
+    net_mgmt(NET_REQUEST_WIFI_DISCONNECT, iface, NULL, 0);
 
     if (net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, iface, &ap_params,
                  sizeof(ap_params))) {
