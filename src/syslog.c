@@ -64,11 +64,21 @@ static void dns_resolve_cb(enum dns_resolve_status status,
     struct net_sockaddr sa;
     memcpy(&sa, &info->ai_addr, sizeof(sa));
     if (sa.sa_family == AF_INET) {
+        if (!network_has_ipv4()) {
+            LOG_DBG("IPv4 resolved but network has no IPv4, retrying");
+            k_work_reschedule(&retry_work, K_SECONDS(5));
+            return;
+        }
         LOG_INF("%s IPv4 address: %s", query,
                 net_addr_ntop(info->ai_family, &net_sin(&sa)->sin_addr,
                               addr_str, sizeof(addr_str)));
         net_sin(&sa)->sin_port = net_htons(port);
     } else if (sa.sa_family == AF_INET6) {
+        if (!network_has_ipv6()) {
+            LOG_DBG("IPv6 resolved but network has no IPv6, retrying");
+            k_work_reschedule(&retry_work, K_SECONDS(5));
+            return;
+        }
         LOG_INF("%s IPv6 address: %s", query,
                 net_addr_ntop(info->ai_family, &net_sin6(&sa)->sin6_addr,
                               addr_str, sizeof(addr_str)));
@@ -84,6 +94,27 @@ static void retry_work_handler(struct k_work* work) {
 
     if (!network_is_up()) {
         k_work_reschedule(&retry_work, K_SECONDS(5));
+        return;
+    }
+
+    struct net_sockaddr sa = {0};
+    if (net_ipaddr_parse(scfg->syslog_host, strlen(scfg->syslog_host), &sa)) {
+        uint16_t port = scfg->syslog_port ? scfg->syslog_port : 514;
+        if (sa.sa_family == AF_INET) {
+            if (!network_has_ipv4()) {
+                k_work_reschedule(&retry_work, K_SECONDS(5));
+                return;
+            }
+            net_sin(&sa)->sin_port = net_htons(port);
+        } else if (sa.sa_family == AF_INET6) {
+            if (!network_has_ipv6()) {
+                k_work_reschedule(&retry_work, K_SECONDS(5));
+                return;
+            }
+            net_sin6(&sa)->sin6_port = net_htons(port);
+        }
+
+        set_log_backend(&sa, scfg->syslog_host);
         return;
     }
 
@@ -107,19 +138,6 @@ void syslog_init(void) {
     }
 
     k_work_init_delayable(&retry_work, retry_work_handler);
-
-    struct net_sockaddr sa = {0};
-    if (net_ipaddr_parse(scfg->syslog_host, strlen(scfg->syslog_host), &sa)) {
-        uint16_t port = scfg->syslog_port ? scfg->syslog_port : 514;
-        if (sa.sa_family == AF_INET) {
-            net_sin(&sa)->sin_port = net_htons(port);
-        } else if (sa.sa_family == AF_INET6) {
-            net_sin6(&sa)->sin6_port = net_htons(port);
-        }
-
-        set_log_backend(&sa, scfg->syslog_host);
-        return;
-    }
 
     k_work_reschedule(&retry_work, K_USEC(0));
 }

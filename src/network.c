@@ -28,6 +28,8 @@ static struct net_mgmt_event_callback l4_mgmt_cb;
 
 static K_EVENT_DEFINE(network_events);
 #define L4_UP_EVENT BIT(0)
+#define IPV4_UP_EVENT BIT(1)
+#define IPV6_UP_EVENT BIT(2)
 
 static void ip_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                   uint64_t mgmt_event, struct net_if* iface) {
@@ -37,6 +39,7 @@ static void ip_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                 static char buf[NET_IPV4_ADDR_LEN];
                 LOG_INF("IPv4 address: %s",
                         net_addr_ntop(AF_INET, cb->info, buf, sizeof(buf)));
+                k_event_post(&network_events, IPV4_UP_EVENT);
             }
             break;
         }
@@ -45,6 +48,9 @@ static void ip_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                 static char buf[NET_IPV6_ADDR_LEN];
                 LOG_INF("IPv6 address: %s",
                         net_addr_ntop(AF_INET6, cb->info, buf, sizeof(buf)));
+                if (!net_ipv6_is_ll_addr((struct in6_addr*)cb->info)) {
+                    k_event_post(&network_events, IPV6_UP_EVENT);
+                }
             }
             break;
         }
@@ -168,6 +174,14 @@ void network_wait_for_up(void) {
 
 bool network_is_up(void) {
     return (k_event_test(&network_events, L4_UP_EVENT) != 0);
+}
+
+bool network_has_ipv4(void) {
+    return (k_event_test(&network_events, IPV4_UP_EVENT) != 0);
+}
+
+bool network_has_ipv6(void) {
+    return (k_event_test(&network_events, IPV6_UP_EVENT) != 0);
 }
 
 void start_ap(void) {

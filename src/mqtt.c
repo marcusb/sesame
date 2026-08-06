@@ -180,6 +180,17 @@ static int broker_init(const MqttConfig* cfg) {
         return -1;
     }
 
+    if (res->ai_family == AF_INET && !network_has_ipv4()) {
+        LOG_DBG("IPv4 broker resolved but no IPv4 address available");
+        zsock_freeaddrinfo(res);
+        return -1;
+    }
+    if (res->ai_family == AF_INET6 && !network_has_ipv6()) {
+        LOG_DBG("IPv6 broker resolved but no IPv6 address available");
+        zsock_freeaddrinfo(res);
+        return -1;
+    }
+
     memcpy(&broker, res->ai_addr, res->ai_addrlen);
     zsock_freeaddrinfo(res);
     return 0;
