@@ -266,7 +266,6 @@ static int wifi_mw320_mgmt_ap_enable(const struct device *dev, struct net_if *if
     }
 
     mw320_data.bss_type = BSS_TYPE_UAP;
-    wifi_mgmt_raise_ap_enable_result_event(iface, WIFI_STATUS_AP_SUCCESS);
     return 0;
 }
 
