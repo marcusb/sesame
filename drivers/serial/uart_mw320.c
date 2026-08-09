@@ -269,6 +269,7 @@ static int uart_mw320_init(const struct device *dev)
         uart_freq = CLOCK_GetUartClkFreq(0);
     } else if (config->base == UART1) { // UART1
         CLOCK_EnableClock(kCLOCK_Uart1);
+        CLOCK_SetUartClkDiv(kCLOCK_DivUartSlow, 2U, 1U);
         CLOCK_AttachClk(kSYS_CLK_to_SLOW_UART1);
         for (volatile int i = 0; i < 50000; i++) {} // delay for clock stabilization
         uart_freq = CLOCK_GetUartClkFreq(1);
@@ -305,7 +306,7 @@ static int uart_mw320_init(const struct device *dev)
                           CONFIG_SERIAL_INIT_PRIORITY,                  \
                           &uart_mw320_driver_api);                      \
                                                                         \
-    static void uart_mw320_irq_config_##n(const struct device *dev)     \
+    static void __maybe_unused uart_mw320_irq_config_##n(const struct device *dev)     \
     {                                                                   \
         IF_ENABLED(CONFIG_UART_INTERRUPT_DRIVEN, (                      \
             IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority),      \

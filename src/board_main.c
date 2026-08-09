@@ -36,7 +36,6 @@
 #include "time_util.h"
 
 extern QueueHandle_t ctrl_queue;
-extern QueueHandle_t ota_queue;
 extern QueueHandle_t pic_queue;
 extern QueueHandle_t nm_queue;
 extern psm_hnd_t psm_hnd;
@@ -170,10 +169,6 @@ void configure_netif() {
 }
 
 void create_board_tasks() {
-    ota_queue = xQueueCreate(5, sizeof(ota_msg_t));
-    configASSERT(ota_queue);
-    xTaskCreate(ota_task, "OTA", 1024, ota_queue, tskIDLE_PRIORITY, NULL);
-
     pic_queue = xQueueCreate(5, sizeof(pic_cmd_t));
     configASSERT(pic_queue);
     xTaskCreate(pic_uart_task, "PIC", 512, pic_queue, tskIDLE_PRIORITY + 1,

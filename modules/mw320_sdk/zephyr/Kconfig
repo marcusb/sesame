@@ -2,3 +2,4 @@ config HAS_MW320_SDK
 	bool
 	help
 	  Set if the MW320 SDK is present in the workspace.
+rsource "../../../drivers/Kconfig"

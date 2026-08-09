@@ -17,6 +17,7 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 #include "mflash_drv.h"
 #include "mqtt.h"
 #include "network.h"
+#include "ota.h"
 #include "pic_uart.h"
 #include "syslog.h"
 
@@ -44,7 +45,7 @@ static void init_watchdog() {
 
     struct wdt_timeout_cfg wdt_config = {
         .window.min = 0U,
-        .window.max = 2000U,
+        .window.max = 10000U,
         .callback = NULL,
         .flags = WDT_FLAG_RESET_SOC,
     };
@@ -58,6 +59,12 @@ static void init_watchdog() {
     wdt_setup(wdt, WDT_OPT_PAUSE_HALTED_BY_DBG);
 }
 
+void feed_watchdog(void) {
+    if (wdt_channel_id >= 0) {
+        wdt_feed(wdt, wdt_channel_id);
+    }
+}
+
 static struct gpio_callback wifi_button_cb_data;
 
 static void wifi_button_pressed(const struct device* dev,
@@ -69,10 +76,12 @@ static void wifi_button_pressed(const struct device* dev,
 int main(void) {
     leds_init();
     init_watchdog();
+    check_ota_test_image();
     set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);
 
     if (load_config() == 0) {
         LOG_INF("Config loaded successfully");
+        LOG_INF("SECOND OTA upgrade successful! Swapped again!");
     } else {
         LOG_WRN("Failed to load config, using defaults");
     }
@@ -163,6 +172,9 @@ int main(void) {
                     }
                     break;
                 }
+                case CTRL_MSG_OTA_UPGRADE:
+                    ota_client_start(&msg.msg.ota_upgrade);
+                    break;
                 case CTRL_MSG_DOOR_STATE_UPDATE:
                     publish_state(&msg.msg.door_state);
                     break;

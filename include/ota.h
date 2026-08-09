@@ -4,8 +4,7 @@
 
 #include "controller.h"
 
-// fwd declaration
-struct partition_entry;
+#include <zephyr/dfu/flash_img.h>
 
 typedef enum {
     OTA_CMD_UNKNOWN = 0,
@@ -21,9 +20,7 @@ typedef struct {
 } ota_msg_t;
 
 typedef struct {
-    struct partition_entry* part;
-    uint32_t flash_addr;
-    uint32_t bytes_stored;
+    struct flash_img_context ctx;
 } ota_upd_state_t;
 
 typedef enum {
@@ -33,11 +30,10 @@ typedef enum {
 } ota_status_t;
 extern ota_status_t ota_status;
 
-void ota_task(void*);
-
 int ota_init(ota_upd_state_t* ota_state);
 int ota_write_chunk(ota_upd_state_t* ota_state, const uint8_t* buf,
                     uint32_t len);
 int ota_finish(ota_upd_state_t* ota_state);
 void check_ota_test_image();
 int ota_promote_image();
+void ota_client_start(const FirmwareUpgradeFetchRequest* req);

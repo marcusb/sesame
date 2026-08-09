@@ -10,6 +10,7 @@
 
 #define BOARD_BOOTCLOCKRUN_CORE_CLOCK 200000000U
 
+#if IS_RAM_BUILD
 static clock_sfll_config_t sfll_config = {
     .sfllSrc = kCLOCK_SFllSrcMainXtal, /* XTAL clock */
     .refDiv = 0x60U,
@@ -49,6 +50,7 @@ static void init_flashc(void) {
     reg |= FLASHC_FCCR_CACHE_EN_MASK;
     FLASHC->FCCR = reg;
 }
+#endif
 
 static void init_boot_clocks(void) {
     POWER_PowerOnVddioPad(kPOWER_VddIoAon);
@@ -68,14 +70,13 @@ static void init_boot_clocks(void) {
     CLOCK_EnableClock(kCLOCK_Gpio);
     CLOCK_EnableClock(kCLOCK_Uart0);
 
-    /* Stop flash controller before changing clock (XIP only, skip for RAM build) */
-    if (!IS_RAM_BUILD) {
-        deinit_flashc();
-    }
-
+#if IS_RAM_BUILD
     /* Enable RC32M. */
     CLOCK_EnableClock(kCLOCK_Rc32m);
     CLOCK_EnableRC32M(false);
+
+    /* Switch to RC32M before changing SFLL (if boot2 left it at SFLL) */
+    CLOCK_SetSysClkSource(kCLOCK_SysClkSrcRC32M_1);
 
     /* Set the PMU clock divider to 1 */
     CLOCK_SetClkDiv(kCLOCK_DivPmu, 1U);
@@ -110,6 +111,12 @@ static void init_boot_clocks(void) {
 
     /* Restart flash controller (needed for XIP and mflash operations) */
     init_flashc();
+#else
+    /* For XIP builds, boot2 has already configured the clocks. 
+     * We just need to inform the clock driver of the XTAL frequency 
+     * so that CLOCK_GetSysClkFreq() returns the correct value. */
+    CLOCK_SetMainXtalFreq(CLK_MAINXTAL_CLK);
+#endif
 
     /* Set SystemCoreClock variable. */
     SystemCoreClock = BOARD_BOOTCLOCKRUN_CORE_CLOCK;

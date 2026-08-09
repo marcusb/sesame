@@ -11,6 +11,8 @@
 #include "elf.h"
 #include <firmware_structure.h>
 
+uint32_t g_base_addr = 0x1F000000;
+
 #if defined(AXF_BUILT_BY_IAR)
 	static const char *build_string = "AXF_BUILT_BY_IAR";
 #elif defined(AXF_BUILT_BY_ARM_GCC)
@@ -205,8 +207,20 @@ static void write_data(uint8_t endian, uint16_t elf_seg_cnt,
 		Skip the sections whose load address is not in
 		flash memory.
 		*/
-		if (!(cur_sh->laddr & 0x1f000000))
+		if (!(cur_sh->laddr & g_base_addr))
 			continue;
+
+		uint32_t expected_offset = p_paddr - g_base_addr;
+		uint32_t current_offset = ftell(out);
+		if (current_offset < expected_offset) {
+			uint32_t align_pad = expected_offset - current_offset;
+			uint8_t *pad_buf = calloc(1, align_pad);
+			if (!pad_buf) die("out of memory");
+			memset(pad_buf, 0xff, align_pad);
+			if (fwrite(pad_buf, align_pad, 1, out) != 1) die_perror("pad write failed");
+			free(pad_buf);
+			cur_sh->offset = expected_offset;
+		}
 
 		if (fseek(in, seg_offs, SEEK_SET) != 0)
 			die_perror("cannot seek to ELF segment");
@@ -248,7 +262,7 @@ static void write_data(uint8_t endian, uint16_t elf_seg_cnt,
 		Skip the sections whose load address is in flash memory,
 		as they are already handled in the above loop.
 		*/
-		if (cur_sh->laddr & 0x1f000000)
+		if (cur_sh->laddr & g_base_addr)
 			continue;
 
 		if (fseek(in, seg_offs, SEEK_SET) != 0)
@@ -287,8 +301,9 @@ static void write_data(uint8_t endian, uint16_t elf_seg_cnt,
 		if (cur_sh->type != PT_LOAD || cur_sh->len == 0)
 			continue;
 
-		if (cur_sh->laddr >= 0x1F000000) {
-			uint32_t expected_offset = cur_sh->laddr - 0x1F000000;
+		uint32_t p_paddr = get_u32(endian, elf_sh[i].p_paddr);
+		if (p_paddr >= 0x1F000000) {
+			uint32_t expected_offset = p_paddr - g_base_addr;
 			uint32_t current_offset = ftell(out);
 			if (current_offset < expected_offset) {
 				uint32_t align_pad = expected_offset - current_offset;
@@ -413,7 +428,7 @@ int main(int argc, char *argv[])
 {
 	FILE *in, *out;
 
-	if (argc != 3)
+	if (argc < 3)
 		die_usage(argv[0]);
 
     soft_crc32_init();
@@ -424,6 +439,10 @@ int main(int argc, char *argv[])
 	out = fopen(argv[2], "wb");
 	if (!out)
 		die_perror(argv[2]);
+
+	if (argc >= 4) {
+		g_base_addr = strtoul(argv[3], NULL, 16);
+	}
 
 	elf_to_firmware_image(in, out);
 

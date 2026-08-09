@@ -1,0 +1,9 @@
+description: NXP MW320 Flash Controller
+
+compatible: "nxp,mw320-flash-controller"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true

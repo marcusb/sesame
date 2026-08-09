@@ -1,0 +1,13 @@
+menu "MW320 Custom Drivers"
+
+rsource "../drivers/flash/Kconfig"
+rsource "../drivers/serial/Kconfig"
+rsource "../drivers/gpio/Kconfig"
+rsource "../drivers/pinctrl/Kconfig"
+
+endmenu
+
+config MW320_MCUBOOT_FIX
+    bool
+    default y
+    select HAS_FLASH_LOAD_OFFSET

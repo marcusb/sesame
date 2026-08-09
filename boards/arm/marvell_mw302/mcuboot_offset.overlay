@@ -1,0 +1,18 @@
+/ {
+    chosen {
+        zephyr,code-partition = &mcuboot_xip_partition;
+    };
+};
+
+&flash0 {
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+
+        mcuboot_xip_partition: partition@c8 {
+            label = "mcuboot-xip";
+            reg = <0xc8 0xff38>;
+        };
+    };
+};

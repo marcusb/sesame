@@ -64,7 +64,8 @@ and Sesame.
 ./tools/OpenOCD/flashprog.py -l mw320_sdk/tools/boot2/layout.txt \
   --boot2 mw320_sdk/mw320_matter_flash/Matter/boot2.bin \
   --wififw mw320_sdk/mw320_matter_flash/Matter/mw32x_uapsta_W14.88.36.p172.bin \
-  --mcufw build/sesame.bin -r
+  --mcuboot build/mcuboot/zephyr/mcuboot.bin \
+  --image-0 build/sesame/zephyr/zephyr.signed.bin -r
 ```
 
 After successful flash, the device should reboot and sound the buzzer. Logs from Sesame
@@ -188,13 +189,13 @@ Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rt
 
 ### Building
 
-The Zephyr build system handles both the flash variant and the RAM variant natively.
+The Zephyr sysbuild system handles building both the MCUboot bootloader and the Sesame application automatically.
 
 ```sh
 rm -rf build
-cmake -B build -G Ninja
-ninja -C build
+west build --sysbuild
 ```
+This produces `build/mcuboot/zephyr/mcuboot.bin` and `build/sesame/zephyr/zephyr.signed.bin`.
 
 ### QEMU Emulation
 

@@ -1,4 +1,4 @@
-#define DT_DRV_COMPAT soc_nv_flash
+#define DT_DRV_COMPAT nxp_mw320_flash_controller
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>

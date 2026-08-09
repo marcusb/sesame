@@ -1,0 +1,6 @@
+zephyr_library()
+add_subdirectory_ifdef(CONFIG_FLASH_MW320 ../drivers/flash drivers/flash)
+add_subdirectory_ifdef(CONFIG_UART_MW320 ../drivers/serial drivers/serial)
+add_subdirectory_ifdef(CONFIG_GPIO_MW320 ../drivers/gpio drivers/gpio)
+add_subdirectory_ifdef(CONFIG_PINCTRL_MW320 ../drivers/pinctrl drivers/pinctrl)
+zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include)

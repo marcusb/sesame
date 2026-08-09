@@ -1,5 +1,9 @@
 zephyr_library()
 
+if(NOT DEFINED MW320_SDK_DIR)
+    get_filename_component(MW320_SDK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../mw320_sdk ABSOLUTE)
+endif()
+
 zephyr_library_sources(
     ${MW320_SDK_DIR}/devices/88MW320/system_88MW320.c
     ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_common.c
@@ -24,11 +28,13 @@ zephyr_include_directories(
     ${MW320_SDK_DIR}/components/serial_manager
     ${MW320_SDK_DIR}/components/uart
     ${MW320_SDK_DIR}/components/flash/mflash
+    ${MW320_SDK_DIR}/components/flash/mflash/mw320
     ${MW320_SDK_DIR}/devices/88MW320
     ${MW320_SDK_DIR}/devices/88MW320/drivers
     ${MW320_SDK_DIR}/devices/88MW320/utilities/debug_console
     ${MW320_SDK_DIR}/devices/88MW320/utilities/str
     ${CMAKE_CURRENT_SOURCE_DIR}/dummy_includes
+    ../../../include
 )
 
 zephyr_library_sources_ifdef(CONFIG_MBEDTLS_AES_C ${MW320_SDK_DIR}/middleware/mbedtls/port/mw/aes_alt.c)
@@ -44,3 +50,9 @@ zephyr_code_relocate(FILES
     ${MW320_SDK_DIR}/components/flash/mflash/mw320/mflash_drv.c
     LOCATION RAM)
 endif()
+zephyr_library_sources_ifdef(CONFIG_UART_MW320 ../../../drivers/serial/uart_mw320.c)
+zephyr_library_sources_ifdef(CONFIG_GPIO_MW320 ../../../drivers/gpio/gpio_mw320.c)
+zephyr_library_sources_ifdef(CONFIG_ENTROPY_MW320 ../../../drivers/entropy/entropy_mw320.c)
+zephyr_library_sources_ifdef(CONFIG_FLASH ../../../drivers/flash/flash_mw320.c)
+zephyr_library_sources_ifdef(CONFIG_PINCTRL_MW320 ../../../drivers/pinctrl/pinctrl_mw320.c)
+zephyr_library_sources_ifdef(CONFIG_WATCHDOG_MW320 ../../../drivers/watchdog/wdt_mw320.c)

@@ -21,7 +21,6 @@
 #include "time_util.h"
 
 extern QueueHandle_t ctrl_queue;
-extern QueueHandle_t ota_queue;
 extern QueueHandle_t pic_queue;
 extern QueueHandle_t nm_queue;
 extern psm_hnd_t psm_hnd;

@@ -6,6 +6,7 @@
 
 #include <zephyr/drivers/pinctrl.h>
 #include "fsl_pinmux.h"
+#include "fsl_clock.h"
 
 static void pinctrl_configure_pin(const pinctrl_soc_pin_t *pin)
 {
@@ -28,6 +29,9 @@ int pinctrl_configure_pins(const pinctrl_soc_pin_t *pins, uint8_t pin_cnt,
                            uintptr_t reg)
 {
     ARG_UNUSED(reg);
+
+    /* Ensure GPIO clock is enabled for PINMUX register access */
+    CLOCK_EnableClock(kCLOCK_Gpio);
 
     for (uint8_t i = 0U; i < pin_cnt; i++) {
         pinctrl_configure_pin(pins++);

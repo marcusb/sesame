@@ -15,9 +15,16 @@
 		};
 	};
 
-	flash0: flash@1f000000 {
-		compatible = "soc-nv-flash";
+	flash_controller: flash-controller@1f000000 {
+		compatible = "nxp,mw320-flash-controller";
 		reg = <0x1f000000 0x800000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		flash0: flash@1f000000 {
+			compatible = "soc-nv-flash";
+			reg = <0x1f000000 0x800000>;
+		};
 	};
 
 	soc {

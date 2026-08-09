@@ -13,7 +13,6 @@ set(SOC_ROOT ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "SOC root directory")
 # Board selection (use marvell_mw302 for flash/XIP, marvell_mw302_ram for RAM load)
 set(BOARD genie_idcm/88mw320/cpu0 CACHE STRING "Zephyr board")
 
-
 # Load Zephyr build system
 set(MW320_SDK_DIR ${CMAKE_SOURCE_DIR}/mw320_sdk CACHE PATH "MW320 SDK directory" FORCE)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
@@ -34,6 +33,8 @@ target_sources(app PRIVATE
     src/pic_uart.c
     src/mqtt.c
     src/syslog.c
+    src/ota.c
+    src/ota_client.c
 )
 
 zephyr_include_directories(include)
@@ -57,27 +58,18 @@ target_include_directories(app PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(nanopb PRIVATE zephyr_interface)
 target_link_libraries(app PRIVATE proto_app nanopb)
 
-# Custom drivers (added directly in application mode)
-zephyr_library_sources_ifdef(CONFIG_UART_MW320 drivers/serial/uart_mw320.c)
-zephyr_library_sources_ifdef(CONFIG_GPIO_MW320 drivers/gpio/gpio_mw320.c)
-zephyr_library_sources_ifdef(CONFIG_ENTROPY_MW320 drivers/entropy/entropy_mw320.c)
-zephyr_library_sources_ifdef(CONFIG_FLASH drivers/flash/flash_mw320.c)
 if(CONFIG_WIFI_MW320)
     add_subdirectory(drivers/wifi/mw320)
 endif()
-zephyr_library_sources_ifdef(CONFIG_PINCTRL_MW320 drivers/pinctrl/pinctrl_mw320.c)
-zephyr_library_sources_ifdef(CONFIG_WATCHDOG_MW320 drivers/watchdog/wdt_mw320.c)
 
-# Convert ELF to firmware binary for flashing (XIP only, RAM build uses AXF directly)
 if(NOT CONFIG_BOARD_GENIE_IDCM_RAM)
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/sesame.bin
-    COMMAND make -C ${CMAKE_SOURCE_DIR}/tools/axf2firmware
-    COMMAND ${CMAKE_SOURCE_DIR}/tools/axf2firmware/axf2firmware
-            ${CMAKE_BINARY_DIR}/zephyr/zephyr.elf
+    COMMAND ${CMAKE_COMMAND} -E copy
+            ${CMAKE_BINARY_DIR}/zephyr/zephyr.signed.bin
             ${CMAKE_BINARY_DIR}/sesame.bin
-    DEPENDS zephyr_final ${CMAKE_BINARY_DIR}/zephyr/zephyr.elf
-    COMMENT "Converting zephyr.elf -> sesame.bin"
+    DEPENDS zephyr_final ${CMAKE_BINARY_DIR}/zephyr/zephyr.signed.bin
+    COMMENT "Copying zephyr.signed.bin -> sesame.bin"
     VERBATIM
 )
 add_custom_target(sesame_bin ALL DEPENDS ${CMAKE_BINARY_DIR}/sesame.bin)

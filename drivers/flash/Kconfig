@@ -1,0 +1,8 @@
+config FLASH_MW320
+	bool "MW320 Flash driver"
+	default y
+	depends on DT_HAS_SOC_NV_FLASH_ENABLED
+	select FLASH_HAS_DRIVER_ENABLED
+	select FLASH_HAS_PAGE_LAYOUT
+	help
+	  Enable MW320 Flash driver.
