@@ -30,15 +30,19 @@ int parse_url(char* url, char* hostname, size_t max_hostname_len, char** path,
     if (q == NULL) {
         *path = "/";
     } else {
-        *q = '\0';
-        *path = q + 1;  // leave without slash, we'll add it in format
+        *path = q;  // Keep the leading slash
     }
 
-    if ((q = strchr(p, ':'))) {
-        *q = '\0';
-        *port = atoi(q + 1);
+    char* colon = strchr(p, ':');
+    if (colon && (q == NULL || colon < q)) {
+        *colon = '\0';
+        *port = atoi(colon + 1);
     } else {
         *port = 80;
+    }
+
+    if (q != NULL) {
+        *q = '\0';  // Terminate hostname before the path
     }
 
     strncpy(hostname, p, max_hostname_len - 1);

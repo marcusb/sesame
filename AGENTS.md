@@ -29,7 +29,7 @@ Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rt
 **Clean build:**
 
 ```sh
-rm -rf build && cmake -B build -G Ninja && ninja -C build
+rm -rf build && west build --sysbuild
 ```
 *(Note: Always run a clean build and delete the `build` directory when changing `prj.conf`, `Kconfig`, or Kconfig variables to ensure Zephyr properly regenerates headers and caches across all multi-stage variant builds.)*
 
@@ -37,8 +37,8 @@ rm -rf build && cmake -B build -G Ninja && ninja -C build
 
 ```sh
 ninja -C build                     # Build all variants (hardware & RAM)
-ninja -C build zephyr/zephyr.elf   # Build only hardware flash version
-ninja -C build ram_variant         # Build RAM variant
+ninja -C build sesame/zephyr/zephyr.elf   # Build only hardware flash version
+ninja -C build sesame/ram_variant         # Build RAM variant
 ```
 
 **Iterating on QEMU-only sources (e.g. `test/integration/**`):**
@@ -75,8 +75,8 @@ contents as suspect until you have proven its mtime is fresh.
 
 **Build outputs:**
 
-- `build/zephyr/zephyr.elf`, `build/sesame.bin` – Hardware flash version
-- `build/ram-build/zephyr/zephyr.elf` – Hardware RAM version
+- `build/sesame/zephyr/zephyr.signed.bin`, `build/mcuboot/zephyr/mcuboot.bin` – Hardware flash versions
+- `build/sesame/ram-build/zephyr/zephyr.elf` – Hardware RAM version
 - `test/sesame_tests.axf` – Hardware test suite
 - `test/sesame_tests-qemu.axf` – QEMU test suite
 
@@ -218,8 +218,8 @@ ninja -C build sesame_tests && ./tools/run_on_device.sh build/test/sesame_tests.
 **3. Flash and Full System Test:**
 Build, flash, and test through full reboot cycle:
 ```bash
-ninja -C build zephyr/zephyr.elf && \
-./tools/OpenOCD/flashprog.py --mcufw build/sesame.bin -r && \
+ninja -C build sesame/zephyr/zephyr.elf && \
+./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 build/sesame/zephyr/zephyr.signed.bin -r && \
 ./tools/monitor.py
 ```
 
@@ -230,7 +230,7 @@ ninja -C build zephyr/zephyr.elf && \
 
 **IMPORTANT:** Never use `-l board/flash-layout.txt` with `flashprog.py` during development.
 The `-l` flag erases and re-partitions the entire flash, including Boot2 and WiFi firmware.
-Use `--mcufw build/sesame.bin` alone to flash only the application partition.
+Use `--mcuboot ... --image-0 ...` alone to flash only the bootloader and application partition.
 The `-l` flag is only needed for initial device provisioning (first-time install).
 
 ### Logs & Debugging
@@ -316,12 +316,12 @@ if __name__ == '__main__':
 
 **Run after flash:**
 ```sh
-ninja -C build zephyr/zephyr.elf && \
-./tools/OpenOCD/flashprog.py --mcufw build/sesame.bin -r && \
+ninja -C build sesame/zephyr/zephyr.elf && \
+./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 build/sesame/zephyr/zephyr.signed.bin -r && \
 python3 test_boot.py
 ```
 
-**One-shot flash + capture** – `tools/flash_and_monitor.sh` starts `monitor.py` in the background, runs `flashprog.py --mcufw build/sesame.bin -r`, and writes the serial output to a log file. Useful for grabbing the reset-through-steady-state window in a single step:
+**One-shot flash + capture** – `tools/flash_and_monitor.sh` starts `monitor.py` in the background, runs `flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 build/sesame/zephyr/zephyr.signed.bin -r`, and writes the serial output to a log file. Useful for grabbing the reset-through-steady-state window in a single step:
 ```sh
 tools/flash_and_monitor.sh [timeout_sec] [logfile]   # defaults: 60 /tmp/sesame_matter_dbg.log
 ```
@@ -332,7 +332,8 @@ tools/flash_and_monitor.sh [timeout_sec] [logfile]   # defaults: 60 /tmp/sesame_
 ./tools/OpenOCD/flashprog.py -l board/flash_layout.txt \
   --boot2 mw320_sdk/mw320_matter_flash/Matter/boot2.bin \
   --wififw mw320_sdk/mw320_matter_flash/Matter/mw32x_uapsta_W14.88.36.p172.bin \
-  --mcufw build/sesame.bin -r
+  --mcuboot build/mcuboot/zephyr/mcuboot.bin \
+  --image-0 build/sesame/zephyr/zephyr.signed.bin -r
 ```
 
 (Requires Tigard or similar JTAG board connected to J7 on iDCM board.)
@@ -340,7 +341,7 @@ tools/flash_and_monitor.sh [timeout_sec] [logfile]   # defaults: 60 /tmp/sesame_
 ### OTA Updates
 
 **Manual flow:**
-1. Build `zephyr/zephyr.elf`
+1. Build `sesame/zephyr/zephyr.elf`
 2. Host on HTTP server (not HTTPS)
 3. From device, POST to `/fwupgrade` with FirmwareUpgradeFetchRequest (URL in protobuf)
 4. Device boots test image (OTA LED blinks blue)
