@@ -30,23 +30,24 @@ int parse_url(char* url, char* hostname, size_t max_hostname_len, char** path,
     if (q == NULL) {
         *path = "/";
     } else {
-        *path = q;  // Keep the leading slash
+        *path = q;
     }
 
     char* colon = strchr(p, ':');
+    int host_len = 0;
     if (colon && (q == NULL || colon < q)) {
-        *colon = '\0';
+        host_len = colon - p;
         *port = atoi(colon + 1);
     } else {
+        host_len = q ? (q - p) : strlen(p);
         *port = 80;
     }
 
-    if (q != NULL) {
-        *q = '\0';  // Terminate hostname before the path
+    if (host_len >= max_hostname_len) {
+        host_len = max_hostname_len - 1;
     }
-
-    strncpy(hostname, p, max_hostname_len - 1);
-    hostname[max_hostname_len - 1] = '\0';
+    strncpy(hostname, p, host_len);
+    hostname[host_len] = '\0';
     return 0;
 }
 
@@ -137,7 +138,7 @@ void ota_client_start(const FirmwareUpgradeFetchRequest* msg) {
     }
     req.recv_buf_len = READ_SIZE;
 
-    LOG_INF("Starting HTTP GET /%s from %s:%d", path, hostname, port);
+    LOG_INF("Starting HTTP GET %s from %s:%d", path, hostname, port);
 
     ret = http_client_req(sock, &req, 10000, &ota_state);
     if (ret < 0) {
