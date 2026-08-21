@@ -12,7 +12,15 @@ See docs/teardown.md for hardware information.
 
 ## Build System
 
-The project uses the standard Zephyr build system natively for both flash and RAM variants.
+The project uses the standard Zephyr sysbuild system to orchestrate multi-image builds natively for both flash and RAM variants.
+
+### Sysbuild Setup
+
+Sesame relies on Zephyr's `sysbuild` to coordinate the building of both the primary application (`sesame`) and the bootloader (`mcuboot`) in a single step.
+
+- **`sysbuild.conf`**: Configures the overall sysbuild environment, telling it to build MCUboot alongside the main application.
+- **`sysbuild/mcuboot.conf`**: Contains the Kconfig overrides for the MCUboot image (e.g., enabling Direct-XIP, setting partition sizes, configuring logging).
+- **`mcuboot_module/`**: Contains a custom CMakeLists file integrated via sysbuild that handles compiling the MW320-specific flash and pinctrl drivers into MCUboot, as well as running the `axf2firmware` post-build tool to convert MCUboot's `.elf` into the required `mcuboot.bin`.
 
 ### Prerequisites
 
@@ -31,7 +39,7 @@ Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rt
 ```sh
 rm -rf build && west build --sysbuild
 ```
-*(Note: Always run a clean build and delete the `build` directory when changing `prj.conf`, `Kconfig`, or Kconfig variables to ensure Zephyr properly regenerates headers and caches across all multi-stage variant builds.)*
+*(Note: Always run a clean build and delete the `build` directory when changing `sysbuild.conf`, `sysbuild/mcuboot.conf`, `prj.conf`, `Kconfig`, or Kconfig variables to ensure Zephyr properly regenerates headers and caches across all multi-stage variant builds.)*
 
 **Incremental build:**
 
@@ -338,14 +346,38 @@ tools/flash_and_monitor.sh [timeout_sec] [logfile]   # defaults: 60 /tmp/sesame_
 
 (Requires Tigard or similar JTAG board connected to J7 on iDCM board.)
 
-### OTA Updates
+### MCUboot and OTA Strategy
 
-**Manual flow:**
-1. Build `sesame/zephyr/zephyr.elf`
-2. Host on HTTP server (not HTTPS)
-3. From device, POST to `/fwupgrade` with FirmwareUpgradeFetchRequest (URL in protobuf)
-4. Device boots test image (OTA LED blinks blue)
-5. Verify, then POST to `/promote` to commit or reboot to rollback
+**Architecture & Hardware Translation:**
+Sesame uses a **Direct-XIP** (Execute In Place) OTA strategy, leveraging the hardware capabilities of the MW320 flash controller (FLASHC).
+Instead of copying the active image into a single primary slot, the bootloader (MCUboot) natively executes the image directly from whichever slot it resides in (`slot0` or `slot1`).
+- The application is linked to a fixed virtual memory address (`0x1F000000`) with `CONFIG_FLASH_LOAD_OFFSET=0` (configured via a devicetree `linker_partition` at offset `0x0`).
+- MCUboot determines the physical offset of the active slot (`0x30000` for Slot 0, `0x1A0000` for Slot 1), and writes this offset directly into the flash controller's `FAOFFR` register before jumping to the application.
+- The flash controller automatically translates all virtual instruction fetches by adding the `FAOFFR` offset in hardware, allowing true position-independent execution without complex linker scripts.
+
+**Build and Configuration:**
+The Zephyr sysbuild framework coordinates building both the application and the MCUboot bootloader.
+- The application flash build produces `build/sesame/zephyr/zephyr.signed.bin`.
+- The MCUboot build produces `build/mcuboot/zephyr/mcuboot.bin` (via the custom `axf2firmware` tool post-build step in `mcuboot_module/CMakeLists.txt`).
+- MCUboot configuration is managed in `sysbuild/mcuboot.conf`, which enables `CONFIG_BOOT_DIRECT_XIP=y` and `CONFIG_BOOT_DIRECT_XIP_REVERT=y`.
+
+**Slot Detection Logic:**
+Because the application is always linked at `0x1F000000`, the active slot cannot be determined via link address. Instead, `my_boot_fetch_active_slot()` in `src/ota.c` determines the active slot by explicitly querying the flash controller:
+```c
+if (FLASHC->FAOFFR > DT_REG_ADDR(DT_NODELABEL(slot0_partition))) {
+    return 1; // Slot 1
+}
+return 0; // Slot 0
+```
+This guarantees the downloaded firmware update is safely written to the *inactive* slot, preventing the running application from overwriting itself.
+
+**OTA Update Flow:**
+1. Device downloads the firmware image (e.g., via the `/fwupgrade` POST endpoint).
+2. The image is written to the inactive slot using Zephyr's flash map API.
+3. Upon completion, the inactive slot is marked as `pending` and the device reboots.
+4. MCUboot verifies the signature of the new image and boots it in **test mode** (Direct-XIP Revert mode) from the secondary slot.
+5. If the new image boots successfully and the user verifies it, a POST to `/promote` sets the `image_ok` flag, confirming the update.
+6. If the device crashes or reboots *before* confirmation, MCUboot detects the failure, erases the faulty image, and automatically rolls back to the previous slot.
 
 **Automated OTA test with pyserial:**
 ```python
