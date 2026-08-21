@@ -3,8 +3,8 @@
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
 #include <zephyr/device.h>
+#include <zephyr/dfu/mcuboot.h>
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/watchdog.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/net/http/server.h>
@@ -16,6 +16,7 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 #include "leds.h"
 #include "mflash_drv.h"
 #include "mqtt.h"
+#include "mw_watchdog.h"
 #include "network.h"
 #include "ota.h"
 #include "pic_uart.h"
@@ -26,9 +27,6 @@ K_MSGQ_DEFINE(ctrl_queue, sizeof(ctrl_msg_t), 8, 4);
 static const struct gpio_dt_spec wifi_button =
     GPIO_DT_SPEC_GET(DT_NODELABEL(sw_wifi), gpios);
 
-static const struct device* const wdt = DEVICE_DT_GET(DT_NODELABEL(wdt0));
-static int wdt_channel_id = -1;
-
 extern char __sram1_bss_start[];
 extern char __sram1_bss_end[];
 static int zero_sram1_bss(void) {
@@ -36,34 +34,6 @@ static int zero_sram1_bss(void) {
     return 0;
 }
 SYS_INIT(zero_sram1_bss, PRE_KERNEL_1, 0);
-
-static void init_watchdog() {
-    if (!device_is_ready(wdt)) {
-        LOG_ERR("Watchdog device not ready");
-        return;
-    }
-
-    struct wdt_timeout_cfg wdt_config = {
-        .window.min = 0U,
-        .window.max = 10000U,
-        .callback = NULL,
-        .flags = WDT_FLAG_RESET_SOC,
-    };
-
-    wdt_channel_id = wdt_install_timeout(wdt, &wdt_config);
-    if (wdt_channel_id < 0) {
-        LOG_ERR("Watchdog install error");
-        return;
-    }
-
-    wdt_setup(wdt, WDT_OPT_PAUSE_HALTED_BY_DBG);
-}
-
-void feed_watchdog(void) {
-    if (wdt_channel_id >= 0) {
-        wdt_feed(wdt, wdt_channel_id);
-    }
-}
 
 static struct gpio_callback wifi_button_cb_data;
 
@@ -76,14 +46,22 @@ static void wifi_button_pressed(const struct device* dev,
 int main(void) {
     leds_init();
     init_watchdog();
-    check_ota_test_image();
-    set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);
 
+    LOG_INF("Firmware version: %s", APP_VERSION_STRING);
     if (load_config() == 0) {
         LOG_INF("Config loaded successfully");
-        LOG_INF("SECOND OTA upgrade successful! Swapped again!");
     } else {
         LOG_WRN("Failed to load config, using defaults");
+    }
+
+    check_ota_test_image();
+#ifdef CONFIG_BOOTLOADER_MCUBOOT
+    if (ota_status == OTA_STATUS_TESTING) {
+        set_ota_led_pattern(LED_BLUE, LED_OFF, LED_BLUE, LED_OFF);
+    } else
+#endif
+    {
+        set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);
     }
 
     network_init();
@@ -175,6 +153,9 @@ int main(void) {
                 case CTRL_MSG_OTA_UPGRADE:
                     ota_client_start(&msg.msg.ota_upgrade);
                     break;
+                case CTRL_MSG_OTA_PROMOTE:
+                    ota_promote_image();
+                    break;
                 case CTRL_MSG_DOOR_STATE_UPDATE:
                     publish_state(&msg.msg.door_state);
                     break;
@@ -183,9 +164,7 @@ int main(void) {
             }
         }
 
-        if (wdt_channel_id >= 0) {
-            wdt_feed(wdt, wdt_channel_id);
-        }
+        feed_watchdog();
     }
     return 0;
 }

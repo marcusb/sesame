@@ -4,5 +4,6 @@ config FLASH_MW320
 	depends on DT_HAS_SOC_NV_FLASH_ENABLED
 	select FLASH_HAS_DRIVER_ENABLED
 	select FLASH_HAS_PAGE_LAYOUT
+	select FLASH_HAS_EXPLICIT_ERASE
 	help
 	  Enable MW320 Flash driver.

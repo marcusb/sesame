@@ -1,4 +1,4 @@
-#include "watchdog.h"
+#include "mw_watchdog.h"
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/watchdog.h>

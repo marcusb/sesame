@@ -1,12 +1,15 @@
 #include "ota.h"
 
+#include <bootutil/boot_status.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zephyr/retention/blinfo.h>
 
 #include "app_logging.h"
 
 // application
+#include <bootutil/bootutil_public.h>
 #include <zephyr/dfu/flash_img.h>
 #include <zephyr/dfu/mcuboot.h>
 #include <zephyr/kernel.h>
@@ -24,18 +27,30 @@ LOG_MODULE_REGISTER(ota, LOG_LEVEL_INF);
 
 ota_status_t ota_status = OTA_STATUS_NONE;
 
+#include <core_cm4.h>
+
+#include "88MW320.h"
+
+int my_boot_fetch_active_slot() {
+    if (SCB->VTOR >= 0x20000000) {
+        return 2;  // RAM load
+    }
+    if (FLASHC->FAOFFR > DT_REG_ADDR(DT_NODELABEL(slot0_partition))) {
+        return 1;  // Slot 1
+    }
+    return 0;  // Slot 0
+}
+
 int ota_init(ota_upd_state_t* ota_state) {
     LOG_INF("Initializing OTA update");
 
-    int active_slot = boot_fetch_active_slot();
-    uint8_t target_area_id =
-        FIXED_PARTITION_ID(slot1_partition);  // Default to slot 1
+    int active_slot = my_boot_fetch_active_slot();
 
+    uint8_t target_area_id;
     if (active_slot == 1) {
-        LOG_INF("Currently running from slot 1, will write update to slot 0");
         target_area_id = FIXED_PARTITION_ID(slot0_partition);
     } else {
-        LOG_INF("Currently running from slot 0, will write update to slot 1");
+        target_area_id = FIXED_PARTITION_ID(slot1_partition);
     }
 
     int res = flash_img_init_id(&ota_state->ctx, target_area_id);
@@ -55,6 +70,27 @@ int ota_write_chunk(ota_upd_state_t* ota_state, const uint8_t* buf,
     return 0;
 }
 
+int my_boot_request_upgrade(void) {
+    int active_slot = my_boot_fetch_active_slot();
+    uint8_t target_area_id;
+    if (active_slot == 1) {
+        target_area_id = FIXED_PARTITION_ID(slot0_partition);
+    } else {
+        target_area_id = FIXED_PARTITION_ID(slot1_partition);
+    }
+
+    const struct flash_area* fap;
+    int rc = flash_area_open(target_area_id, &fap);
+    if (rc != 0) {
+        return rc;
+    }
+
+    rc = boot_set_next(fap, false, false);
+
+    flash_area_close(fap);
+    return rc;
+}
+
 int ota_finish(ota_upd_state_t* ota_state) {
     int res = flash_img_buffered_write(&ota_state->ctx, NULL, 0, true);
     if (res < 0) {
@@ -62,7 +98,7 @@ int ota_finish(ota_upd_state_t* ota_state) {
         return res;
     }
 
-    res = boot_request_upgrade(BOOT_UPGRADE_TEST);
+    res = my_boot_request_upgrade();
     if (res) {
         LOG_ERR("boot_request_upgrade failed: %d", res);
         return res;
@@ -75,16 +111,68 @@ int ota_finish(ota_upd_state_t* ota_state) {
     return res;
 }
 
+extern int boot_read_swap_state(const struct flash_area* fap,
+                                struct boot_swap_state* state);
+
+bool my_boot_is_img_confirmed(void) {
+    int active_slot = my_boot_fetch_active_slot();
+    uint8_t target_area_id;
+    if (active_slot == 1) {
+        target_area_id = FIXED_PARTITION_ID(slot1_partition);
+    } else {
+        target_area_id = FIXED_PARTITION_ID(slot0_partition);
+    }
+    const struct flash_area* fa;
+    int rc = flash_area_open(target_area_id, &fa);
+    if (rc) return false;
+    struct boot_swap_state state;
+    rc = boot_read_swap_state(fa, &state);
+    flash_area_close(fa);
+    if (rc != 0) return false;
+
+    if (state.magic == BOOT_MAGIC_UNSET) {
+        return true;
+    }
+
+    LOG_INF(
+        "my_boot_is_img_confirmed: active_slot=%d, target_area_id=%d, "
+        "magic=%x, image_ok=%x, copy_done=%x",
+        active_slot, target_area_id, state.magic, state.image_ok,
+        state.copy_done);
+    return state.magic == BOOT_MAGIC_GOOD && state.image_ok == BOOT_FLAG_SET;
+}
+
 void check_ota_test_image() {
-    if (!boot_is_img_confirmed()) {
+    if (!my_boot_is_img_confirmed()) {
         ota_status = OTA_STATUS_TESTING;
         LOG_INF("OTA test image running");
     }
 }
 
+int my_boot_set_confirmed(void) {
+    int active_slot = my_boot_fetch_active_slot();
+    uint8_t target_area_id;
+    if (active_slot == 1) {
+        target_area_id = FIXED_PARTITION_ID(slot1_partition);
+    } else {
+        target_area_id = FIXED_PARTITION_ID(slot0_partition);
+    }
+
+    const struct flash_area* fap;
+    int rc = flash_area_open(target_area_id, &fap);
+    if (rc != 0) {
+        return rc;
+    }
+
+    rc = boot_set_next(fap, true, true);
+
+    flash_area_close(fap);
+    return rc;
+}
+
 int ota_promote_image() {
     if (ota_status == OTA_STATUS_TESTING) {
-        int res = boot_write_img_confirmed();
+        int res = my_boot_set_confirmed();
         LOG_INF("promoted OTA test image, result=%d", res);
         ota_status = OTA_STATUS_NONE;
         set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);

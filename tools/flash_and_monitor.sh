@@ -8,12 +8,12 @@ FLASHLOG="${LOG%.log}.flash.log"
 
 cd "$(dirname "$0")/.."
 
-./tools/monitor.py --timeout "$TIMEOUT" > "$LOG" 2>&1 &
-MONPID=$!
-sleep 2
-
-./tools/OpenOCD/flashprog.py --mcufw build/sesame.bin -r > "$FLASHLOG" 2>&1
+./tools/OpenOCD/flashprog.py --image-0 build/zephyr/zephyr.signed.bin -r > "$FLASHLOG" 2>&1
 RC=$?
+
+sleep 1
+python3 -u ./tools/monitor.py --timeout "$TIMEOUT" > "$LOG" 2>&1 &
+MONPID=$!
 tail -5 "$FLASHLOG"
 
   # flashprog.py exits 0 even when the embedded flashprog reports errors
