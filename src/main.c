@@ -84,6 +84,8 @@ int main(void) {
         gpio_add_callback(wifi_button.port, &wifi_button_cb_data);
     }
 
+    LOG_INF("System ready");
+
     while (1) {
         ctrl_msg_t msg;
         int get_ret = k_msgq_get(&ctrl_queue, &msg, K_MSEC(1000));
