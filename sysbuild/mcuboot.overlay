@@ -1,7 +1,6 @@
 / {
 	chosen {
 		zephyr,flash = &flash0;
-		zephyr,code-partition = &slot0_partition;
 		zephyr,bootloader-info = &boot_info0;
 	};
 
