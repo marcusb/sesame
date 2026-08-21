@@ -10,7 +10,7 @@ set(ENV{ZEPHYR_MCUBOOT_MODULE_DIR} "${APP_DIR}/mcuboot")
 set(mcuboot_BOARD_ROOT ${APP_DIR} CACHE PATH "mcuboot board root")
 set(mcuboot_SOC_ROOT ${APP_DIR} CACHE PATH "mcuboot soc root")
 set(mcuboot_DTS_ROOT ${APP_DIR} CACHE PATH "mcuboot dts root")
-set(mcuboot_ZEPHYR_EXTRA_MODULES "${APP_DIR}/modules/mw320_sdk;${APP_DIR}/mcuboot" CACHE STRING "mcuboot modules" FORCE)
+set(mcuboot_ZEPHYR_EXTRA_MODULES "${APP_DIR}/modules/mw320_sdk;${APP_DIR}/mcuboot;${APP_DIR}/mcuboot_module" CACHE STRING "mcuboot modules" FORCE)
 set(mcuboot_MW320_SDK_DIR ${APP_DIR}/mw320_sdk CACHE PATH "mcuboot mw320 sdk")
 set(mcuboot_EXTRA_DTC_OVERLAY_FILE ${APP_DIR}/boards/arm/marvell_mw302/mcuboot_offset.overlay CACHE PATH "mcuboot overlay")
 

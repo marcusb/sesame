@@ -24,3 +24,33 @@
 		};
 	};
 };
+
+&gpio0 {
+	ota_blue_hog {
+		output-high;
+	};
+
+	ota_green_hog {
+		/delete-property/ output-low;
+		output-high;
+	};
+};
+
+&gpio1 {
+	ota_red_hog {
+		output-low;
+	};
+
+	wifi_blue_hog {
+		output-high;
+	};
+
+	wifi_green_hog {
+		/delete-property/ output-low;
+		output-high;
+	};
+
+	wifi_red_hog {
+		output-low;
+	};
+};
