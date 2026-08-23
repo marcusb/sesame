@@ -6,6 +6,15 @@
 	model = "Genie Integrated Door Control Module Board 39732R.S";
 	compatible = "marvell,mw302", "nxp,88mw320";
 
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+		zephyr,entropy = &entropy_mw320;
+	};
+
 	aliases {
 		pic-uart = &uart1;
 		pic-rst = &pic_rst;

@@ -27,6 +27,11 @@
 		};
 	};
 
+	entropy_mw320: entropy_mw320 {
+		compatible = "marvell,mw320-entropy";
+		status = "okay";
+	};
+
 	soc {
 		#address-cells = <1>;
 		#size-cells = <1>;

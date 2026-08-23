@@ -68,6 +68,7 @@ target_link_libraries(app PRIVATE -lm)
 # Application Sources
 target_sources(app PRIVATE
     src/config_manager.c
+    src/entropy_mw320.c
     src/leds.c
     src/main.c
     src/httpd.c
