@@ -5,7 +5,6 @@ add_integration_test(matter
 
 set(matter_target "matter_it${target_suffix}")
 
-target_compile_definitions(${matter_target} PRIVATE SESAME_ENABLE_MATTER=1)
 target_include_directories(${matter_target} PRIVATE
     "${CMAKE_SOURCE_DIR}/src/matter")
 

@@ -5,7 +5,7 @@
 #include "app_config.pb.h"
 #include "controller.h"
 #include "pb_decode.h"
-#if SESAME_ENABLE_MATTER
+#ifdef CONFIG_CHIP
 #include "matter_task.h"
 #endif
 
@@ -144,7 +144,7 @@ static int close_handler(struct http_client_ctx* client,
     return 0;
 }
 
-#if SESAME_ENABLE_MATTER
+#ifdef CONFIG_CHIP
 static int matter_commission_handler(struct http_client_ctx* client,
                                      enum http_transaction_status status,
                                      const struct http_request_ctx* req,
@@ -239,7 +239,7 @@ static struct http_resource_detail_dynamic close_detail = {
     .user_data = NULL,
 };
 
-#if SESAME_ENABLE_MATTER
+#ifdef CONFIG_CHIP
 static struct http_resource_detail_dynamic matter_commission_detail = {
     .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
                .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
@@ -272,7 +272,7 @@ HTTP_RESOURCE_DEFINE(promote_resource, httpd_service, "/promote",
 HTTP_RESOURCE_DEFINE(open_resource, httpd_service, "/open", &open_detail);
 HTTP_RESOURCE_DEFINE(close_resource, httpd_service, "/close", &close_detail);
 
-#if SESAME_ENABLE_MATTER
+#ifdef CONFIG_CHIP
 HTTP_RESOURCE_DEFINE(matter_commission_resource, httpd_service,
                      "/matter/commission", &matter_commission_detail);
 HTTP_RESOURCE_DEFINE(matter_reset_resource, httpd_service, "/matter/reset",
