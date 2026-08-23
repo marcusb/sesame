@@ -18,6 +18,7 @@ K_MSGQ_DEFINE(pic_queue, sizeof(pic_cmd_t), 10, 4);
 #define DOOR_MOVE_ALERT_TICKS 6000
 #define STATE_UPDATE_INTERVAL (30 * 1000)
 
+static bool self_test_done;
 static door_open_state_t state = DCM_DOOR_STATE_UNKNOWN;
 static door_direction_t direction = DCM_DOOR_DIR_UNKNOWN;
 static uint16_t pos;
@@ -93,13 +94,6 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
 
 static void handle_msg(const dcm_msg_t* msg) {
     switch (msg->type) {
-        case DCM_MSG_DOOR_STATUS_REQUEST: {
-            const dcm_door_status_req_msg_t* p = &msg->payload.door_status_req;
-            down_limit = p->down_limit;
-            up_limit = p->up_limit;
-            door_state_update(p->state, p->direction, p->pos);
-            break;
-        }
         case DCM_MSG_DOOR_STATUS_UPDATE: {
             const dcm_door_status_update_msg_t* p = &msg->payload.door_status;
             down_limit = p->down_limit;
@@ -109,6 +103,7 @@ static void handle_msg(const dcm_msg_t* msg) {
         }
 
         case DCM_MSG_AUDIO_ACK:
+            self_test_done = true;
             break;
 
         case DCM_MSG_SENSOR_VERSION: {
@@ -249,13 +244,14 @@ static void send_msg(dcm_msg_t* msg) {
 
 static void alert_cmd(uint8_t val) {
     dcm_msg_t msg = {DCM_HEADER_BYTE, sizeof(dcm_alert_cmd_msg_t), next_token(),
-                     DCM_MSG_ALERT_CMD, .payload.alert_cmd = {val, 0, 0}};
+                     DCM_MSG_ALERT_CMD, .payload.alert_cmd = {val, 5, 0}};
     send_msg(&msg);
 }
 
 static void audio_cmd(uint8_t val) {
     dcm_msg_t msg = {DCM_HEADER_BYTE, sizeof(dcm_audio_cmd_msg_t), next_token(),
-                     DCM_MSG_AUDIO_CMD, .payload.audio_cmd = {val, 0, 0}};
+                     DCM_MSG_AUDIO_CMD,
+                     .payload.audio_cmd = {val, self_test_done ? 5 : 0, 0}};
     send_msg(&msg);
 }
 
@@ -283,6 +279,12 @@ static void send_door_status_req() {
     send_msg(&msg);
 }
 
+static void cmd_0x04() {
+    dcm_msg_t msg = {DCM_HEADER_BYTE, sizeof(dcm_cmd_0x04_msg_t), next_token(),
+                     DCM_MSG_0x04};
+    send_msg(&msg);
+}
+
 static void pic_uart_task(void* p1, void* p2, void* p3) {
     LOG_INF("PIC comm task running");
 
@@ -295,8 +297,15 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
     pic_cmd_t cmd;
 
     post_test();
+    uint32_t start = k_uptime_get_32();
+    while (!self_test_done && k_uptime_get_32() - start < 2000) {
+        if (k_msgq_get(&pic_queue, &cmd, K_MSEC(500)) == 0 &&
+            cmd == PIC_SERIAL_DATA) {
+            process_serial_data();
+        }
+    }
+    self_test_done = true;
     sound_buzzer();
-    alert_cmd(1);
 
     uint32_t door_poll_tstamp = k_uptime_get_32() - DOOR_POLL_TICKS + 500;
     uint32_t door_move_tstamp = 0;
@@ -306,11 +315,11 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
         if (read_state == READ_BODY &&
             now > last_read_tick + READ_TIMEOUT_TICKS) {
             LOG_WRN("read timeout");
-            uart_irq_rx_disable(uart_dev);
             start_uart_read();
         }
         if (now - door_poll_tstamp > DOOR_POLL_TICKS) {
             send_door_status_req();
+            cmd_0x04();
             door_poll_tstamp = now;
         }
         if (queued_cmd && now > door_move_tstamp) {
