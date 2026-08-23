@@ -283,15 +283,17 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
     start_uart_read();
     pic_cmd_t cmd;
     post_test();
-    while (!self_test_done) {
-        if (k_msgq_get(&pic_queue, &cmd, K_FOREVER) == 0 &&
+    uint32_t start = k_uptime_get_32();
+    while (!self_test_done && k_uptime_get_32() - start < 2000) {
+        if (k_msgq_get(&pic_queue, &cmd, K_MSEC(500)) == 0 &&
             cmd == PIC_SERIAL_DATA) {
             process_serial_data();
         }
     }
+    self_test_done = true;
     sound_buzzer();
 
-    uint32_t door_poll_tstamp = 0;
+    uint32_t door_poll_tstamp = -DOOR_POLL_TICKS;
     uint32_t door_move_tstamp = 0;
     pic_cmd_t queued_cmd = 0;
     for (;;) {

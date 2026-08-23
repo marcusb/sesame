@@ -379,6 +379,11 @@ This guarantees the downloaded firmware update is safely written to the *inactiv
 5. If the new image boots successfully and the user verifies it, a POST to `/promote` sets the `image_ok` flag, confirming the update.
 6. If the device crashes or reboots *before* confirmation, MCUboot detects the failure, erases the faulty image, and automatically rolls back to the previous slot.
 
+**Matter Debugging Notes:**
+- Zephyr networking features must be correctly configured to allow the Matter Minimal mDNS responder to function. Specifically, `CONFIG_NET_CONTEXT_RECV_PKTINFO=y` is required; without it, `IPV6_PKTINFO` or `IPV6_RECVPKTINFO` sockopt calls fail (error 109 `ENOPROTOOPT`), and `Minimal mDNS` drops incoming queries.
+- Do NOT use `CONFIG_CHIP_ENABLE_PAIRING_AUTOSTART=y` for this device since we do not use BLE for commissioning. This flag starts the mDNS server immediately at boot *before* the WiFi interface connects, causing `Minimal mDNS` to bind to a down interface. Instead, wait for the network to be `UP` and manually open the commissioning window via `chip::Server::GetInstance().GetCommissioningWindowManager().OpenBasicCommissioningWindow()`.
+- The PIC mock serial interface used in hardware testing needs timeouts when awaiting `DCM_MSG_AUDIO_ACK` from `post_test()`, otherwise the `pic_uart` thread hangs, stalling door polls, and consequently silencing MQTT publishes.
+
 **Automated OTA test with pyserial:**
 ```python
 import serial
