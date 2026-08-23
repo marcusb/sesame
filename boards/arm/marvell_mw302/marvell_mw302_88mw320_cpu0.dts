@@ -12,6 +12,7 @@
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
 		zephyr,entropy = &entropy_mw320;
+		zephyr,code-partition = &slot0_partition;
 	};
 };
 
