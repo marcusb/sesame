@@ -1,0 +1,89 @@
+#include "controller.h"
+#include <platform/CHIPDeviceLayer.h>
+#include <app/server/Server.h>
+#include <zephyr/logging/log.h>
+#include <app/util/attribute-storage.h>
+#include <app-common/zap-generated/attributes/Accessors.h>
+#include <app-common/zap-generated/ids/Attributes.h>
+#include <app-common/zap-generated/ids/Clusters.h>
+#include <data-model-providers/codegen/Instance.h>
+
+LOG_MODULE_REGISTER(matter_task, LOG_LEVEL_INF);
+
+extern "C" void matter_task_start(void)
+{
+    LOG_INF("Initializing CHIP Stack");
+    chip::DeviceLayer::PlatformMgr().InitChipStack();
+    chip::DeviceLayer::PlatformMgr().StartEventLoopTask();
+    
+    // Initialize the ZCL server
+    LOG_INF("Initializing ZCL Server");
+    static chip::CommonCaseDeviceServerInitParams initParams;
+    (void) initParams.InitializeStaticResourcesBeforeServerInit();
+    initParams.dataModelProvider = chip::app::CodegenDataModelProviderInstance(initParams.persistentStorageDelegate);
+    chip::Server::GetInstance().Init(initParams);
+
+    extern void InitOTARequestor();
+    InitOTARequestor();
+}
+
+
+using namespace ::chip;
+using namespace ::chip::app::Clusters::WindowCovering;
+
+void MatterPostAttributeChangeCallback(const app::ConcreteAttributePath & attributePath, uint8_t mask, uint8_t type, uint16_t size,
+                                       uint8_t * value)
+{
+    // Implementation not needed for basic operation, just logging
+}
+
+void MatterWindowCoveringClusterServerAttributeChangedCallback(const app::ConcreteAttributePath & attributePath)
+{
+    if (attributePath.mEndpointId == 1) // Assuming Endpoint 1
+    {
+        if (attributePath.mAttributeId == Attributes::TargetPositionLiftPercent100ths::Id)
+        {
+            app::DataModel::Nullable<chip::Percent100ths> targetPosition;
+            Attributes::TargetPositionLiftPercent100ths::Get(attributePath.mEndpointId, targetPosition);
+            if (!targetPosition.IsNull()) {
+                ctrl_msg_t msg = {};
+                msg.type = CTRL_MSG_DOOR_CONTROL;
+                
+                if (targetPosition.Value() == 0) {
+                    msg.msg.door_control.command = DOOR_CMD_OPEN;
+                    LOG_INF("Matter: Target=Open");
+                } else {
+                    msg.msg.door_control.command = DOOR_CMD_CLOSE;
+                    LOG_INF("Matter: Target=Close");
+                }
+                
+                // Enqueue to the main control queue (no block)
+                k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+            }
+        }
+    }
+}
+
+void emberAfWindowCoveringClusterInitCallback(chip::EndpointId endpoint)
+{
+    // Initialize attributes if needed
+}
+
+extern "C" void matter_update_door_state(const door_state_msg_t* msg)
+{
+    chip::app::DataModel::Nullable<chip::Percent100ths> pos;
+    if (msg->state == DCM_DOOR_STATE_CLOSED) {
+        pos.SetNonNull(10000); // 100.00% closed
+    } else if (msg->state == DCM_DOOR_STATE_OPEN) {
+        pos.SetNonNull(0); // 0.00% closed
+    } else {
+        pos.SetNonNull(5000); // Partially closed
+    }
+    
+    chip::DeviceLayer::PlatformMgr().ScheduleWork([](intptr_t arg) {
+        chip::app::DataModel::Nullable<chip::Percent100ths> p;
+        p.SetNonNull((uint16_t)arg);
+        // Assuming endpoint 1 for Window Covering
+        chip::app::Clusters::WindowCovering::Attributes::CurrentPositionLiftPercent100ths::Set(1, p);
+    }, pos.Value());
+}

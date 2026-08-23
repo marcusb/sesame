@@ -13,6 +13,7 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
 #include "config_manager.h"
 #include "controller.h"
+extern void matter_update_door_state(const door_state_msg_t* msg);
 #include "leds.h"
 #include "mflash_drv.h"
 #include "mqtt.h"
@@ -20,7 +21,7 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 #include "network.h"
 #include "ota.h"
 #include "pic_uart.h"
-#include "syslog.h"
+#include "sesame_syslog.h"
 
 K_MSGQ_DEFINE(ctrl_queue, sizeof(ctrl_msg_t), 8, 4);
 
@@ -42,6 +43,8 @@ static void wifi_button_pressed(const struct device* dev,
     ctrl_msg_t msg = {.type = CTRL_MSG_WIFI_BUTTON};
     k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
 }
+
+void matter_task_start(void);
 
 int main(void) {
     leds_init();
@@ -85,6 +88,10 @@ int main(void) {
     }
 
     LOG_INF("System ready");
+
+#ifdef CONFIG_CHIP
+    matter_task_start();
+#endif
 
     while (1) {
         ctrl_msg_t msg;
@@ -160,6 +167,7 @@ int main(void) {
                     break;
                 case CTRL_MSG_DOOR_STATE_UPDATE:
                     publish_state(&msg.msg.door_state);
+                    matter_update_door_state(&msg.msg.door_state);
                     break;
                 default:
                     break;

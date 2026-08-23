@@ -1,4 +1,4 @@
-#include "syslog.h"
+#include "sesame_syslog.h"
 
 #include <stdbool.h>
 #include <string.h>

@@ -46,8 +46,19 @@ add_compile_definitions(APP_VERSION_STRING="${APP_FIRMWARE_VERSION}")
 
 # Load Zephyr build system
 set(MW320_SDK_DIR ${CMAKE_SOURCE_DIR}/mw320_sdk CACHE PATH "MW320 SDK directory" FORCE)
+
+list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip/config/zephyr/chip-module)
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(sesame)
+
+if(CONFIG_CHIP)
+    get_filename_component(CHIP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip REALPATH)
+    include(${CHIP_ROOT}/src/app/chip_data_model.cmake)
+    chip_configure_data_model(app
+        ZAP_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/matter/window-app.zap
+    )
+endif()
 
 # --- Linker settings ---
 zephyr_linker_sources(SECTIONS custom_bss.ld)
@@ -63,11 +74,15 @@ target_sources(app PRIVATE
     src/network.c
     src/pic_uart.c
     src/mqtt.c
-    src/syslog.c
+    src/sesame_syslog.c
     src/ota.c
     src/ota_client.c
     src/mw_watchdog.c
 )
+
+if(CONFIG_CHIP)
+    target_sources(app PRIVATE src/matter/MatterTask.cpp src/matter/MatterOTA.cpp)
+endif()
 
 zephyr_include_directories(include)
 zephyr_include_directories(${MW320_SDK_DIR}/components/flash/mflash/mw320)
