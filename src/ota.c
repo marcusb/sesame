@@ -48,9 +48,9 @@ int ota_init(ota_upd_state_t* ota_state) {
 
     uint8_t target_area_id;
     if (active_slot == 1) {
-        target_area_id = FIXED_PARTITION_ID(slot0_partition);
+        target_area_id = PARTITION_ID(slot0_partition);
     } else {
-        target_area_id = FIXED_PARTITION_ID(slot1_partition);
+        target_area_id = PARTITION_ID(slot1_partition);
     }
 
     int res = flash_img_init_id(&ota_state->ctx, target_area_id);
@@ -74,9 +74,9 @@ int my_boot_request_upgrade(void) {
     int active_slot = my_boot_fetch_active_slot();
     uint8_t target_area_id;
     if (active_slot == 1) {
-        target_area_id = FIXED_PARTITION_ID(slot0_partition);
+        target_area_id = PARTITION_ID(slot0_partition);
     } else {
-        target_area_id = FIXED_PARTITION_ID(slot1_partition);
+        target_area_id = PARTITION_ID(slot1_partition);
     }
 
     const struct flash_area* fap;
@@ -118,9 +118,9 @@ bool my_boot_is_img_confirmed(void) {
     int active_slot = my_boot_fetch_active_slot();
     uint8_t target_area_id;
     if (active_slot == 1) {
-        target_area_id = FIXED_PARTITION_ID(slot1_partition);
+        target_area_id = PARTITION_ID(slot1_partition);
     } else {
-        target_area_id = FIXED_PARTITION_ID(slot0_partition);
+        target_area_id = PARTITION_ID(slot0_partition);
     }
     const struct flash_area* fa;
     int rc = flash_area_open(target_area_id, &fa);
@@ -153,9 +153,9 @@ int my_boot_set_confirmed(void) {
     int active_slot = my_boot_fetch_active_slot();
     uint8_t target_area_id;
     if (active_slot == 1) {
-        target_area_id = FIXED_PARTITION_ID(slot1_partition);
+        target_area_id = PARTITION_ID(slot1_partition);
     } else {
-        target_area_id = FIXED_PARTITION_ID(slot0_partition);
+        target_area_id = PARTITION_ID(slot0_partition);
     }
 
     const struct flash_area* fap;
