@@ -9,7 +9,7 @@
 #include "controller.h"
 #include "idcm_msg.h"
 
-LOG_MODULE_REGISTER(pic_uart, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(pic_uart, LOG_LEVEL_DBG);
 
 K_MSGQ_DEFINE(pic_queue, sizeof(pic_cmd_t), 10, 4);
 
@@ -18,7 +18,6 @@ K_MSGQ_DEFINE(pic_queue, sizeof(pic_cmd_t), 10, 4);
 #define DOOR_MOVE_ALERT_TICKS 6000
 #define STATE_UPDATE_INTERVAL (30 * 1000)
 
-static bool self_test_done;
 static door_open_state_t state = DCM_DOOR_STATE_UNKNOWN;
 static door_direction_t direction = DCM_DOOR_DIR_UNKNOWN;
 static uint16_t pos;
@@ -94,6 +93,13 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
 
 static void handle_msg(const dcm_msg_t* msg) {
     switch (msg->type) {
+        case DCM_MSG_DOOR_STATUS_REQUEST: {
+            const dcm_door_status_req_msg_t* p = &msg->payload.door_status_req;
+            down_limit = p->down_limit;
+            up_limit = p->up_limit;
+            door_state_update(p->state, p->direction, p->pos);
+            break;
+        }
         case DCM_MSG_DOOR_STATUS_UPDATE: {
             const dcm_door_status_update_msg_t* p = &msg->payload.door_status;
             down_limit = p->down_limit;
@@ -103,7 +109,6 @@ static void handle_msg(const dcm_msg_t* msg) {
         }
 
         case DCM_MSG_AUDIO_ACK:
-            self_test_done = true;
             break;
 
         case DCM_MSG_SENSOR_VERSION: {
@@ -123,6 +128,8 @@ static void handle_msg(const dcm_msg_t* msg) {
     }
 }
 
+K_MSGQ_DEFINE(uart_rx_q, sizeof(uint8_t), 256, 4);
+
 static uint32_t last_read_tick;
 
 static void start_uart_read() {
@@ -130,53 +137,61 @@ static void start_uart_read() {
     rx_idx = 0;
     expected_len = 4;
     gpio_pin_set_dt(&pic_wake, 1);
-    uart_irq_rx_enable(uart_dev);
 }
 
 static void process_serial_data() {
-    const dcm_msg_t* msg = (const dcm_msg_t*)rx_buf;
-    if (read_state == READ_HEADER) {
-        last_read_tick = k_uptime_get_32();
-        if (msg->header != 0x55) {
-            LOG_DBG("unexpected byte %02x", msg->header);
-            goto reset;
+    uint8_t c;
+    while (k_msgq_get(&uart_rx_q, &c, K_NO_WAIT) == 0) {
+        if (rx_idx < sizeof(rx_buf)) {
+            rx_buf[rx_idx++] = c;
         }
-        gpio_pin_set_dt(&pic_wake, 0);
-        if (msg->len + 5 > sizeof(rx_buf)) {
-            LOG_INF("invalid msg length %d", msg->len);
-            goto reset;
+
+        if (read_state == READ_HEADER) {
+            last_read_tick = k_uptime_get_32();
+            if (rx_idx == 1 && rx_buf[0] != 0x55) {
+                LOG_DBG("unexpected byte %02x", rx_buf[0]);
+                rx_idx = 0;
+                continue;
+            }
+            if (rx_idx == 4) {
+                const dcm_msg_t* msg = (const dcm_msg_t*)rx_buf;
+                gpio_pin_set_dt(&pic_wake, 0);
+                if (msg->len + 5 > sizeof(rx_buf)) {
+                    LOG_INF("invalid msg length %d", msg->len);
+                    start_uart_read();
+                    continue;
+                }
+                read_state = READ_BODY;
+                expected_len = msg->len + 5;
+            }
+        } else if (read_state == READ_BODY) {
+            if (rx_idx == expected_len) {
+                const dcm_msg_t* msg = (const dcm_msg_t*)rx_buf;
+                LOG_HEXDUMP_DBG(rx_buf, expected_len, "RX:");
+                uint8_t chksum = calc_chk_sum(rx_buf, msg->len + 4);
+                if (chksum == rx_buf[msg->len + 4]) {
+                    handle_msg(msg);
+                } else {
+                    LOG_WRN("chksum mismatch (got 0x%02x, expected 0x%02x)",
+                            rx_buf[msg->len + 4], chksum);
+                }
+                start_uart_read();
+            }
         }
-        read_state = READ_BODY;
-        expected_len = msg->len + 5;
-        uart_irq_rx_enable(uart_dev);
-    } else if (read_state == READ_BODY) {
-        LOG_HEXDUMP_DBG(rx_buf, msg->len + 5, "RX:");
-        uint8_t chksum = calc_chk_sum(rx_buf, msg->len + 4);
-        if (chksum == rx_buf[msg->len + 4]) {
-            handle_msg(msg);
-        } else {
-            LOG_WRN("chksum mismatch (got 0x%02x, expected 0x%02x)",
-                    rx_buf[msg->len + 4], chksum);
-        }
-    reset:
-        start_uart_read();
     }
 }
 
 static void uart_cb(const struct device* dev, void* user_data) {
     uart_irq_update(dev);
-
-    if (uart_irq_rx_ready(dev)) {
-        int recv_len =
-            uart_fifo_read(dev, rx_buf + rx_idx, expected_len - rx_idx);
-        if (recv_len > 0) {
-            rx_idx += recv_len;
-            if (rx_idx == expected_len) {
-                uart_irq_rx_disable(dev);
-                pic_cmd_t cmd = PIC_SERIAL_DATA;
-                k_msgq_put(&pic_queue, &cmd, K_NO_WAIT);
-            }
+    while (uart_irq_rx_ready(dev)) {
+        uint8_t buf[16];
+        int len = uart_fifo_read(dev, buf, sizeof(buf));
+        if (len <= 0) break;
+        for (int i = 0; i < len; i++) {
+            k_msgq_put(&uart_rx_q, &buf[i], K_NO_WAIT);
         }
+        pic_cmd_t cmd = PIC_SERIAL_DATA;
+        k_msgq_put(&pic_queue, &cmd, K_NO_WAIT);
     }
 }
 
@@ -208,13 +223,15 @@ static int init_uart(void) {
     }
 
     gpio_pin_configure_dt(&pic_rst, GPIO_OUTPUT_INACTIVE);
-    gpio_pin_configure_dt(&pic_wake, GPIO_OUTPUT_INACTIVE);
+    k_msleep(10);
+    gpio_pin_set_dt(&pic_rst, 1);  // Set to ACTIVE (LOW)
+    gpio_pin_configure_dt(&pic_wake, GPIO_OUTPUT_ACTIVE);
 
     uart_irq_callback_user_data_set(uart_dev, uart_cb, NULL);
 
-    k_msleep(25);
-    gpio_pin_set_dt(&pic_rst, 0);
     k_msleep(5);
+
+    uart_irq_rx_enable(uart_dev);
 
     return 0;
 }
@@ -227,18 +244,18 @@ static void send_msg(dcm_msg_t* msg) {
     for (int i = 0; i < frame_len; i++) {
         uart_poll_out(uart_dev, p[i]);
     }
+    k_msleep(5);
 }
 
 static void alert_cmd(uint8_t val) {
     dcm_msg_t msg = {DCM_HEADER_BYTE, sizeof(dcm_alert_cmd_msg_t), next_token(),
-                     DCM_MSG_ALERT_CMD, .payload.alert_cmd = {val, 5, 0}};
+                     DCM_MSG_ALERT_CMD, .payload.alert_cmd = {val, 0, 0}};
     send_msg(&msg);
 }
 
 static void audio_cmd(uint8_t val) {
     dcm_msg_t msg = {DCM_HEADER_BYTE, sizeof(dcm_audio_cmd_msg_t), next_token(),
-                     DCM_MSG_AUDIO_CMD,
-                     .payload.audio_cmd = {val, self_test_done ? 5 : 0, 0}};
+                     DCM_MSG_AUDIO_CMD, .payload.audio_cmd = {val, 0, 0}};
     send_msg(&msg);
 }
 
@@ -266,12 +283,6 @@ static void send_door_status_req() {
     send_msg(&msg);
 }
 
-static void cmd_0x04() {
-    dcm_msg_t msg = {DCM_HEADER_BYTE, sizeof(dcm_cmd_0x04_msg_t), next_token(),
-                     DCM_MSG_0x04};
-    send_msg(&msg);
-}
-
 static void pic_uart_task(void* p1, void* p2, void* p3) {
     LOG_INF("PIC comm task running");
 
@@ -282,18 +293,12 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
 
     start_uart_read();
     pic_cmd_t cmd;
-    post_test();
-    uint32_t start = k_uptime_get_32();
-    while (!self_test_done && k_uptime_get_32() - start < 2000) {
-        if (k_msgq_get(&pic_queue, &cmd, K_MSEC(500)) == 0 &&
-            cmd == PIC_SERIAL_DATA) {
-            process_serial_data();
-        }
-    }
-    self_test_done = true;
-    sound_buzzer();
 
-    uint32_t door_poll_tstamp = -DOOR_POLL_TICKS;
+    post_test();
+    sound_buzzer();
+    alert_cmd(1);
+
+    uint32_t door_poll_tstamp = k_uptime_get_32() - DOOR_POLL_TICKS + 500;
     uint32_t door_move_tstamp = 0;
     pic_cmd_t queued_cmd = 0;
     for (;;) {
@@ -306,7 +311,6 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
         }
         if (now - door_poll_tstamp > DOOR_POLL_TICKS) {
             send_door_status_req();
-            cmd_0x04();
             door_poll_tstamp = now;
         }
         if (queued_cmd && now > door_move_tstamp) {

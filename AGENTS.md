@@ -27,10 +27,18 @@ Sesame relies on Zephyr's `sysbuild` to coordinate the building of both the prim
 **Debian/Ubuntu:**
 
 ```sh
-apt install cmake ninja-build protobuf-compiler python3-protobuf openocd qemu-system-arm
+apt install cmake ninja-build protobuf-compiler python3-protobuf openocd qemu-system-arm python3-venv
 ```
 
-Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rtos/sdk-ng/releases) installed (e.g. in `~/zephyr-sdk`) and the `west` tool installed (`pip install west`).
+Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rtos/sdk-ng/releases) installed (e.g. in `~/zephyr-sdk`).
+
+**Python Environment:**
+Create and activate a virtual environment, then install dependencies:
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+pip install west pyserial protobuf
+```
 
 ### Build Commands
 
@@ -382,7 +390,6 @@ This guarantees the downloaded firmware update is safely written to the *inactiv
 **Matter Debugging Notes:**
 - Zephyr networking features must be correctly configured to allow the Matter Minimal mDNS responder to function. Specifically, `CONFIG_NET_CONTEXT_RECV_PKTINFO=y` is required; without it, `IPV6_PKTINFO` or `IPV6_RECVPKTINFO` sockopt calls fail (error 109 `ENOPROTOOPT`), and `Minimal mDNS` drops incoming queries.
 - Do NOT use `CONFIG_CHIP_ENABLE_PAIRING_AUTOSTART=y` for this device since we do not use BLE for commissioning. This flag starts the mDNS server immediately at boot *before* the WiFi interface connects, causing `Minimal mDNS` to bind to a down interface. Instead, wait for the network to be `UP` and manually open the commissioning window via `chip::Server::GetInstance().GetCommissioningWindowManager().OpenBasicCommissioningWindow()`.
-- The PIC mock serial interface used in hardware testing needs timeouts when awaiting `DCM_MSG_AUDIO_ACK` from `post_test()`, otherwise the `pic_uart` thread hangs, stalling door polls, and consequently silencing MQTT publishes.
 
 **Automated OTA test with pyserial:**
 ```python

@@ -63,20 +63,16 @@ _Static_assert(sizeof(dcm_door_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint8_t val;
-    // Duration of the alert in seconds. 0 = immediate/silent (used for
-    // self-test), 5 = 5-second warning before door moves.
-    uint8_t duration_s;
-    uint8_t reserved;  // always 0
+    uint8_t unk1;
+    uint8_t unk2;
 } __attribute__((packed)) dcm_alert_cmd_msg_t;
 _Static_assert(sizeof(dcm_alert_cmd_msg_t) == 3, "msg size");
 _Static_assert(sizeof(dcm_alert_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint8_t val;
-    // Duration of the tone in seconds. 0 during self-test (PIC ACKs without
-    // audible output), 5 for normal operation.
-    uint8_t duration_s;
-    uint8_t reserved;  // always 0
+    uint8_t unk1;
+    uint8_t unk2;
 } __attribute__((packed)) dcm_audio_cmd_msg_t;
 _Static_assert(sizeof(dcm_audio_cmd_msg_t) == 3, "msg size");
 _Static_assert(sizeof(dcm_audio_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");

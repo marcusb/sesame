@@ -182,10 +182,18 @@ The firmware can be built on Linux.
 
 On Debian:
 ```sh
-apt install cmake ninja-build python3-protobuf openocd qemu-system-arm
+apt install cmake ninja-build python3-protobuf openocd qemu-system-arm python3-venv
 ```
 
-Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rtos/sdk-ng/releases) installed (e.g. in `~/zephyr-sdk`) and the `west` tool installed (`pip install west`).
+Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rtos/sdk-ng/releases) installed (e.g. in `~/zephyr-sdk`).
+
+**Python Environment:**
+Create and activate a virtual environment, then install dependencies:
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+pip install west pyserial protobuf
+```
 
 ### Building
 
