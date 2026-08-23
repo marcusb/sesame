@@ -41,7 +41,7 @@
 
 		sram0: sram@100000 {
 			compatible = "mmio-sram";
-			reg = <0x00100000 0x5EFC0>;
+			reg = <0x00100000 0x60000>;
 		};
 
 		sram1: sram@20000000 {

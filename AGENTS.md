@@ -445,7 +445,6 @@ sesame/
 │   ├── mqtt.h, httpd.h, network.h, etc.
 ├── board/              # Board support
 │   ├── board.c, clock_config.c, pin_mux.c
-│   └── 88MW320_xx_xxxx_flash.ld (linker script)
 ├── proto/              # Protobuf definitions
 │   ├── api.proto       # OTA request/response
 │   └── app_config.proto # Configuration schema
