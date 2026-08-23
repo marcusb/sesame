@@ -117,3 +117,20 @@ void matter_update_door_state(const door_state_msg_t* msg)
         chip::app::Clusters::WindowCovering::Attributes::CurrentPositionLiftPercent100ths::Set(1, p);
     }, pos.Value());
 }
+
+extern "C" void matter_wipe_fabrics(void) {
+    LOG_INF("Scheduling Matter factory reset!");
+    chip::Server::GetInstance().ScheduleFactoryReset();
+}
+
+extern "C" bool matter_commission_open(uint32_t timeout_s) {
+    if (chip::Server::GetInstance().GetFabricTable().FabricCount() > 0) {
+        LOG_WRN("Cannot open basic commissioning on a commissioned device");
+        return false;
+    }
+    CHIP_ERROR err = chip::Server::GetInstance().GetCommissioningWindowManager().OpenBasicCommissioningWindow(
+        chip::System::Clock::Seconds16(timeout_s),
+        chip::CommissioningWindowAdvertisement::kDnssdOnly
+    );
+    return err == CHIP_NO_ERROR;
+}
