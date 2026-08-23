@@ -36,6 +36,10 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 
+		storage_partition: partition@3f0000 {
+			label = "storage";
+			reg = <0x003F0000 0x00010000>;
+		};
 		linker_partition: partition@1f000000 {
 			label = "linker";
 			reg = <0x0 0x170000>;
