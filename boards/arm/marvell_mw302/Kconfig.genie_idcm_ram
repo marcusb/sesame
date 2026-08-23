@@ -1,3 +1,0 @@
-config BOARD_GENIE_IDCM_RAM
-	bool
-	select SOC_88MW320

@@ -124,25 +124,4 @@ add_custom_command(
 )
 add_custom_target(sesame_bin ALL DEPENDS ${CMAKE_BINARY_DIR}/sesame.bin)
 
-# --- Multi-variant Build Support ---
-# Build the RAM variant automatically within the main build folder
-if(NOT DEFINED ENV{SKIP_RAM_VARIANT})
-    include(ExternalProject)
-    if(NOT CONFIG_CHIP)
-    ExternalProject_Add(ram_variant
-        SOURCE_DIR      "${CMAKE_SOURCE_DIR}"
-        BINARY_DIR      "${CMAKE_BINARY_DIR}/ram-build"
-        CONFIGURE_COMMAND
-            "${CMAKE_COMMAND}" -G Ninja
-                -DBOARD=genie_idcm_ram/88mw320/cpu0
-                -DZEPHYR_TOOLCHAIN_VARIANT=${ZEPHYR_TOOLCHAIN_VARIANT}
-                -S "${CMAKE_SOURCE_DIR}" -B "${CMAKE_BINARY_DIR}/ram-build"
-        BUILD_COMMAND
-            "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}/ram-build"
-        INSTALL_COMMAND ""
-        BUILD_ALWAYS    TRUE
-    )
-endif()
-    endif()
-
 endif()

@@ -14,7 +14,6 @@ boards:
     vendor: marvell
     socs:
       - name: 88mw320
-  - name: genie_idcm_ram
     full_name: Genie Integrated Door Control Module Board 39732R.S RAM Execution
     vendor: marvell
     socs:

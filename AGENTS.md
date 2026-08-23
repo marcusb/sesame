@@ -12,7 +12,7 @@ See docs/teardown.md for hardware information.
 
 ## Build System
 
-The project uses the standard Zephyr sysbuild system to orchestrate multi-image builds natively for both flash and RAM variants.
+The project uses the standard Zephyr sysbuild system to orchestrate multi-image builds natively for flash variants.
 
 ### Sysbuild Setup
 
@@ -47,14 +47,12 @@ pip install west pyserial protobuf
 ```sh
 rm -rf build && west build --sysbuild
 ```
-*(Note: Always run a clean build and delete the `build` directory when changing `sysbuild.conf`, `sysbuild/mcuboot.conf`, `prj.conf`, `Kconfig`, or Kconfig variables. If you have Matter enabled via `CONFIG_CHIP=y`, the `ram_variant` will automatically be disabled as it exceeds the 384KB SRAM capacity.)*
 
 **Incremental build:**
 
 ```sh
-ninja -C build                     # Build all variants (hardware & RAM)
+ninja -C build                     # Build all variants (hardware)
 ninja -C build sesame/zephyr/zephyr.elf   # Build only hardware flash version
-ninja -C build sesame/ram_variant         # Build RAM variant
 ```
 
 **Iterating on QEMU-only sources (e.g. `test/integration/**`):**
@@ -92,7 +90,6 @@ contents as suspect until you have proven its mtime is fresh.
 **Build outputs:**
 
 - `build/sesame/zephyr/zephyr.signed.bin`, `build/mcuboot/zephyr/mcuboot.bin` – Hardware flash versions
-- `build/sesame/ram-build/zephyr/zephyr.elf` – Hardware RAM version
 - `test/sesame_tests.axf` – Hardware test suite
 - `test/sesame_tests-qemu.axf` – QEMU test suite
 
@@ -180,9 +177,9 @@ pip install pyserial
 
 **Two-terminal workflow** for fast iteration (no device reboot between builds):
 
-**Terminal 1** – Build and load to RAM:
+**Terminal 1** – Build and flash:
 ```sh
-ninja -C build ram_variant && ./tools/OpenOCD/ramload.py build/ram-build/zephyr/zephyr.elf
+ninja -C build sesame/zephyr/zephyr.elf && ./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 build/sesame/zephyr/zephyr.signed.bin -r
 ```
 
 **Terminal 2** – Monitor serial output:
@@ -194,7 +191,7 @@ Typical feature development cycle:
 1. Understand affected modules and check proto definitions
 2. Implement code changes
 3. Re-run Terminal 1 command
-4. Check Terminal 2 for output (no reboot unless code crashes)
+4. Check Terminal 2 for output (device will reboot automatically)
 5. Iterate until feature works
 
 **Automated testing with pyserial** – Claude can help write test scripts:
@@ -266,7 +263,7 @@ The `-l` flag is only needed for initial device provisioning (first-time install
 ### Unit Tests
 
 On-device unit tests use the [Unity](https://github.com/ThrowTheSwitch/Unity) framework.
-Tests can be run either on the physical ARM Cortex-M4 target via JTAG RAM load, or in QEMU.
+Tests can be run either on the physical ARM Cortex-M4 target via JTAG flash, or in QEMU.
 
 **Hardware (JTAG) Build & Run:**
 ```sh
@@ -497,14 +494,8 @@ The project provides a robust serial monitor that handles reconnections and time
 ./tools/monitor.py
 ```
 
-**Method 2: Run and Monitor (RAM Load)**
-Build the RAM target and run it immediately with monitoring until completion:
-```bash
-./tools/run_on_device.sh build/ram-build/zephyr/zephyr.elf
-```
-
-**Method 3: Monitor After Flash**
-Monitor an already flashed (XIP) application without attempting to reload it into RAM:
+**Method 2: Monitor After Flash**
+Monitor an already flashed (XIP) application:
 ```bash
 ./tools/run_on_device.sh build/zephyr/zephyr.elf --no-load
 ```
@@ -555,4 +546,4 @@ gdb-multiarch -batch -x tools/OpenOCD/gdbinit build/zephyr/zephyr.elf \
 
 ### Committing Code
 
-**Always before committing, build and verify both the XIP and RAM builds.**
+**Always before committing, build and verify the XIP build.**
