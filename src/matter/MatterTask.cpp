@@ -1,5 +1,6 @@
 #include <credentials/examples/DeviceAttestationCredsExample.h>
 #include "matter_endpoints.h"
+#include "matter_task.h"
 #include "controller.h"
 #include <platform/CHIPDeviceLayer.h>
 #include <app/server/Server.h>
@@ -118,12 +119,12 @@ void matter_update_door_state(const door_state_msg_t* msg)
     }, pos.Value());
 }
 
-extern "C" void matter_wipe_fabrics(void) {
+void matter_wipe_fabrics(void) {
     LOG_INF("Scheduling Matter factory reset!");
     chip::Server::GetInstance().ScheduleFactoryReset();
 }
 
-extern "C" bool matter_commission_open(uint32_t timeout_s) {
+bool matter_commission_open(uint32_t timeout_s) {
     if (chip::Server::GetInstance().GetFabricTable().FabricCount() > 0) {
         LOG_WRN("Cannot open basic commissioning on a commissioned device");
         return false;
