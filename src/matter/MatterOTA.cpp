@@ -8,12 +8,10 @@
 #include <platform/CHIPDeviceLayer.h>
 #include <zephyr/sys/reboot.h>
 
-extern "C" {
 #include "controller.h"
-}
-extern "C" {
 #include "ota.h"
-}
+#include "matter_endpoints.h"
+
 
 namespace chip {
 
@@ -64,7 +62,7 @@ public:
         }
         memcpy(buf, block.data(), block.size());
         size_t size = block.size();
-        
+
         DeviceLayer::SystemLayer().ScheduleLambda([this, buf, size] {
             int err = ota_write_chunk(&mOtaState, buf, size);
             chip::Platform::MemoryFree(buf);
@@ -97,14 +95,15 @@ static DeviceLayer::DefaultOTARequestorDriver gRequestorUser;
 static BDXDownloader gDownloader;
 static OTAImageProcessorImpl gImageProcessor;
 
-extern "C" void InitOTARequestor()
+} // namespace chip
+
+void InitOTARequestor()
 {
-    SetRequestorInstance(&gRequestorCore);
-    gRequestorStorage.Init(chip::Server::GetInstance().GetPersistentStorage());
-    gRequestorCore.Init(chip::Server::GetInstance(), gRequestorStorage, gRequestorUser, gDownloader);
-    gImageProcessor.SetOTADownloader(&gDownloader);
-    gDownloader.SetImageProcessorDelegate(&gImageProcessor);
-    gRequestorUser.Init(&gRequestorCore, &gImageProcessor);
+    chip::SetRequestorInstance(&chip::gRequestorCore);
+    chip::gRequestorStorage.Init(chip::Server::GetInstance().GetPersistentStorage());
+    chip::gRequestorCore.Init(chip::Server::GetInstance(), chip::gRequestorStorage, chip::gRequestorUser, chip::gDownloader);
+    chip::gImageProcessor.SetOTADownloader(&chip::gDownloader);
+    chip::gDownloader.SetImageProcessorDelegate(&chip::gImageProcessor);
+    chip::gRequestorUser.Init(&chip::gRequestorCore, &chip::gImageProcessor);
 }
 
-} // namespace chip

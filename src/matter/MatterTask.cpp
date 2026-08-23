@@ -1,3 +1,4 @@
+#include "matter_endpoints.h"
 #include "controller.h"
 #include <platform/CHIPDeviceLayer.h>
 #include <app/server/Server.h>
@@ -23,7 +24,7 @@ extern "C" void matter_task_start(void)
     initParams.dataModelProvider = chip::app::CodegenDataModelProviderInstance(initParams.persistentStorageDelegate);
     chip::Server::GetInstance().Init(initParams);
 
-    extern void InitOTARequestor();
+    
     InitOTARequestor();
 }
 
@@ -69,7 +70,7 @@ void emberAfWindowCoveringClusterInitCallback(chip::EndpointId endpoint)
     // Initialize attributes if needed
 }
 
-extern "C" void matter_update_door_state(const door_state_msg_t* msg)
+void matter_update_door_state(const door_state_msg_t* msg)
 {
     chip::app::DataModel::Nullable<chip::Percent100ths> pos;
     if (msg->state == DCM_DOOR_STATE_CLOSED) {

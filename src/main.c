@@ -13,8 +13,8 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
 #include "config_manager.h"
 #include "controller.h"
-extern void matter_update_door_state(const door_state_msg_t* msg);
 #include "leds.h"
+#include "matter_endpoints.h"
 #include "mflash_drv.h"
 #include "mqtt.h"
 #include "mw_watchdog.h"
@@ -167,7 +167,9 @@ int main(void) {
                     break;
                 case CTRL_MSG_DOOR_STATE_UPDATE:
                     publish_state(&msg.msg.door_state);
+#ifdef CONFIG_CHIP
                     matter_update_door_state(&msg.msg.door_state);
+#endif
                     break;
                 default:
                     break;

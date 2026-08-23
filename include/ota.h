@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #pragma once
 
 #include <stdint.h>
@@ -37,3 +41,7 @@ int ota_finish(ota_upd_state_t* ota_state);
 void check_ota_test_image();
 int ota_promote_image();
 void ota_client_start(const FirmwareUpgradeFetchRequest* req);
+#ifdef __cplusplus
+}
+#endif
+
