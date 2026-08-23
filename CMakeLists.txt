@@ -83,6 +83,7 @@ target_sources(app PRIVATE
 
 if(CONFIG_CHIP)
     target_sources(app PRIVATE src/matter/MatterTask.cpp src/matter/MatterOTA.cpp)
+    target_compile_definitions(app PRIVATE SESAME_ENABLE_MATTER=1)
 endif()
 
 zephyr_include_directories(include)
