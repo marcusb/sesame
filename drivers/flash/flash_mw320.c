@@ -1,6 +1,7 @@
 #define DT_DRV_COMPAT nxp_mw320_flash_controller
 
 #include <zephyr/kernel.h>
+#include <string.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/flash.h>
 #include "mflash_drv.h"
@@ -13,6 +14,28 @@ static int flash_mw320_read(const struct device *dev, off_t offset, void *data, 
 
 static int flash_mw320_write(const struct device *dev, off_t offset, const void *data, size_t len)
 {
+    /* If data is in the flash XIP region, we must copy it to RAM first.
+     * The flash controller cannot read from flash while writing to it. */
+    if (((uint32_t)data & 0x1F000000U) == 0x1F000000U) {
+        uint8_t temp_buf[64];
+        const uint8_t *src = (const uint8_t *)data;
+        size_t remaining = len;
+        off_t current_offset = offset;
+        
+        while (remaining > 0) {
+            size_t chunk = (remaining > sizeof(temp_buf)) ? sizeof(temp_buf) : remaining;
+            memcpy(temp_buf, src, chunk);
+            int ret = mflash_drv_write(current_offset, (uint32_t *)temp_buf, chunk);
+            if (ret != 0) {
+                return -EIO;
+            }
+            src += chunk;
+            current_offset += chunk;
+            remaining -= chunk;
+        }
+        return 0;
+    }
+
     int ret = mflash_drv_write(offset, (uint32_t *)data, len);
     return (ret == 0) ? 0 : -EIO;
 }
