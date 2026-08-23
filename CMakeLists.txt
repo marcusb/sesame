@@ -127,6 +127,7 @@ add_custom_target(sesame_bin ALL DEPENDS ${CMAKE_BINARY_DIR}/sesame.bin)
 # Build the RAM variant automatically within the main build folder
 if(NOT DEFINED ENV{SKIP_RAM_VARIANT})
     include(ExternalProject)
+    if(NOT CONFIG_CHIP)
     ExternalProject_Add(ram_variant
         SOURCE_DIR      "${CMAKE_SOURCE_DIR}"
         BINARY_DIR      "${CMAKE_BINARY_DIR}/ram-build"
@@ -141,5 +142,6 @@ if(NOT DEFINED ENV{SKIP_RAM_VARIANT})
         BUILD_ALWAYS    TRUE
     )
 endif()
+    endif()
 
 endif()

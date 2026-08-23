@@ -39,7 +39,7 @@ Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rt
 ```sh
 rm -rf build && west build --sysbuild
 ```
-*(Note: Always run a clean build and delete the `build` directory when changing `sysbuild.conf`, `sysbuild/mcuboot.conf`, `prj.conf`, `Kconfig`, or Kconfig variables to ensure Zephyr properly regenerates headers and caches across all multi-stage variant builds.)*
+*(Note: Always run a clean build and delete the `build` directory when changing `sysbuild.conf`, `sysbuild/mcuboot.conf`, `prj.conf`, `Kconfig`, or Kconfig variables. If you have Matter enabled via `CONFIG_CHIP=y`, the `ram_variant` will automatically be disabled as it exceeds the 384KB SRAM capacity.)*
 
 **Incremental build:**
 

@@ -195,6 +195,14 @@ The Zephyr sysbuild system handles building both the MCUboot bootloader and the 
 rm -rf build
 west build --sysbuild
 ```
+*(Note: If you have Matter enabled via `CONFIG_CHIP=y`, the `ram_variant` will automatically be disabled as it exceeds the 384KB SRAM capacity.)*
+
+This produces `build/mcuboot/zephyr/mcuboot.bin` and `build/sesame/zephyr/zephyr.signed.bin`.
+
+```sh
+rm -rf build
+west build --sysbuild
+```
 This produces `build/mcuboot/zephyr/mcuboot.bin` and `build/sesame/zephyr/zephyr.signed.bin`.
 
 ### QEMU Emulation
