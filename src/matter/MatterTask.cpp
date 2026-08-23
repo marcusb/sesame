@@ -1,6 +1,7 @@
 #include <credentials/examples/DeviceAttestationCredsExample.h>
 #include "matter_endpoints.h"
 #include "matter_task.h"
+#include "SesameCommissionableDataProvider.h"
 #include "controller.h"
 #include <platform/CHIPDeviceLayer.h>
 #include <app/server/Server.h>
@@ -23,6 +24,10 @@ extern "C" void matter_task_start(void)
 {
     LOG_INF("Initializing CHIP Stack");
     chip::DeviceLayer::PlatformMgr().InitChipStack();
+    static SesameCommissionableDataProvider sProvider;
+    if (sProvider.Init() == CHIP_NO_ERROR) {
+        chip::DeviceLayer::SetCommissionableDataProvider(&sProvider);
+    }
     chip::Credentials::SetDeviceAttestationCredentialsProvider(chip::Credentials::Examples::GetExampleDACProvider());
     
     // Initialize the ZCL server
