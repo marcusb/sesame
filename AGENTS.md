@@ -98,7 +98,7 @@ contents as suspect until you have proven its mtime is fresh.
 ### App framework and management
 
 1. **System startup** (`main.c`): Initializes generic RTOS scheduler and app tasks. Hardware-specific initialization is handled in `board_main.c` (physical device) or `qemu_main.c` (QEMU).
-2. **Network stack** (`network_manager.c`): Manages WiFi on hardware. QEMU uses direct Ethernet initialization in `qemu_main.c`.
+2. **Network stack** (`network.c`): Manages WiFi on hardware. QEMU uses direct Ethernet initialization in `qemu_main.c`.
 3. **Configuration** (`config_manager.c`): Reads/writes protobuf config via `psm.h` abstraction.
 4. **Control interfaces**:
    - HTTP server (`httpd.c`) for REST API and device setup
@@ -110,14 +110,14 @@ contents as suspect until you have proven its mtime is fresh.
 | ------------------------ | ----------------------- | -------------------- |
 | **App startup**          | `main.c`                | Initializes generic app tasks, Zephyr OS                             |
 | **Board Entry**          | `board_main.c`          | Hardware-specific init, starts WiFi network manager                 |
-| **Network Manager**      | `network_manager.c`     | WiFi state machine, IP configuration (DHCP), hardware only   |
+| **Network Manager**      | `network.c`     | WiFi state machine, IP configuration (DHCP), hardware only   |
 | **HTTP Server**          | `httpd.c`               | Receives config and OTA requests via REST, protobuf payloads                |
 | **MQTT**                 | `mqtt.c`                | MQTT agent for pub/sub, topic structure, reconnection logic                 |
 | **Config Manager**       | `config_manager.c`      | Read/write AppConfig (network, MQTT, logging) stored in PSM         |
 | **OTA**                  | `ota.c`, `ota_client.c` | Firmware download, partition management, hardware only              |
-| **LEDs & Buttons**       | `leds.c`, `gpio.c`      | Status indicators, user input handling, hardware only               |
+| **LEDs & Buttons**       | `leds.c`      | Status indicators, user input handling, hardware only               |
 | **PIC comms**            | `pic_uart.c`            | Serial I/O with the PIC16 for door control and status, hardware only|
-| **Logging**              | `logging.c`, `syslog.c` | Circular buffer logs, syslog facility                               |
+| **Logging**              | `logging.c`, `sesame_syslog.c` | Circular buffer logs, syslog facility                               |
 | **Board-specific files** | `board/*`               | Flash layout, board config, ld scripts                             |
 | **QEMU Stubs**           | `qemu_stubs.c`          | Mocked peripherals for QEMU emulation                               |
 | **QEMU PSM**             | `qemu_psm.c`            | Persistent storage via semihosting file I/O                         |
@@ -433,7 +433,7 @@ sesame/
 │   ├── main.c          # Entry point, Zephyr init
 │   ├── mqtt.c          # MQTT agent (thread + publish)
 │   ├── httpd.c         # HTTP server callbacks
-│   ├── network_manager.c # WiFi & TCP/IP state machine
+│   ├── network.c # WiFi & TCP/IP state machine
 │   ├── config_manager.c  # Flash config I/O
 │   ├── ota.c, ota_client.c # OTA logic
 │   └── ...
@@ -441,7 +441,7 @@ sesame/
 │   ├── controller.h    # Common data structues for controller queue
 │   ├── mqtt.h, httpd.h, network.h, etc.
 ├── board/              # Board support
-│   ├── board.c, clock_config.c, pin_mux.c
+│   ├── board.c
 ├── proto/              # Protobuf definitions
 │   ├── api.proto       # OTA request/response
 │   └── app_config.proto # Configuration schema
