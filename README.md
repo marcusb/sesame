@@ -187,13 +187,31 @@ apt install cmake ninja-build python3-protobuf openocd qemu-system-arm python3-v
 
 Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rtos/sdk-ng/releases) installed (e.g. in `~/zephyr-sdk`).
 
-**Python Environment:**
-Create and activate a virtual environment, then install dependencies:
-```sh
-python3 -m venv .venv
-source .venv/bin/activate
-pip install west pyserial protobuf
-```
+### Bootstrapping the Project
+
+This project uses a self-contained [West workspace topology](https://docs.zephyrproject.org/latest/develop/west/workspaces.html). Zephyr and its dependencies are managed directly within this repository.
+
+1. **Clone the repository with its submodules (Matter & MW320 SDK):**
+   ```sh
+   git clone --recursive https://github.com/marcusb/sesame.git
+   cd sesame
+   ```
+
+2. **Set up the Python Environment:**
+   ```sh
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install west pyserial protobuf
+   ```
+
+3. **Initialize and update the West workspace:**
+   *Note: Ensure you do not have `ZEPHYR_BASE` exported in your environment before running this.*
+   ```sh
+   west init -l .
+   west update
+   ```
+
+   *West will download the Zephyr RTOS, its modules (into `./deps/`), and the custom MCUboot bootloader.*
 
 ### Building
 

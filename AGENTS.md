@@ -32,13 +32,31 @@ apt install cmake ninja-build protobuf-compiler python3-protobuf openocd qemu-sy
 
 Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rtos/sdk-ng/releases) installed (e.g. in `~/zephyr-sdk`).
 
-**Python Environment:**
-Create and activate a virtual environment, then install dependencies:
-```sh
-python3 -m venv .venv
-source .venv/bin/activate
-pip install west pyserial protobuf
-```
+### Bootstrapping the Project
+
+This project uses a self-contained West workspace topology (T2).
+
+1. **Clone the repository with its submodules (Matter & MW320 SDK):**
+   ```sh
+   git clone --recursive https://github.com/marcusb/sesame.git
+   cd sesame
+   ```
+   *(If you already cloned without `--recursive`, run `git submodule update --init`)*
+
+2. **Set up the Python Environment:**
+   ```sh
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install west pyserial protobuf
+   ```
+
+3. **Initialize and update the West workspace:**
+   Ensure `ZEPHYR_BASE` is *not* exported in your shell.
+   ```sh
+   west init -l .
+   west update
+   ```
+   *Note: Zephyr modules are placed in `./deps/` to prevent clashing with the local `./modules/mw320_sdk`.*
 
 ### Build Commands
 
