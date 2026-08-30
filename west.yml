@@ -2,10 +2,20 @@ manifest:
   remotes:
     - name: zephyrproject-rtos
       url-base: https://github.com/zephyrproject-rtos
+    - name: marcusb
+      url-base: https://github.com/marcusb
+
   projects:
+    - name: mcuboot
+      remote: marcusb
+      revision: sesame
+      path: bootloader/mcuboot
+
     - name: zephyr
       remote: zephyrproject-rtos
       revision: main
-      import: true
+      import:
+        path-prefix: deps
+
   self:
-    path: sesame
+    path: .
