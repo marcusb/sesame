@@ -191,10 +191,18 @@ Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rt
 
 This project uses a self-contained [West workspace topology](https://docs.zephyrproject.org/latest/develop/west/workspaces.html). Zephyr and its dependencies are managed directly within this repository.
 
-1. **Clone the repository with its submodules (Matter & MW320 SDK):**
+1. **Clone the repository and initialize submodules:**
    ```sh
-   git clone --recursive https://github.com/marcusb/sesame.git
+   git clone https://github.com/marcusb/sesame.git
    cd sesame
+   
+   # Initialize Sesame's direct submodules
+   git submodule update --init
+   
+   # Selectively check out ONLY the Matter submodules needed for Zephyr
+   cd third_party/connectedhomeip
+   ./scripts/checkout_submodules.py --platform zephyr
+   cd ../..
    ```
 
 2. **Set up the Python Environment:**
