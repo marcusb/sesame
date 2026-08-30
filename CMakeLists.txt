@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.20.0)
 
 # ZEPHYR_EXTRA_MODULES is required to trigger zephyr_module.py, which generates
 # kconfig_module_dirs.cmake. The mw320_sdk module provides SDK driver sources.
-list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/modules/mw320_sdk ${CMAKE_CURRENT_SOURCE_DIR}/mcuboot)
+list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/modules/mw320_sdk)
 
 # Custom board and SOC root directories (freestanding application)
 # Zephyr looks for $BOARD_ROOT/boards/<arch>/<board> and $SOC_ROOT/soc/<vendor>/<soc>
