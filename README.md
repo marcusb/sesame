@@ -196,13 +196,8 @@ This project uses a self-contained [West workspace topology](https://docs.zephyr
    git clone https://github.com/marcusb/sesame.git
    cd sesame
    
-   # Initialize Sesame's direct submodules
-   git submodule update --init
-   
-   # Selectively check out ONLY the Matter submodules needed for Zephyr
-   cd third_party/connectedhomeip
-   ./scripts/checkout_submodules.py --platform zephyr
-   cd ../..
+   # Initialize all submodules recursively
+   git submodule update --init --recursive
    ```
 
 2. **Set up the Python Environment:**
