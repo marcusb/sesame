@@ -11,6 +11,7 @@ message NetworkConfig {
     string ssid = 2;
     WifiSecurity security = 3;
     string password = 4;
+    string ntp_server = 5;
 }
 
 message MqttConfig {

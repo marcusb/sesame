@@ -1,6 +1,7 @@
 NetworkConfig.hostname max_length:32
 NetworkConfig.ssid max_length:32
 NetworkConfig.password max_length:32
+NetworkConfig.ntp_server max_length:32
 
 MqttConfig.broker_host max_length:32
 MqttConfig.prefix max_length:32

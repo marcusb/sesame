@@ -1,7 +1,10 @@
 #include <string.h>
+#include <time.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net/hostname.h>
+#include <zephyr/net/sntp.h>
+#include <zephyr/sys/clock.h>
 
 #include "app_logging.h"
 #include "mqtt.h"
@@ -27,6 +30,60 @@ LOG_MODULE_REGISTER(network, LOG_LEVEL_INF);
 static struct net_mgmt_event_callback ipv4_mgmt_cb;
 static struct net_mgmt_event_callback ipv6_mgmt_cb;
 static struct net_mgmt_event_callback dns_mgmt_cb;
+
+static struct k_work_delayable sntp_sync_work;
+
+static void sntp_sync_handler(struct k_work* work) {
+    struct sntp_time ts;
+    int ret = -1;
+
+    if (strlen(app_config.network_config.ntp_server) > 0) {
+        LOG_DBG("SNTP: querying configured server %s",
+                app_config.network_config.ntp_server);
+        ret = sntp_simple(app_config.network_config.ntp_server, 5000, &ts);
+    }
+
+    if (ret < 0) {
+        struct net_if* iface = net_if_get_default();
+#ifdef CONFIG_NET_DHCPV4_OPTION_NTP_SERVER
+        if (iface &&
+            !net_ipv4_is_addr_unspecified(&iface->config.dhcpv4.ntp_addr)) {
+            struct net_sockaddr_in sntp_addr = {0};
+            sntp_addr.sin_family = NET_AF_INET;
+            sntp_addr.sin_addr.s_addr = iface->config.dhcpv4.ntp_addr.s_addr;
+            sntp_addr.sin_port = htons(123);
+
+            char addr_str[NET_IPV4_ADDR_LEN];
+            net_addr_ntop(NET_AF_INET, &sntp_addr.sin_addr, addr_str,
+                          sizeof(addr_str));
+            LOG_INF("SNTP: querying DHCP server %s", addr_str);
+
+            ret = sntp_simple_addr((struct net_sockaddr*)&sntp_addr,
+                                   sizeof(sntp_addr), 5000, &ts);
+        } else {
+            LOG_DBG("SNTP: DHCP option 42 (NTP server) not provided");
+        }
+#endif
+    }
+
+    if (ret == 0) {
+        struct timespec tspec;
+        tspec.tv_sec = ts.seconds;
+        tspec.tv_nsec = ((uint64_t)ts.fraction * (uint64_t)1000000000) >> 32;
+        sys_clock_settime(SYS_CLOCK_REALTIME, &tspec);
+
+        struct tm tm;
+        time_t t = tspec.tv_sec;
+        gmtime_r(&t, &tm);
+        char time_str[32];
+        strftime(time_str, sizeof(time_str), "%Y-%m-%dT%H:%M:%SZ", &tm);
+
+        LOG_INF("SNTP sync success, time updated to %s", time_str);
+    } else {
+        k_work_reschedule(&sntp_sync_work, K_SECONDS(60));
+    }
+}
+
 static struct net_mgmt_event_callback wifi_mgmt_cb;
 static struct net_mgmt_event_callback l4_mgmt_cb;
 
@@ -44,6 +101,7 @@ static void ip_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                 LOG_INF("IPv4 address: %s",
                         net_addr_ntop(AF_INET, cb->info, buf, sizeof(buf)));
                 k_event_post(&network_events, IPV4_UP_EVENT);
+                k_work_reschedule(&sntp_sync_work, K_NO_WAIT);
             }
             break;
         }
@@ -151,6 +209,7 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
 static void l4_event_handler(struct net_mgmt_event_callback* cb,
                              uint64_t mgmt_event, struct net_if* iface) {
     if (mgmt_event == NET_EVENT_L4_CONNECTED) {
+        k_work_reschedule(&sntp_sync_work, K_NO_WAIT);
         k_event_post(&network_events, L4_UP_EVENT);
     } else if (mgmt_event == NET_EVENT_L4_DISCONNECTED) {
         k_event_set(&network_events, 0);
@@ -158,6 +217,7 @@ static void l4_event_handler(struct net_mgmt_event_callback* cb,
 }
 
 void network_init(void) {
+    k_work_init_delayable(&sntp_sync_work, sntp_sync_handler);
     net_mgmt_init_event_callback(
         &ipv4_mgmt_cb, ip_mgmt_event_handler,
         NET_EVENT_IPV4_ADDR_ADD | NET_EVENT_IPV4_ROUTER_ADD);
