@@ -93,12 +93,8 @@ zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/mcuboot/boot/zephyr/inclu
 # MW320 SDK sources are provided by the mw320_sdk Zephyr module
 # via ZEPHYR_EXTRA_MODULES
 
-include(FetchContent)
-FetchContent_Declare(nanopb
-    GIT_REPOSITORY https://github.com/nanopb/nanopb.git
-    GIT_TAG        0.4.9.1
-)
-FetchContent_MakeAvailable(nanopb)
+set(nanopb_SOURCE_DIR ${CMAKE_SOURCE_DIR}/third_party/connectedhomeip/third_party/nanopb/repo)
+add_subdirectory(${nanopb_SOURCE_DIR} ${CMAKE_BINARY_DIR}/nanopb)
 list(APPEND CMAKE_MODULE_PATH "${nanopb_SOURCE_DIR}/extra")
 find_package(Nanopb REQUIRED)
 
