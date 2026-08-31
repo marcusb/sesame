@@ -176,6 +176,25 @@ static int matter_reset_handler(struct http_client_ctx* client,
     }
     return 0;
 }
+
+static int matter_info_handler(struct http_client_ctx* client,
+                               enum http_transaction_status status,
+                               const struct http_request_ctx* req,
+                               struct http_response_ctx* res, void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        static char buf[2048];
+        matter_get_fabric_info_json(buf, sizeof(buf));
+        static const struct http_header headers[] = {
+            {.name = "Content-Type", .value = "application/json"}};
+        res->status = 200;
+        res->headers = headers;
+        res->header_count = 1;
+        res->body_len = strlen(buf);
+        res->body = (const uint8_t*)buf;
+        res->final_chunk = true;
+    }
+    return 0;
+}
 #endif
 
 /* --- HTTP Resource Details --- */
@@ -253,6 +272,13 @@ static struct http_resource_detail_dynamic matter_reset_detail = {
     .cb = matter_reset_handler,
     .user_data = NULL,
 };
+
+static struct http_resource_detail_dynamic matter_info_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_GET)},
+    .cb = matter_info_handler,
+    .user_data = NULL,
+};
 #endif
 
 /* --- HTTP Resources Definitions --- */
@@ -277,4 +303,6 @@ HTTP_RESOURCE_DEFINE(matter_commission_resource, httpd_service,
                      "/matter/commission", &matter_commission_detail);
 HTTP_RESOURCE_DEFINE(matter_reset_resource, httpd_service, "/matter/reset",
                      &matter_reset_detail);
+HTTP_RESOURCE_DEFINE(matter_info_resource, httpd_service, "/matter/info",
+                     &matter_info_detail);
 #endif

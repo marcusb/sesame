@@ -41,6 +41,11 @@ bool matter_commission_open(uint32_t timeout_s);
  */
 void matter_wipe_fabrics(void);
 
+/**
+ * Get fabric info in JSON format.
+ */
+void matter_get_fabric_info_json(char *buf, size_t max_len);
+
 #ifdef __cplusplus
 }
 #endif

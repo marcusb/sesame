@@ -82,7 +82,7 @@ target_sources(app PRIVATE
 )
 
 if(CONFIG_CHIP)
-    target_sources(app PRIVATE src/matter/MatterTask.cpp src/matter/MatterOTA.cpp)
+    target_sources(app PRIVATE src/matter/MatterTask.cpp src/matter/MatterOTA.cpp src/matter/MatterInfo.cpp)
 endif()
 
 zephyr_include_directories(include)
