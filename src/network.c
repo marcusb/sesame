@@ -1,6 +1,7 @@
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/net/hostname.h>
 
 #include "app_logging.h"
 #include "mqtt.h"
@@ -180,6 +181,14 @@ void network_init(void) {
         &l4_mgmt_cb, l4_event_handler,
         NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED);
     net_mgmt_add_event_callback(&l4_mgmt_cb);
+
+#ifdef CONFIG_NET_HOSTNAME_ENABLE
+    const char* hn = app_config.network_config.hostname;
+    if (hn[0] == '\0') {
+        hn = "sesame";
+    }
+    net_hostname_set(hn, strlen(hn));
+#endif
 
     log_existing_ipv6_addresses(net_if_get_default());
 }
