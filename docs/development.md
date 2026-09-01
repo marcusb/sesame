@@ -23,20 +23,16 @@ This project uses a self-contained [West workspace topology](https://docs.zephyr
    ```
 
 2. **Set up the Python Environment & Matter Bootstrap:**
-   Because we build Matter within Zephyr, we must integrate Pigweed's environment with Zephyr's `.venv`.
+   We build Matter within Zephyr, and they both expect a Python environment. To avoid managing two separate virtual environments and dealing with import errors, we use Matter's Pigweed environment as the sole environment and install Zephyr's tools directly into it.
 
    ```sh
-   # 1. Set up the local venv
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install west pyserial protobuf python-path
-   
-   # 2. Export PYTHONPATH so CMake/GN can find packages in the .venv
-   export PYTHONPATH=$PWD/.venv/lib/python3.14/site-packages:$PYTHONPATH
-   
-   # 3. Bootstrap the Matter (CHIP) environment
+   # 1. Bootstrap the Matter (CHIP) environment (downloads gn, ninja, zap, and python)
    source third_party/connectedhomeip/scripts/activate.sh
+   
+   # 2. Install Zephyr's dependencies into the Pigweed environment
+   pip install west pyserial protobuf python-path
    ```
+   *Note: Pigweed treats its environment as ephemeral. If you update Matter and it re-bootstraps, you may need to re-run the `pip install` step if `west` becomes unavailable.*
 
 3. **Initialize and update the West workspace:**
    *Note: Ensure you do not have `ZEPHYR_BASE` exported in your environment before running this.*
@@ -72,8 +68,6 @@ The Zephyr sysbuild system handles building both the MCUboot bootloader and the 
 *Ensure you have activated the Python and Matter environment before building (see Bootstrapping above).*
 
 ```sh
-export PYTHONPATH=$PWD/.venv/lib/python3.14/site-packages:$PYTHONPATH
-source .venv/bin/activate
 source third_party/connectedhomeip/scripts/activate.sh
 
 rm -rf build
