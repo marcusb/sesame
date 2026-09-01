@@ -54,6 +54,11 @@ This project uses a self-contained West workspace topology (T2).
    
    # 2. Install Zephyr's dependencies into the Pigweed environment
    pip install west pyserial protobuf python-path
+   pip install -r deps/zephyr/scripts/requirements.txt
+   pip install -r bootloader/mcuboot/scripts/requirements.txt
+   
+   # Python 3.14 compatibility fix for Pigweed's pinned older typing_extensions
+   pip install --upgrade typing_extensions
    ```
    *Note: Pigweed treats its environment as ephemeral. If you update Matter and it re-bootstraps, you may need to re-run the `pip install` step if `west` becomes unavailable.*
 
@@ -89,7 +94,7 @@ If you need to change cluster configurations (e.g. adding a new endpoint or feat
 ```sh
 source third_party/connectedhomeip/scripts/activate.sh
 
-rm -rf build && west build --sysbuild
+rm -rf build && ZEPHYR_BASE=$PWD/deps/zephyr west build --sysbuild
 ```
 
 **Incremental build:**
