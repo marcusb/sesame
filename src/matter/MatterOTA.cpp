@@ -1,6 +1,7 @@
 #include <app/clusters/ota-requestor/OTADownloader.h>
 #include <app/clusters/ota-requestor/OTARequestorInterface.h>
 #include <app/clusters/ota-requestor/DefaultOTARequestor.h>
+#include <app/clusters/ota-requestor/CodegenIntegration.h>
 #include <app/clusters/ota-requestor/DefaultOTARequestorStorage.h>
 #include <app/clusters/ota-requestor/DefaultOTARequestorUserConsent.h>
 #include <app/clusters/ota-requestor/DefaultOTARequestorDriver.h>
@@ -26,7 +27,7 @@ public:
             if (err == 0) {
                 mDownloader->OnPreparedForDownload(CHIP_NO_ERROR);
             } else {
-                mDownloader->OnPreparedForDownload(CHIP_ERROR_INTERNAL);
+                (void)mDownloader->OnPreparedForDownload(CHIP_ERROR_INTERNAL);
             }
         });
         return CHIP_NO_ERROR;
@@ -68,7 +69,7 @@ public:
             chip::Platform::MemoryFree(buf);
             if (err == 0) {
                 mParams.downloadedBytes += size;
-                mDownloader->FetchNextData();
+                (void)mDownloader->FetchNextData();
             } else {
                 mDownloader->EndDownload(CHIP_ERROR_WRITE_FAILED);
             }
@@ -101,7 +102,7 @@ void InitOTARequestor()
 {
     chip::SetRequestorInstance(&chip::gRequestorCore);
     chip::gRequestorStorage.Init(chip::Server::GetInstance().GetPersistentStorage());
-    chip::gRequestorCore.Init(chip::Server::GetInstance(), chip::gRequestorStorage, chip::gRequestorUser, chip::gDownloader);
+    (void)chip::gRequestorCore.Init(chip::Server::GetInstance(), chip::gRequestorStorage, chip::gRequestorUser, chip::gDownloader, chip::GetOTARequestorAttributes(), chip::GetDefaultOTARequestorEventGenerator());
     chip::gImageProcessor.SetOTADownloader(&chip::gDownloader);
     chip::gDownloader.SetImageProcessorDelegate(&chip::gImageProcessor);
     chip::gRequestorUser.Init(&chip::gRequestorCore, &chip::gImageProcessor);

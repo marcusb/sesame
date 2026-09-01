@@ -13,7 +13,8 @@ class SesameCommissionableDataProvider
     CHIP_ERROR Init() {
         uint8_t mac[6] = {0};
         chip::MutableByteSpan macSpan(mac);
-        chip::DeviceLayer::ConfigurationMgr().GetPrimaryMACAddress(macSpan);
+        (void)chip::DeviceLayer::ConfigurationMgr().GetPrimaryMACAddress(
+            macSpan);
 
         // Derive discriminator (12-bit) from MAC
         mDiscriminator = ((mac[4] << 8) | mac[5]) & 0x0FFF;

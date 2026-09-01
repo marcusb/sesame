@@ -4799,7 +4799,7 @@
               "mfgCode": null,
               "source": "server",
               "isIncoming": 0,
-              "isEnabled": 1
+              "isEnabled": 0
             },
             {
               "name": "ViewGroup",
@@ -4815,7 +4815,7 @@
               "mfgCode": null,
               "source": "server",
               "isIncoming": 0,
-              "isEnabled": 1
+              "isEnabled": 0
             },
             {
               "name": "GetGroupMembership",
@@ -4831,7 +4831,7 @@
               "mfgCode": null,
               "source": "server",
               "isIncoming": 0,
-              "isEnabled": 1
+              "isEnabled": 0
             },
             {
               "name": "RemoveGroup",
@@ -4847,7 +4847,7 @@
               "mfgCode": null,
               "source": "server",
               "isIncoming": 0,
-              "isEnabled": 1
+              "isEnabled": 0
             },
             {
               "name": "RemoveAllGroups",

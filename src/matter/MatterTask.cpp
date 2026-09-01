@@ -10,6 +10,8 @@
 #include <zephyr/logging/log.h>
 #include <app/util/attribute-storage.h>
 #include <app-common/zap-generated/attributes/Accessors.h>
+#include <app/clusters/window-covering-server/CodegenIntegration.h>
+#include <app/clusters/window-covering-server/WindowCoveringCluster.h>
 #include <app-common/zap-generated/ids/Attributes.h>
 #include <app-common/zap-generated/ids/Clusters.h>
 #include <data-model-providers/codegen/Instance.h>
@@ -23,7 +25,7 @@ LOG_MODULE_REGISTER(matter_task, LOG_LEVEL_INF);
 extern "C" void matter_task_start(void)
 {
     LOG_INF("Initializing CHIP Stack");
-    chip::DeviceLayer::PlatformMgr().InitChipStack();
+    (void)chip::DeviceLayer::PlatformMgr().InitChipStack();
     static SesameCommissionableDataProvider sProvider;
     if (sProvider.Init() == CHIP_NO_ERROR) {
         chip::DeviceLayer::SetCommissionableDataProvider(&sProvider);
@@ -35,21 +37,21 @@ extern "C" void matter_task_start(void)
     static chip::CommonCaseDeviceServerInitParams initParams;
     (void) initParams.InitializeStaticResourcesBeforeServerInit();
     initParams.dataModelProvider = chip::app::CodegenDataModelProviderInstance(initParams.persistentStorageDelegate);
-    chip::Server::GetInstance().Init(initParams);
+    (void)chip::Server::GetInstance().Init(initParams);
 
     InitOTARequestor();
     
     // Print setup info
     PrintOnboardingCodes(chip::RendezvousInformationFlag(chip::RendezvousInformationFlag::kOnNetwork));
 
-    chip::DeviceLayer::PlatformMgr().StartEventLoopTask();
+    (void)chip::DeviceLayer::PlatformMgr().StartEventLoopTask();
 
     // Start a polling timer to open the commissioning window after network is up
     static chip::System::TimerCompleteCallback sCommissioningPollTimer;
     sCommissioningPollTimer = [](chip::System::Layer *, void *) {
         if (network_is_up()) {
             LOG_INF("Network is UP. Opening commissioning window...");
-            chip::DeviceLayer::PlatformMgr().ScheduleWork([](intptr_t) {
+            (void)chip::DeviceLayer::PlatformMgr().ScheduleWork([](intptr_t) {
                 chip::Server::GetInstance().GetCommissioningWindowManager().OpenBasicCommissioningWindow(
                     chip::System::Clock::Seconds16(300),
                     chip::CommissioningWindowAdvertisement::kDnssdOnly
@@ -80,7 +82,10 @@ void MatterWindowCoveringClusterServerAttributeChangedCallback(const app::Concre
         if (attributePath.mAttributeId == Attributes::TargetPositionLiftPercent100ths::Id)
         {
             app::DataModel::Nullable<chip::Percent100ths> targetPosition;
-            Attributes::TargetPositionLiftPercent100ths::Get(attributePath.mEndpointId, targetPosition);
+            auto wc = chip::app::Clusters::WindowCovering::FindClusterOnEndpoint(attributePath.mEndpointId);
+            if (wc) {
+                targetPosition = wc->GetTargetPositionLiftPercent100ths();
+            }
             if (!targetPosition.IsNull()) {
                 ctrl_msg_t msg = {};
                 msg.type = CTRL_MSG_DOOR_CONTROL;
@@ -116,11 +121,13 @@ void matter_update_door_state(const door_state_msg_t* msg)
         pos.SetNonNull(5000); // Partially closed
     }
     
-    chip::DeviceLayer::PlatformMgr().ScheduleWork([](intptr_t arg) {
-        chip::app::DataModel::Nullable<chip::Percent100ths> p;
-        p.SetNonNull((uint16_t)arg);
-        // Assuming endpoint 1 for Window Covering
-        chip::app::Clusters::WindowCovering::Attributes::CurrentPositionLiftPercent100ths::Set(1, p);
+    (void)chip::DeviceLayer::PlatformMgr().ScheduleWork([](intptr_t arg) {
+        auto wc = chip::app::Clusters::WindowCovering::FindClusterOnEndpoint(1);
+        if (wc) {
+            chip::app::DataModel::Nullable<chip::Percent100ths> p;
+            p.SetNonNull((uint16_t)arg);
+            wc->SetCurrentPositionLiftPercent100ths(p);
+        }
     }, pos.Value());
 }
 

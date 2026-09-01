@@ -45,11 +45,20 @@ This project uses a self-contained West workspace topology (T2).
    git submodule update --init --recursive
    ```
 
-2. **Set up the Python Environment:**
+2. **Set up the Python Environment & Matter Bootstrap:**
+   Because we build Matter within Zephyr, we must integrate Pigweed's environment with Zephyr's `.venv`.
+
    ```sh
+   # 1. Set up the local venv
    python3 -m venv .venv
    source .venv/bin/activate
-   pip install west pyserial protobuf
+   pip install west pyserial protobuf python-path
+   
+   # 2. Export PYTHONPATH so CMake/GN can find packages in the .venv
+   export PYTHONPATH=$PWD/.venv/lib/python3.14/site-packages:$PYTHONPATH
+   
+   # 3. Bootstrap the Matter (CHIP) environment
+   source third_party/connectedhomeip/scripts/activate.sh
    ```
 
 3. **Initialize and update the West workspace:**
@@ -60,11 +69,32 @@ This project uses a self-contained West workspace topology (T2).
    ```
    *Note: Zephyr modules are placed in `./deps/` to prevent clashing with the local `./modules/mw320_sdk`.*
 
+### Code Generation (ZAP / Matter IDL)
+
+Matter uses ZCL Advanced Platform (ZAP) to define clusters and endpoints. 
+The configuration is stored in `src/matter/window-app.zap` and its corresponding IDL format `src/matter/window-app.matter`.
+
+If you need to change cluster configurations (e.g. adding a new endpoint or feature):
+1. Modify `window-app.zap` using the ZAP UI:
+   ```sh
+   third_party/connectedhomeip/.environment/cipd/packages/zap/zap-cli       -z third_party/connectedhomeip/src/app/zap-templates/zcl/zcl.json       src/matter/window-app.zap
+   ```
+2. Generate the updated `window-app.matter` file from your changes:
+   ```sh
+   third_party/connectedhomeip/scripts/tools/zap/generate.py       src/matter/window-app.zap       -o src/matter/
+   ```
+3. Rebuild the project. The build system will automatically invoke `codegen.py` to generate the updated C++ static cluster configurations from `window-app.matter`. Note that sometimes generating `.matter` files adds explicit `handle command xxxResponse` lines; if you get `duplicate case value` errors in `Groups.h` or similar, ensure you remove `handle command xxxResponse` lines from the `.matter` file.
+
 ### Build Commands
 
 **Clean build:**
 
+*Ensure you have activated the environment (see Bootstrapping above) before building.*
 ```sh
+export PYTHONPATH=$PWD/.venv/lib/python3.14/site-packages:$PYTHONPATH
+source .venv/bin/activate
+source third_party/connectedhomeip/scripts/activate.sh
+
 rm -rf build && west build --sysbuild
 ```
 
