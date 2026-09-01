@@ -94,7 +94,7 @@ If you need to change cluster configurations (e.g. adding a new endpoint or feat
 ```sh
 source third_party/connectedhomeip/scripts/activate.sh
 
-rm -rf build && ZEPHYR_BASE=$PWD/deps/zephyr west build --sysbuild
+rm -rf build && west build --sysbuild
 ```
 
 **Incremental build:**

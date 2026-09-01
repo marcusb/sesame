@@ -76,7 +76,7 @@ The Zephyr sysbuild system handles building both the MCUboot bootloader and the 
 source third_party/connectedhomeip/scripts/activate.sh
 
 rm -rf build
-ZEPHYR_BASE=$PWD/deps/zephyr west build --sysbuild
+west build --sysbuild
 ```
 
 This produces `build/mcuboot/zephyr/mcuboot.bin` and `build/sesame/zephyr/zephyr.signed.bin`.
