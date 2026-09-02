@@ -307,7 +307,8 @@ The `-l` flag is only needed for initial device provisioning (first-time install
 ./tools/monitor.py | tee output.log
 ```
 
-**Stack traces** – Compiled with `USE_BACKTRACE=ON` by default; on crash, backtrace printed to console.
+**Stack traces and Core Dumps** – Compiled with `USE_BACKTRACE=ON` by default; on crash, backtrace printed to console.
+If a kernel panic occurs, Zephyr will dump a hex core block. See `docs/development.md` under "Debugging Kernel Panics" for instructions on how to parse this into a C++ stack trace using GDB.
 
 ### Unit Tests
 

@@ -125,3 +125,44 @@ TEST_RESULT:0
 ## References
 
 For hardware details see the [teardown](teardown.md).
+
+## Logs & Debugging
+
+The system outputs logs via the serial interface (`/dev/ttyUSB0` at 115200 baud).
+You can capture and monitor the serial output simultaneously by running:
+```sh
+./tools/flash_and_monitor.sh [timeout_sec] [logfile]
+```
+
+### Debugging Kernel Panics (Core Dumps)
+
+If the device crashes due to a kernel panic or `abort()`, Zephyr will dump the memory core to the serial output (if `CONFIG_DEBUG_COREDUMP=y` is enabled in `prj.conf`).
+
+To extract and decode the core dump:
+
+1. **Extract the dump block:**
+   Find the block in your serial log starting with `#CD:BEGIN#` and ending with `#CD:END#`. Save this entire block to a file, for example, `coredump.log`.
+
+2. **Clean up the log (optional but recommended):**
+   Serial monitors often inject ANSI escape codes or Windows carriage returns (`\r`) which break the Python parser. Clean it up before parsing:
+   ```sh
+   sed -r 's/\x1B\[[0-9;]*[a-zA-Z]//g' coredump.log | tr -d '\r' > coredump_clean.log
+   ```
+
+3. **Convert the log to a binary core file:**
+   *Note: Ensure your Matter/Zephyr python environment is active!*
+   ```sh
+   python deps/zephyr/scripts/coredump/coredump_serial_log_parser.py coredump_clean.log core.bin
+   ```
+
+4. **Start the Zephyr GDB server:**
+   Zephyr uses a custom python-based GDB server to translate the core binary. Start it in the background on an available port (e.g. 2345):
+   ```sh
+   python deps/zephyr/scripts/coredump/coredump_gdbserver.py build/sesame/zephyr/zephyr.elf core.bin --port 2345 &
+   ```
+
+5. **Run GDB to get the backtrace:**
+   ```sh
+   ~/zephyr-sdk/gnu/arm-zephyr-eabi/bin/arm-zephyr-eabi-gdb -batch -ex "target remote localhost:2345" -ex "bt" build/sesame/zephyr/zephyr.elf
+   ```
+   *Don't forget to kill the background gdbserver when you are done (`kill %1`).*

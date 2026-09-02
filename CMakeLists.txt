@@ -82,10 +82,11 @@ target_sources(app PRIVATE
 )
 
 if(CONFIG_CHIP)
-    target_sources(app PRIVATE src/matter/MatterTask.cpp src/matter/MatterOTA.cpp src/matter/MatterInfo.cpp)
+    target_sources(app PRIVATE src/matter/MatterTask.cpp src/matter/MatterOTA.cpp src/matter/MatterInfo.cpp third_party/connectedhomeip/examples/providers/DeviceInfoProviderImpl.cpp)
 endif()
 
 zephyr_include_directories(include)
+zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip/examples/providers)
 zephyr_include_directories(${MW320_SDK_DIR}/components/flash/mflash/mw320)
 zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/mcuboot/boot/bootutil/include)
 zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/mcuboot/boot/zephyr/include)

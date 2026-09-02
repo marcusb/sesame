@@ -4,6 +4,7 @@
 #include "SesameCommissionableDataProvider.h"
 #include "controller.h"
 #include <platform/CHIPDeviceLayer.h>
+#include <DeviceInfoProviderImpl.h>
 #include <app/server/Server.h>
 #include <setup_payload/OnboardingCodesUtil.h>
 #include <app/server/CommissioningWindowManager.h>
@@ -26,6 +27,7 @@ extern "C" void matter_task_start(void)
 {
     LOG_INF("Initializing CHIP Stack");
     (void)chip::DeviceLayer::PlatformMgr().InitChipStack();
+    static chip::DeviceLayer::DeviceInfoProviderImpl gExampleDeviceInfoProvider;
     static SesameCommissionableDataProvider sProvider;
     if (sProvider.Init() == CHIP_NO_ERROR) {
         chip::DeviceLayer::SetCommissionableDataProvider(&sProvider);
@@ -37,7 +39,12 @@ extern "C" void matter_task_start(void)
     static chip::CommonCaseDeviceServerInitParams initParams;
     (void) initParams.InitializeStaticResourcesBeforeServerInit();
     initParams.dataModelProvider = chip::app::CodegenDataModelProviderInstance(initParams.persistentStorageDelegate);
+    
+    gExampleDeviceInfoProvider.SetStorageDelegate(initParams.persistentStorageDelegate);
+    chip::DeviceLayer::SetDeviceInfoProvider(&gExampleDeviceInfoProvider);
+
     (void)chip::Server::GetInstance().Init(initParams);
+
 
     InitOTARequestor();
     
