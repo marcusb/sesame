@@ -13,7 +13,7 @@ set(SOC_ROOT ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "SOC root directory")
 # Board selection (use marvell_mw302 for flash/XIP, marvell_mw302_ram for RAM load)
 set(BOARD genie_idcm/88mw320/cpu0 CACHE STRING "Zephyr board")
 
-# --- Dynamically set APP_VERSION based on Git commit ---
+# --- Dynamically set APP_VERSION based on Git commit and VERSION file ---
 execute_process(
     COMMAND git rev-parse --short=7 HEAD
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -21,45 +21,52 @@ execute_process(
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
+
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/VERSION VER_CONTENT)
+
+string(REGEX MATCH "VERSION_MAJOR = ([0-9]*)" _ "${VER_CONTENT}")
+set(APP_VERSION_MAJOR ${CMAKE_MATCH_1})
+string(REGEX MATCH "VERSION_MINOR = ([0-9]*)" _ "${VER_CONTENT}")
+set(APP_VERSION_MINOR ${CMAKE_MATCH_1})
+string(REGEX MATCH "PATCHLEVEL = ([0-9]*)" _ "${VER_CONTENT}")
+set(APP_PATCHLEVEL ${CMAKE_MATCH_1})
+
+set(APP_TAG "v${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_PATCHLEVEL}")
+
 execute_process(
-    COMMAND git rev-list --count HEAD
+    COMMAND git rev-list --count ${APP_TAG}..HEAD
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     OUTPUT_VARIABLE GIT_COMMIT_COUNT
+    RESULT_VARIABLE GIT_REV_LIST_RESULT
     OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
 )
 
-# MCUboot's imgtool strictly requires the +build suffix to be an integer.
-math(EXPR GIT_COMMIT_DEC "0x${GIT_COMMIT_HASH}")
-
-execute_process(
-    COMMAND git diff-index --quiet HEAD --
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    RESULT_VARIABLE GIT_DIFF_RESULT
-)
-
-if(DEFINED ENV{FORCE_APP_VERSION})
-    set(APP_FIRMWARE_VERSION "$ENV{FORCE_APP_VERSION}")
-else()
-    set(APP_FIRMWARE_VERSION "0.2.0+${GIT_COMMIT_DEC}")
+if(NOT GIT_REV_LIST_RESULT EQUAL 0)
+    message(FATAL_ERROR "Tag ${APP_TAG} not found or git error. Please create the tag for the current version in the VERSION file.")
 endif()
+
+if(GIT_COMMIT_COUNT GREATER 255)
+    message(FATAL_ERROR "Tweak version exceeds 255 (Current: ${GIT_COMMIT_COUNT})! Bump semver in VERSION and create a new tag.")
+endif()
+
+math(EXPR MATTER_SOFTWARE_VERSION_INT "(${APP_VERSION_MAJOR} << 24) + (${APP_VERSION_MINOR} << 16) + (${APP_PATCHLEVEL} << 8) + ${GIT_COMMIT_COUNT}")
+set(APP_FIRMWARE_VERSION "${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_PATCHLEVEL}-${GIT_COMMIT_HASH}+${GIT_COMMIT_COUNT}")
 
 # Tell MCUboot to sign the image with this version
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf
-"CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION=\"${APP_FIRMWARE_VERSION}\"
-CONFIG_MCUBOOT_EXTRA_IMGTOOL_ARGS=\"--version ${APP_FIRMWARE_VERSION}\"
-CONFIG_CHIP_DEVICE_SOFTWARE_VERSION=${GIT_COMMIT_COUNT}
-CONFIG_CHIP_DEVICE_SOFTWARE_VERSION_STRING=\"${APP_FIRMWARE_VERSION}\"\n")
-list(APPEND EXTRA_CONF_FILE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf)
-
-add_compile_definitions(APP_VERSION_STRING="${APP_FIRMWARE_VERSION}")
-
+"CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION=\"${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_PATCHLEVEL}+${GIT_COMMIT_COUNT}\"
+")
+    list(APPEND EXTRA_CONF_FILE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf)
 # Load Zephyr build system
 set(MW320_SDK_DIR ${CMAKE_SOURCE_DIR}/mw320_sdk CACHE PATH "MW320 SDK directory" FORCE)
 
 list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip/config/zephyr/chip-module)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+
 project(sesame)
+configure_file(src/matter/AppVersion.h.in ${CMAKE_CURRENT_SOURCE_DIR}/src/matter/AppVersion.h @ONLY)
 
 if(CONFIG_CHIP)
     get_filename_component(CHIP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip REALPATH)

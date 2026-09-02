@@ -1,4 +1,6 @@
 #pragma once
+#include "AppVersion.h"
+#pragma once
 #define CHIP_DEVICE_CONFIG_DEVICE_VENDOR_ID 0xFFF1
 #define CHIP_DEVICE_CONFIG_DEVICE_PRODUCT_ID 0x8001
 #define CHIP_DEVICE_CONFIG_ENABLE_WIFI 0

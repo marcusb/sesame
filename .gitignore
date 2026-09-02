@@ -43,3 +43,4 @@ tools/axf2firmware/axf2firmware
 /bootloader/
 /zephyr/
 /tools/
+src/matter/AppVersion.h

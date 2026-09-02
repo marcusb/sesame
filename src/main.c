@@ -2,6 +2,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
+#include <zephyr/app_version.h>
 #include <zephyr/device.h>
 #include <zephyr/dfu/mcuboot.h>
 #include <zephyr/drivers/gpio.h>
