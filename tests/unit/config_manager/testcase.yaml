@@ -1,0 +1,4 @@
+tests:
+  config_manager.basic:
+    tags: config nvs
+    harness: ztest

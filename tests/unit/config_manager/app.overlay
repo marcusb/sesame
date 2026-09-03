@@ -1,0 +1,18 @@
+/ {
+	chosen {
+		zephyr,flash = &flash0;
+	};
+};
+
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		psm_partition: partition@0 {
+			label = "psm";
+			reg = <0x00000000 0x00010000>;
+		};
+	};
+};
