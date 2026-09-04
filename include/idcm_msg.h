@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <assert.h>
 
 #define DCM_HEADER_BYTE 0x55
 
@@ -51,15 +52,15 @@ typedef enum {
 typedef struct {
     char zero[9];
 } __attribute__((packed)) dcm_cmd_0x04_msg_t;
-_Static_assert(sizeof(dcm_cmd_0x04_msg_t) == 9, "msg size");
-_Static_assert(sizeof(dcm_cmd_0x04_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+static_assert(sizeof(dcm_cmd_0x04_msg_t) == 9, "msg size");
+static_assert(sizeof(dcm_cmd_0x04_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint8_t val;       // 1 = open, 0 = close
     uint8_t reserved;  // always 0
 } __attribute__((packed)) dcm_door_cmd_msg_t;
-_Static_assert(sizeof(dcm_door_cmd_msg_t) == 2, "msg size");
-_Static_assert(sizeof(dcm_door_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+static_assert(sizeof(dcm_door_cmd_msg_t) == 2, "msg size");
+static_assert(sizeof(dcm_door_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint8_t val;
@@ -67,8 +68,8 @@ typedef struct {
     uint8_t duration_s;
     uint8_t reserved;  // always 0
 } __attribute__((packed)) dcm_alert_cmd_msg_t;
-_Static_assert(sizeof(dcm_alert_cmd_msg_t) == 3, "msg size");
-_Static_assert(sizeof(dcm_alert_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+static_assert(sizeof(dcm_alert_cmd_msg_t) == 3, "msg size");
+static_assert(sizeof(dcm_alert_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint8_t val;
@@ -77,8 +78,8 @@ typedef struct {
     uint8_t duration_s;
     uint8_t reserved;  // always 0
 } __attribute__((packed)) dcm_audio_cmd_msg_t;
-_Static_assert(sizeof(dcm_audio_cmd_msg_t) == 3, "msg size");
-_Static_assert(sizeof(dcm_audio_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+static_assert(sizeof(dcm_audio_cmd_msg_t) == 3, "msg size");
+static_assert(sizeof(dcm_audio_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint32_t time;
@@ -88,8 +89,8 @@ typedef struct {
     uint16_t up_limit;
     uint16_t down_limit;
 } __attribute__((packed)) dcm_door_status_req_msg_t;
-_Static_assert(sizeof(dcm_door_status_req_msg_t) == 12, "msg size");
-_Static_assert(sizeof(dcm_door_status_req_msg_t) < MAX_DCM_MSG_SIZE,
+static_assert(sizeof(dcm_door_status_req_msg_t) == 12, "msg size");
+static_assert(sizeof(dcm_door_status_req_msg_t) < MAX_DCM_MSG_SIZE,
                "msg size");
 
 typedef struct {
@@ -106,8 +107,8 @@ typedef struct {
     // of each movement; settles by the second sample.
     uint16_t motor_current;
 } __attribute__((packed)) dcm_door_status_update_msg_t;
-_Static_assert(sizeof(dcm_door_status_update_msg_t) == 14, "msg size");
-_Static_assert(sizeof(dcm_door_status_update_msg_t) < MAX_DCM_MSG_SIZE,
+static_assert(sizeof(dcm_door_status_update_msg_t) == 14, "msg size");
+static_assert(sizeof(dcm_door_status_update_msg_t) < MAX_DCM_MSG_SIZE,
                "msg size");
 
 typedef struct {
@@ -126,8 +127,8 @@ typedef struct {
     uint8_t patch;
     char suffix;
 } __attribute__((packed)) dcm_sensor_version_msg_t;
-_Static_assert(sizeof(dcm_sensor_version_msg_t) == 19, "msg size");
-_Static_assert(sizeof(dcm_sensor_version_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+static_assert(sizeof(dcm_sensor_version_msg_t) == 19, "msg size");
+static_assert(sizeof(dcm_sensor_version_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint32_t time;
@@ -136,8 +137,8 @@ typedef struct {
     int16_t up_limit;
     int16_t down_limit;
 } __attribute__((packed)) dcm_ops_event_msg_t;
-_Static_assert(sizeof(dcm_ops_event_msg_t) == 10, "msg size");
-_Static_assert(sizeof(dcm_ops_event_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+static_assert(sizeof(dcm_ops_event_msg_t) == 10, "msg size");
+static_assert(sizeof(dcm_ops_event_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     /** always 0x55 */

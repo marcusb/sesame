@@ -1,31 +1,32 @@
-#include <app/clusters/ota-requestor/OTADownloader.h>
-#include <app/clusters/ota-requestor/OTARequestorInterface.h>
-#include <app/clusters/ota-requestor/DefaultOTARequestor.h>
+#include <app/clusters/ota-requestor/BDXDownloader.h>
 #include <app/clusters/ota-requestor/CodegenIntegration.h>
+#include <app/clusters/ota-requestor/DefaultOTARequestor.h>
+#include <app/clusters/ota-requestor/DefaultOTARequestorDriver.h>
 #include <app/clusters/ota-requestor/DefaultOTARequestorStorage.h>
 #include <app/clusters/ota-requestor/DefaultOTARequestorUserConsent.h>
-#include <app/clusters/ota-requestor/DefaultOTARequestorDriver.h>
-#include <app/clusters/ota-requestor/BDXDownloader.h>
+#include <app/clusters/ota-requestor/OTADownloader.h>
+#include <app/clusters/ota-requestor/OTARequestorInterface.h>
 #include <platform/CHIPDeviceLayer.h>
 #include <zephyr/sys/reboot.h>
 
 #include "controller.h"
-#include "ota.h"
 #include "matter_endpoints.h"
+#include "ota.h"
 
-
+#ifdef CONFIG_BOOTLOADER_MCUBOOT
 namespace chip {
 
-class OTAImageProcessorImpl : public OTAImageProcessorInterface
-{
-public:
-    void SetOTADownloader(OTADownloader * downloader) { mDownloader = downloader; }
+class OTAImageProcessorImpl : public OTAImageProcessorInterface {
+   public:
+    void SetOTADownloader(OTADownloader* downloader) {
+        mDownloader = downloader;
+    }
 
     CHIP_ERROR PrepareDownload() override {
         DeviceLayer::SystemLayer().ScheduleLambda([this] {
             int err = ota_init(&mOtaState);
             if (err == 0) {
-                mDownloader->OnPreparedForDownload(CHIP_NO_ERROR);
+                (void)mDownloader->OnPreparedForDownload(CHIP_NO_ERROR);
             } else {
                 (void)mDownloader->OnPreparedForDownload(CHIP_ERROR_INTERNAL);
             }
@@ -46,17 +47,14 @@ public:
     }
 
     CHIP_ERROR Apply() override {
-        DeviceLayer::SystemLayer().ScheduleLambda([] {
-            sys_reboot(SYS_REBOOT_COLD);
-        });
+        DeviceLayer::SystemLayer().ScheduleLambda(
+            [] { sys_reboot(SYS_REBOOT_COLD); });
         return CHIP_NO_ERROR;
     }
 
-    CHIP_ERROR Abort() override {
-        return CHIP_NO_ERROR;
-    }
+    CHIP_ERROR Abort() override { return CHIP_NO_ERROR; }
 
-    CHIP_ERROR ProcessBlock(ByteSpan & block) override {
+    CHIP_ERROR ProcessBlock(ByteSpan& block) override {
         uint8_t* buf = (uint8_t*)chip::Platform::MemoryAlloc(block.size());
         if (!buf) {
             return CHIP_ERROR_NO_MEMORY;
@@ -77,15 +75,11 @@ public:
         return CHIP_NO_ERROR;
     }
 
-    bool IsFirstImageRun() override {
-        return false;
-    }
+    bool IsFirstImageRun() override { return false; }
 
-    CHIP_ERROR ConfirmCurrentImage() override {
-        return CHIP_NO_ERROR;
-    }
+    CHIP_ERROR ConfirmCurrentImage() override { return CHIP_NO_ERROR; }
 
-private:
+   private:
     OTADownloader* mDownloader = nullptr;
     ota_upd_state_t mOtaState;
 };
@@ -96,15 +90,25 @@ static DeviceLayer::DefaultOTARequestorDriver gRequestorUser;
 static BDXDownloader gDownloader;
 static OTAImageProcessorImpl gImageProcessor;
 
-} // namespace chip
+}  // namespace chip
+#endif
 
-void InitOTARequestor()
-{
+#ifdef CONFIG_BOOTLOADER_MCUBOOT
+void InitOTARequestor() {
     chip::SetRequestorInstance(&chip::gRequestorCore);
-    chip::gRequestorStorage.Init(chip::Server::GetInstance().GetPersistentStorage());
-    (void)chip::gRequestorCore.Init(chip::Server::GetInstance(), chip::gRequestorStorage, chip::gRequestorUser, chip::gDownloader, chip::GetOTARequestorAttributes(), chip::GetDefaultOTARequestorEventGenerator());
+    chip::gRequestorStorage.Init(
+        chip::Server::GetInstance().GetPersistentStorage());
+    (void)chip::gRequestorCore.Init(
+        chip::Server::GetInstance(), chip::gRequestorStorage,
+        chip::gRequestorUser, chip::gDownloader,
+        chip::GetOTARequestorAttributes(),
+        chip::GetDefaultOTARequestorEventGenerator());
     chip::gImageProcessor.SetOTADownloader(&chip::gDownloader);
     chip::gDownloader.SetImageProcessorDelegate(&chip::gImageProcessor);
     chip::gRequestorUser.Init(&chip::gRequestorCore, &chip::gImageProcessor);
 }
-
+#else
+void InitOTARequestor() {
+    // OTA Mocked
+}
+#endif

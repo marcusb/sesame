@@ -24,6 +24,8 @@ static uint16_t wifi_led_pattern = 0x0000;
 static struct net_mgmt_event_callback l4_mgmt_cb;
 static struct net_mgmt_event_callback wifi_mgmt_cb;
 
+#if DT_NODE_EXISTS(DT_NODELABEL(led_wifi_green))
+
 static const struct gpio_dt_spec ota_red =
     GPIO_DT_SPEC_GET(DT_NODELABEL(led_ota_red), gpios);
 static const struct gpio_dt_spec ota_green =
@@ -116,3 +118,11 @@ void leds_init(void) {
         NET_EVENT_WIFI_AP_ENABLE_RESULT | NET_EVENT_WIFI_AP_DISABLE_RESULT);
     net_mgmt_add_event_callback(&wifi_mgmt_cb);
 }
+
+#else
+
+void set_ota_led_pattern(uint8_t x1, uint8_t x2, uint8_t x3, uint8_t x4) {}
+void set_wifi_led_pattern(uint8_t x1, uint8_t x2, uint8_t x3, uint8_t x4) {}
+void leds_init(void) {}
+
+#endif

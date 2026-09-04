@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <string.h>
 #include <time.h>
 #include <zephyr/kernel.h>
@@ -87,10 +88,7 @@ static void sntp_sync_handler(struct k_work* work) {
 static struct net_mgmt_event_callback wifi_mgmt_cb;
 static struct net_mgmt_event_callback l4_mgmt_cb;
 
-static K_EVENT_DEFINE(network_events);
-#define L4_UP_EVENT BIT(0)
-#define IPV4_UP_EVENT BIT(1)
-#define IPV6_UP_EVENT BIT(2)
+K_EVENT_DEFINE(network_events);
 
 static void ip_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                   uint64_t mgmt_event, struct net_if* iface) {

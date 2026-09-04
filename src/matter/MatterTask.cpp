@@ -56,30 +56,20 @@ extern "C" void matter_task_start(void) {
 
     (void)chip::DeviceLayer::PlatformMgr().StartEventLoopTask();
 
-    // Start a polling timer to open the commissioning window after network is
-    // up
-    static chip::System::TimerCompleteCallback sCommissioningPollTimer;
-    sCommissioningPollTimer = [](chip::System::Layer*, void*) {
-        if (network_is_up()) {
-            LOG_INF("Network is UP. Opening commissioning window...");
-            (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
-                [](intptr_t) {
-                    chip::Server::GetInstance()
-                        .GetCommissioningWindowManager()
-                        .OpenBasicCommissioningWindow(
-                            chip::System::Clock::Seconds16(300),
-                            chip::CommissioningWindowAdvertisement::kDnssdOnly);
-                },
-                0);
-        } else {
-            // Check again in 1 second
-            chip::DeviceLayer::SystemLayer().StartTimer(
-                chip::System::Clock::Seconds32(1), sCommissioningPollTimer,
-                nullptr);
-        }
-    };
-    chip::DeviceLayer::SystemLayer().StartTimer(
-        chip::System::Clock::Seconds32(1), sCommissioningPollTimer, nullptr);
+    // Wait for network to be up
+    while (!network_is_up()) {
+        k_sleep(K_MSEC(500));
+    }
+    LOG_INF("Network is UP. Opening commissioning window...");
+    (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
+        [](intptr_t) {
+            (void)chip::Server::GetInstance()
+                .GetCommissioningWindowManager()
+                .OpenBasicCommissioningWindow(
+                    chip::System::Clock::Seconds16(300),
+                    chip::CommissioningWindowAdvertisement::kDnssdOnly);
+        },
+        0);
 }
 
 using namespace ::chip;

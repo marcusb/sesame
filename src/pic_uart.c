@@ -26,6 +26,7 @@ static uint16_t down_limit;
 static uint16_t up_limit;
 static uint32_t last_state_pub_time;
 
+#if DT_NODE_EXISTS(DT_NODELABEL(pic_rst))
 static const struct device* uart_dev = DEVICE_DT_GET(DT_NODELABEL(uart1));
 static const struct gpio_dt_spec pic_rst =
     GPIO_DT_SPEC_GET(DT_NODELABEL(pic_rst), gpios);
@@ -371,3 +372,11 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
 }
 
 K_THREAD_DEFINE(pic_uart_tid, 1024, pic_uart_task, NULL, NULL, NULL, 7, 0, 0);
+
+#else
+
+void pic_uart_init(void) {
+    LOG_INF("pic_uart stub initialized for native_sim");
+}
+
+#endif

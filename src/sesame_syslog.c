@@ -20,12 +20,14 @@ static struct k_work_delayable retry_work;
 static bool backend_active;
 
 static void set_log_backend(const struct net_sockaddr* sa, const char* host) {
+#ifdef CONFIG_LOG_BACKEND_NET
     if (log_backend_net_set_ip(sa)) {
         k_work_cancel_delayable(&retry_work);
         log_backend_net_start();
         backend_active = true;
         LOG_INF("Syslog host set: %s", host);
     }
+#endif
 }
 
 static void dns_resolve_cb(enum dns_resolve_status status,
@@ -148,7 +150,9 @@ void syslog_stop(void) {
     if (backend_active) {
         backend_active = false;
         k_work_cancel_delayable(&retry_work);
+#ifdef CONFIG_LOG_BACKEND_NET
         log_backend_deactivate(log_backend_net_get());
+#endif
         LOG_INF("Syslog backend stopped");
     }
 }

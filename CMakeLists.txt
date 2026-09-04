@@ -84,7 +84,6 @@ target_link_libraries(app PRIVATE -lm)
 # Application Sources
 target_sources(app PRIVATE
     src/config_manager.c
-    src/entropy_mw320.c
     src/leds.c
     src/main.c
     src/httpd.c
@@ -92,10 +91,14 @@ target_sources(app PRIVATE
     src/pic_uart.c
     src/mqtt.c
     src/sesame_syslog.c
-    src/ota.c
-    src/ota_client.c
-    src/mw_watchdog.c
 )
+
+if(CONFIG_BOOTLOADER_MCUBOOT)
+    target_sources(app PRIVATE
+        src/ota.c
+        src/ota_client.c
+    )
+endif()
 
 if(CONFIG_CHIP)
     target_sources(app PRIVATE src/matter/MatterTask.cpp src/matter/MatterOTA.cpp src/matter/MatterInfo.cpp third_party/connectedhomeip/examples/providers/DeviceInfoProviderImpl.cpp)
@@ -126,15 +129,21 @@ if(CONFIG_WIFI_MW320)
 endif()
 
 if(NOT CONFIG_BOARD_GENIE_IDCM_RAM)
-add_custom_command(
-    OUTPUT ${CMAKE_BINARY_DIR}/sesame.bin
-    COMMAND ${CMAKE_COMMAND} -E copy
-            ${CMAKE_BINARY_DIR}/zephyr/zephyr.signed.bin
-            ${CMAKE_BINARY_DIR}/sesame.bin
-    DEPENDS zephyr_final ${CMAKE_BINARY_DIR}/zephyr/zephyr.signed.bin
-    COMMENT "Copying zephyr.signed.bin -> sesame.bin"
-    VERBATIM
-)
-add_custom_target(sesame_bin ALL DEPENDS ${CMAKE_BINARY_DIR}/sesame.bin)
+    if(CONFIG_BUILD_OUTPUT_BIN)
+        add_custom_command(
+            OUTPUT ${CMAKE_BINARY_DIR}/sesame.bin
+            COMMAND ${CMAKE_COMMAND} -E copy
+                    ${CMAKE_BINARY_DIR}/zephyr/zephyr.signed.bin
+                    ${CMAKE_BINARY_DIR}/sesame.bin
+            DEPENDS zephyr_final ${CMAKE_BINARY_DIR}/zephyr/zephyr.signed.bin
+            COMMENT "Copying zephyr.signed.bin -> sesame.bin"
+            VERBATIM
+        )
+        add_custom_target(sesame_bin ALL DEPENDS ${CMAKE_BINARY_DIR}/sesame.bin)
+    endif()
+endif()
 
+if(CONFIG_SOC_88MW320)
+    target_sources(app PRIVATE src/mw_watchdog.c)
+    target_sources(app PRIVATE src/entropy_mw320.c)
 endif()
