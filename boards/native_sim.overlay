@@ -1,7 +1,10 @@
 &flash0 {
     partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+
         psm_partition: partition@100000 {
-            compatible = "zephyr,mapped-partition";
             label = "psm";
             reg = <0x00100000 0x00010000>;
         };

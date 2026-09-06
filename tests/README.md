@@ -9,7 +9,7 @@ This repository employs a 3-tiered testing strategy:
 
 ## 2. Integration Tests (`tests/integration`)
 - Run via Pytest orchestration against a `native_sim` target.
-- Creates an isolated TAP interface (`zeth0`) and uses `chip-tool` to test Matter logic end-to-end.
+- Uses the Matter Python Controller bindings to test Matter logic end-to-end.
 - Run with: `./run_tests.sh integration`
 
 ## 3. System Tests (`tests/system`)

@@ -147,3 +147,27 @@ if(CONFIG_SOC_88MW320)
     target_sources(app PRIVATE src/mw_watchdog.c)
     target_sources(app PRIVATE src/entropy_mw320.c)
 endif()
+
+# Custom test targets
+add_custom_target(test_unit
+    COMMAND ctest --output-on-failure
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Running unit tests"
+)
+
+add_custom_target(test_integration
+    COMMAND bash ${CMAKE_SOURCE_DIR}/run_tests.sh integration
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    DEPENDS app
+    COMMENT "Running integration tests"
+)
+
+add_custom_target(test_system
+    COMMAND echo "System tests not implemented yet"
+    COMMENT "Running system tests"
+)
+
+add_custom_target(test_all
+    DEPENDS test_unit test_integration test_system
+    COMMENT "Running all tests"
+)

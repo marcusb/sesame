@@ -18,8 +18,16 @@ This project uses a self-contained [West workspace topology](https://docs.zephyr
    git clone https://github.com/marcusb/sesame.git
    cd sesame
    
-   # Initialize all submodules recursively
-   git submodule update --init --recursive
+   # Initialize only the connectedhomeip submodule
+   git submodule update --init third_party/connectedhomeip
+   
+   # Use Matter's script to checkout only the required submodules for Zephyr and Linux host (for python bindings)
+   cd third_party/connectedhomeip
+   ./scripts/checkout_submodules.py --platform zephyr --platform linux
+   cd ../..
+   
+   # Initialize any remaining submodules explicitly
+   git submodule update --init
    ```
 
 2. **Set up the Python Environment & Matter Bootstrap:**
@@ -80,6 +88,20 @@ west build --sysbuild
 ```
 
 This produces `build/mcuboot/zephyr/mcuboot.bin` and `build/sesame/zephyr/zephyr.signed.bin`.
+ 
+## Building Matter Host Tools
+
+For integration testing, you will need the Matter Python bindings.
+
+To build the Python bindings:
+```sh
+source third_party/connectedhomeip/scripts/activate.sh
+cd third_party/connectedhomeip
+
+# Build the python bindings into a virtual environment in out/python_env
+./scripts/build_python.sh -m minimal -i out/python_env
+```
+You can then source the resulting virtual environment (`source third_party/connectedhomeip/out/python_env/bin/activate`) to run scripts using `chip.ChipDeviceCtrl`.
 
 ## QEMU Emulation
 
@@ -99,28 +121,27 @@ Networking is supported via QEMU's user-mode stack (SLIRP) with port forwarding.
 
 ## Tests
 
-The project includes unit and integration tests using the [Unity](https://github.com/ThrowTheSwitch/Unity) and [pytest](https://pytest.org) frameworks. Tests can be run either on physical hardware or in the QEMU emulator.
+The project includes unit, integration, and system tests using the [Unity](https://github.com/ThrowTheSwitch/Unity) and [pytest](https://pytest.org) frameworks. Tests can be run natively, in QEMU, or on physical hardware.
 
-**Hardware (JTAG) Build & Run:**
+CMake provides convenient targets to execute these test suites:
+
+**1. Unit Tests (Type 1)**
+Run native or QEMU-based unit tests. Requires a `native_sim` or `qemu` build:
 ```sh
-ninja -C build sesame_tests
-./tools/run_on_device.sh build/test/sesame_tests.axf
+ninja -C build test_unit
 ```
 
-**QEMU (Emulator) Build & Run:**
-The build system automatically configures CTest to run all unit and integration tests in QEMU.
+**2. Integration Tests (Type 2)**
+Run Matter integration tests (e.g. testing the commissioning sequence using the CHIP python bindings). Requires a `native_sim` build :
 ```sh
-ninja -C build test
+ninja -C build test_integration
 ```
 
-Expected output ends with:
+**3. Physical System Tests (Type 3)**
+Run black-box system tests on actual hardware via the serial port. Requires a flashed device connected at `/dev/ttyUSB0`:
+```sh
+ninja -C build test_system
 ```
-34 Tests 0 Failures 0 Ignored
-OK
-TEST_RESULT:0
-```
-
-`TEST_RESULT:0` means all tests passed.
 
 ## References
 

@@ -11,8 +11,9 @@ case "$COMMAND" in
         ;;
     integration)
         echo "Running Integration Tests via Pytest (QEMU/Native_Sim)..."
-        echo "Placeholder: Sets up TAP interface, runs native_sim, and executes Matter tests."
-        # Placeholder for pytest tests/integration
+        source third_party/connectedhomeip/scripts/activate.sh
+        source third_party/connectedhomeip/out/python_env/bin/activate
+        python -m pytest tests/integration/test_matter_integration.py -v -s
         ;;
     system)
         echo "Running System Tests via Pytest (Hardware)..."

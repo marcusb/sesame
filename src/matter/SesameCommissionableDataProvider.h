@@ -18,9 +18,11 @@ class SesameCommissionableDataProvider
 
         // Derive discriminator (12-bit) from MAC
         mDiscriminator = ((mac[4] << 8) | mac[5]) & 0x0FFF;
+        if (mDiscriminator == 0) mDiscriminator = 3840;
 
         // Derive 8-digit PIN from MAC
         uint32_t pin = (mac[2] << 24) | (mac[3] << 16) | (mac[4] << 8) | mac[5];
+        if (pin == 0) pin = 20202020;
         pin = (pin % 99999998) + 1;
         // Avoid invalid PINs like 11111111, 12345678
         if (pin % 11111111 == 0 || pin == 12345678 || pin == 87654321) {
