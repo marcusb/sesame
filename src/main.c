@@ -60,10 +60,7 @@ static void wifi_button_pressed(const struct device* dev,
 void matter_task_start(void);
 
 int main(void) {
-    printk("Hello from native_sim!\n");
-#ifdef CONFIG_BOARD_NATIVE_SIM
-    posix_print_trace("DIRECT TRACE CALL\n");
-#endif
+    LOG_INF("Sesame app starting up");
     leds_init();
 
     // Force timer inclusion for chip-gn

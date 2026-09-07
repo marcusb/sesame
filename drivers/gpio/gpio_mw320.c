@@ -187,7 +187,7 @@ static int gpio_mw320_init(const struct device *dev)
         .common = {                                                     \
             .port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(n),        \
         },                                                              \
-        .base = (GPIO_Type *)DT_INST_REG_ADDR(n),                       \
+        .base = (GPIO_Type *)GPIO_BASE,                       \
         .port = DT_INST_PROP(n, port),                                  \
         .pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),                    \
     };                                                                  \

@@ -74,9 +74,13 @@
 			status = "disabled";
 		};
 
-		gpio1: gpio@46060000_1 {
+		/* WORKAROUND: gpio0 and gpio1 share the same physical base address (0x46060000).
+		 * To satisfy dtc's unique_unit_address and simple_bus_reg checks, we assign
+		 * gpio1 a dummy unit address and reg of 0x46060001. The gpio_mw320 driver
+		 * has been patched to ignore this and use the hardcoded GPIO_BASE. */
+		gpio1: gpio@46060001 {
 			compatible = "nxp,mw320-gpio";
-			reg = <0x46060000 0x1000>;
+			reg = <0x46060001 0x1000>;
 			interrupts = <2 0>;
 			gpio-controller;
 			#gpio-cells = <2>;
