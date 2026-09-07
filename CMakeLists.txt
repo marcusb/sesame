@@ -107,8 +107,8 @@ endif()
 zephyr_include_directories(include)
 zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip/examples/providers)
 zephyr_include_directories(${MW320_SDK_DIR}/components/flash/mflash/mw320)
-zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/mcuboot/boot/bootutil/include)
-zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/mcuboot/boot/zephyr/include)
+zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/bootloader/mcuboot/boot/bootutil/include)
+zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/bootloader/mcuboot/boot/zephyr/include)
 
 # MW320 SDK sources are provided by the mw320_sdk Zephyr module
 # via ZEPHYR_EXTRA_MODULES
