@@ -11,7 +11,3 @@ config FORCE_FLASH_PAGE_LAYOUT
 	default y
 	select FLASH_HAS_PAGE_LAYOUT
 
-config ENTROPY_MW320
-	bool "MW320 Entropy Driver"
-	default y
-	select ENTROPY_HAS_DRIVER

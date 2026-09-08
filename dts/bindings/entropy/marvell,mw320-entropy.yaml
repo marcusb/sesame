@@ -1,0 +1,5 @@
+description: Marvell MW320 Entropy generator
+
+compatible: "marvell,mw320-entropy"
+
+include: base.yaml

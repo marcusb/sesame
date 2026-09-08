@@ -1,6 +1,7 @@
 config ENTROPY_MW320
 	bool "NXP MW320 Entropy driver"
 	default y
-	depends on DT_HAS_NXP_MW320_ENTROPY_ENABLED
+	depends on DT_HAS_MARVELL_MW320_ENTROPY_ENABLED
+	select ENTROPY_HAS_DRIVER
 	help
 	  Enable the Entropy driver for NXP MW320 SoCs.

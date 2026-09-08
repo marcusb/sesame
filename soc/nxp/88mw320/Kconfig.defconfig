@@ -22,7 +22,7 @@ config GPIO_MW320
 config ENTROPY_MW320
 	bool
 	default y
-	depends on DT_HAS_NXP_MW320_ENTROPY_ENABLED
+	depends on DT_HAS_MARVELL_MW320_ENTROPY_ENABLED
 
 config WIFI_MW320
 	bool
