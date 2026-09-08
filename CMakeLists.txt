@@ -145,7 +145,6 @@ endif()
 
 if(CONFIG_SOC_88MW320)
     target_sources(app PRIVATE src/mw_watchdog.c)
-    target_sources(app PRIVATE src/entropy_mw320.c)
 endif()
 
 # Custom test targets
