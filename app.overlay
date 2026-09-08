@@ -1,0 +1,16 @@
+/delete-node/ &boot2_partition;
+
+&flash0 {
+	partitions {
+		linker_partition: partition@0 {
+			label = "linker";
+			reg = <0x00000000 0x00170000>;
+		};
+	};
+};
+
+/ {
+	chosen {
+		zephyr,code-partition = &linker_partition;
+	};
+};
