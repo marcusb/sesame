@@ -170,3 +170,19 @@ add_custom_target(test_all
     DEPENDS test_unit test_integration test_system
     COMMENT "Running all tests"
 )
+
+# Automatically build the native_sim (QEMU/POSIX emulator) target alongside the main hardware target
+if(NOT CONFIG_BOARD_NATIVE_SIM)
+    include(ExternalProject)
+    ExternalProject_Add(
+        native_sim_build
+        SOURCE_DIR ${CMAKE_SOURCE_DIR}
+        BINARY_DIR ${CMAKE_BINARY_DIR}/native_sim
+        CONFIGURE_COMMAND west build -b native_sim/native/64 -d ${CMAKE_BINARY_DIR}/native_sim ${CMAKE_SOURCE_DIR} -- -DCONFIG_BOOTLOADER_MCUBOOT=n
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_ALWAYS TRUE
+        EXCLUDE_FROM_ALL FALSE
+    )
+    add_dependencies(test_integration native_sim_build)
+endif()

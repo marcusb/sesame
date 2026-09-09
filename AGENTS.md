@@ -104,50 +104,26 @@ ninja -C build                     # Build all variants (hardware)
 ninja -C build sesame/zephyr/zephyr.elf   # Build only hardware flash version
 ```
 
-**Iterating on QEMU-only sources (e.g. `test/integration/**`):**
+**Iterating on native_sim sources and Tests:**
 
-The QEMU artifacts are produced by an `ExternalProject_Add(qemu_variants ...)`
-that drives a separate inner build in `build/qemu-build/`. The *outer*
-`ninja -C build qemu_variants` step always reports success because of
-`BUILD_ALWAYS TRUE`, but only re-invokes the inner ninja — it does not show
-the inner build's compile lines if nothing changed.
+The `native_sim` artifact (used for tests) is automatically orchestrated as a custom target during the main build via CMake's `ExternalProject_Add`. It outputs to `build/native_sim/`.
 
-When changing a source that only the QEMU build consumes (anything under
-`test/integration/`, `src/qemu/`, etc.), run the inner ninja directly so the
-build lines are visible and you can confirm the binary actually rebuilt:
-
+If you only want to build or run the native_sim integration tests, you can run:
 ```sh
-ninja -C build/qemu-build test/integration/<module>/<module>_it-qemu.axf
-cp build/qemu-build/test/integration/<module>/<module>_it-qemu.axf \
-   build/test/integration/<module>/<module>_it-qemu.axf
+./run_tests.sh integration
 ```
-
-**Verifying you ran the binary you just built — not a stale log:**
-
-When debugging by re-running QEMU and grepping a log file, always confirm:
-1. `stat -c '%Y %n' /path/to/binary /path/to/log` — the log mtime must be
-   *after* the binary mtime.
-2. The QEMU process exited cleanly: capture `$?` after `kill $QEMU_PID;
-   wait $QEMU_PID` and check `pgrep -af qemu-system` is empty before
-   the next run.
-
-Most subtle "the change had no effect" bugs in this project are not stale
-binaries — they are stale log files left behind when a `pkill`/`kill` chain
-in a shell one-liner aborted before the new QEMU launch. Treat the log
-contents as suspect until you have proven its mtime is fresh.
+This automatically uses the `build/native_sim/zephyr/zephyr.exe` executable generated during the build.
 
 **Build outputs:**
 
 - `build/sesame/zephyr/zephyr.signed.bin`, `build/mcuboot/zephyr/mcuboot.bin` – Hardware flash versions
-- `test/sesame_tests.axf` – Hardware test suite
-- `test/sesame_tests-qemu.axf` – QEMU test suite
-
+- `build/native_sim/zephyr/zephyr.exe` – Native simulation executable for integration tests
 ## Project Architecture
 
 ### App framework and management
 
-1. **System startup** (`main.c`): Initializes generic RTOS scheduler and app tasks. Hardware-specific initialization is handled in `board_main.c` (physical device) or `qemu_main.c` (QEMU).
-2. **Network stack** (`network.c`): Manages WiFi on hardware. QEMU uses direct Ethernet initialization in `qemu_main.c`.
+1. **System startup** (`main.c`): Initializes generic RTOS scheduler and app tasks. Hardware-specific initialization is handled in `board_main.c` (physical device) or natively via `native_sim`.
+2. **Network stack** (`network.c`): Manages WiFi on hardware. `native_sim` uses direct Ethernet initialization.
 3. **Configuration** (`config_manager.c`): Reads/writes protobuf config via `psm.h` abstraction.
 4. **Control interfaces**:
    - HTTP server (`httpd.c`) for REST API and device setup
@@ -168,8 +144,6 @@ contents as suspect until you have proven its mtime is fresh.
 | **PIC comms**            | `pic_uart.c`            | Serial I/O with the PIC16 for door control and status, hardware only|
 | **Logging**              | `logging.c`, `sesame_syslog.c` | Circular buffer logs, syslog facility                               |
 | **Board-specific files** | `boards/arm/marvell_mw302/*`               | Flash layout, board config, ld scripts                             |
-| **QEMU Stubs**           | `qemu_stubs.c`          | Mocked peripherals for QEMU emulation                               |
-| **QEMU PSM**             | `qemu_psm.c`            | Persistent storage via semihosting file I/O                         |
 
 ### Task Hierarchy (Zephyr)
 
@@ -264,17 +238,17 @@ ser.close()
 
 ### Final Validation (Before Commit)
 
-Before committing changes, ensure that all unit tests pass in both QEMU and on physical hardware.
+Before committing changes, ensure that all unit tests pass in both native_sim and on physical hardware.
 
-**1. Run Unit & Integration Tests in QEMU:**
-Build and run the full test suite in the emulator using CTest:
+**1. Run Unit & Integration Tests in native_sim:**
+Build and run the integration tests:
 ```sh
-ninja -C build test
+./run_tests.sh integration
 ```
 
 **2. Run On-device Unit Tests:**
 ```sh
-ninja -C build sesame_tests && ./tools/run_on_device.sh build/test/sesame_tests.axf
+./run_tests.sh system /dev/ttyUSB0
 ```
 
 **3. Flash and Full System Test:**
@@ -313,20 +287,15 @@ If a kernel panic occurs, Zephyr will dump a hex core block. See `docs/developme
 ### Unit Tests
 
 On-device unit tests use the [Unity](https://github.com/ThrowTheSwitch/Unity) framework.
-Tests can be run either on the physical ARM Cortex-M4 target via JTAG flash, or in QEMU.
+Tests can be run either on the physical ARM Cortex-M4 target via JTAG flash, or natively via `native_sim`.
 
 **Hardware (JTAG) Build & Run:**
 ```sh
-ninja -C build sesame_tests
-./tools/run_on_device.sh build/test/sesame_tests.axf
+./run_tests.sh system /dev/ttyUSB0
 ```
 
-**QEMU (Emulator) Build & Run:**
-The build system automatically configures CTest to run tests in QEMU.
-```sh
-ninja -C build test
-```
-Individual test binaries (e.g., `test/sesame_tests-qemu.axf`, `test/matter_sesame_tests-qemu.axf`) can also be run manually via `qemu-system-arm`.
+**native_sim (Emulator) Build & Run:**
+The build system integrates with native_sim. Run tests via `./run_tests.sh unit` or `./run_tests.sh integration`.
 
 Each test prints immediately as it executes:
 ```

@@ -13,7 +13,7 @@ import shutil
 import threading
 
 def test_matter_provisioning():
-    zephyr_exe = "build/zephyr/zephyr.exe"
+    zephyr_exe = "build/native_sim/zephyr/zephyr.exe"
     if not os.path.exists(zephyr_exe):
         pytest.fail(f"{zephyr_exe} not found. Please build integration target first.")
     
