@@ -7,7 +7,7 @@ case "$COMMAND" in
     unit)
         echo "Running Unit Tests via Ztest..."
         source third_party/connectedhomeip/scripts/activate.sh
-        west twister -T tests/unit -p native_sim/native/64
+        west twister -T tests/unit -p native_sim/native/64 -O build/twister-out
         ;;
     integration)
         echo "Running Integration Tests via Pytest (QEMU/Native_Sim)..."
