@@ -11,6 +11,7 @@
 #include <zephyr/random/random.h>
 LOG_MODULE_REGISTER(mqtt, LOG_LEVEL_DBG);
 
+#include <zephyr/app_version.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/sys_heap.h>
 #include <zephyr/sys/util.h>
@@ -367,7 +368,8 @@ void publish_state(const door_state_msg_t* msg) {
     }
 
     static const char fmt[] =
-        "{\"contact\":\"%s\",\"dir\":\"%s\",\"pos\":%d,\"uptime\":\"%uT%s\","
+        "{\"ver\":\"%s\",\"contact\":\"%s\",\"dir\":\"%s\",\"pos\":%d,"
+        "\"uptime\":\"%uT%s\","
         "\"uptime_sec\":%u,\"heap_free_bytes\":%u}";
     unsigned uptime_s = k_uptime_get_32() / 1000;
     unsigned days = uptime_s / SECONDS_PER_DAY;
@@ -378,15 +380,15 @@ void publish_state(const door_state_msg_t* msg) {
         snprintf(tm_hms, sizeof(tm_hms), "%02d:%02d:%02d", tm.tm_hour,
                  tm.tm_min, tm.tm_sec);
     }
-    static char payload[128];
+    static char payload[256];
     struct sys_memory_stats stats;
     size_t free_heap = 0;
     if (sys_heap_runtime_stats_get(&_system_heap.heap, &stats) == 0) {
         free_heap = stats.free_bytes;
     }
 
-    snprintf(payload, sizeof(payload), fmt, state, dir, msg->pos, days, tm_hms,
-             uptime_s, (unsigned int)free_heap);
+    snprintf(payload, sizeof(payload), fmt, APP_VERSION_STRING, state, dir,
+             msg->pos, days, tm_hms, uptime_s, (unsigned int)free_heap);
     LOG_INF("Publishing to %s: %s", state_topic, payload);
     publish(state_topic, payload, false);
 }
