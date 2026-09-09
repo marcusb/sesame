@@ -122,7 +122,7 @@ This automatically uses the `build/native_sim/zephyr/zephyr.exe` executable gene
 
 ### App framework and management
 
-1. **System startup** (`main.c`): Initializes generic RTOS scheduler and app tasks. Hardware-specific initialization is handled in `board_main.c` (physical device) or natively via `native_sim`.
+1. **System startup** (`main.c`): Initializes generic RTOS scheduler and app tasks. Hardware-specific initialization is handled inline via preprocessor guards (e.g. `CONFIG_SOC_88MW320` vs `native_sim`).
 2. **Network stack** (`network.c`): Manages WiFi on hardware. `native_sim` uses direct Ethernet initialization.
 3. **Configuration** (`config_manager.c`): Reads/writes protobuf config via `psm.h` abstraction.
 4. **Control interfaces**:
@@ -134,7 +134,6 @@ This automatically uses the `build/native_sim/zephyr/zephyr.exe` executable gene
 | Component                | File(s)                 | Purpose  |
 | ------------------------ | ----------------------- | -------------------- |
 | **App startup**          | `main.c`                | Initializes generic app tasks, Zephyr OS                             |
-| **Board Entry**          | `board_main.c`          | Hardware-specific init, starts WiFi network manager                 |
 | **Network Manager**      | `network.c`     | WiFi state machine, IP configuration (DHCP), hardware only   |
 | **HTTP Server**          | `httpd.c`               | Receives config and OTA requests via REST, protobuf payloads                |
 | **MQTT**                 | `mqtt.c`                | MQTT agent for pub/sub, topic structure, reconnection logic                 |
