@@ -173,12 +173,21 @@ add_custom_target(test_all
 
 # Automatically build the native_sim (QEMU/POSIX emulator) target alongside the main hardware target
 if(NOT CONFIG_BOARD_NATIVE_SIM)
+    get_filename_component(BIN_DIR_NAME ${CMAKE_BINARY_DIR} NAME)
+    if("${BIN_DIR_NAME}" STREQUAL "sesame")
+        # When running under sysbuild, CMAKE_BINARY_DIR is build/sesame
+        set(NATIVE_SIM_OUTDIR ${CMAKE_BINARY_DIR}/../native_sim)
+    else()
+        set(NATIVE_SIM_OUTDIR ${CMAKE_BINARY_DIR}/native_sim)
+    endif()
+    get_filename_component(NATIVE_SIM_OUTDIR ${NATIVE_SIM_OUTDIR} ABSOLUTE)
+
     include(ExternalProject)
     ExternalProject_Add(
         native_sim_build
         SOURCE_DIR ${CMAKE_SOURCE_DIR}
-        BINARY_DIR ${CMAKE_BINARY_DIR}/native_sim
-        CONFIGURE_COMMAND west build -b native_sim/native/64 -d ${CMAKE_BINARY_DIR}/native_sim ${CMAKE_SOURCE_DIR} -- -DCONFIG_BOOTLOADER_MCUBOOT=n
+        BINARY_DIR ${NATIVE_SIM_OUTDIR}
+        CONFIGURE_COMMAND west build -b native_sim/native/64 -d ${NATIVE_SIM_OUTDIR} ${CMAKE_SOURCE_DIR} -- -DCONFIG_BOOTLOADER_MCUBOOT=n
         BUILD_COMMAND ""
         INSTALL_COMMAND ""
         BUILD_ALWAYS TRUE
