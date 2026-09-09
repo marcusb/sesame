@@ -90,7 +90,7 @@ int main(void) {
     network_init();
     syslog_init();
 
-#ifndef CONFIG_NET_L2_ETHERNET
+#ifndef CONFIG_BOARD_NATIVE_SIM
     if (app_config.has_network_config &&
         strlen(app_config.network_config.ssid) > 0) {
         start_sta();
