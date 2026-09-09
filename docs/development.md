@@ -87,7 +87,7 @@ rm -rf build
 west build --sysbuild
 ```
 
-This produces `build/mcuboot/zephyr/mcuboot.bin` and `build/sesame/zephyr/zephyr.signed.bin`.
+This produces `build/mcuboot/zephyr/mcuboot.bin`, `build/sesame/zephyr/zephyr.signed.bin`, and the native emulation artifact `build/native_sim/zephyr/zephyr.exe`.
  
 ## Building Matter Host Tools
 
