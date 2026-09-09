@@ -103,44 +103,46 @@ cd third_party/connectedhomeip
 ```
 You can then source the resulting virtual environment (`source third_party/connectedhomeip/out/python_env/bin/activate`) to run scripts using `chip.ChipDeviceCtrl`.
 
-## QEMU Emulation
+## native_sim Emulation
 
-You can run the full application in QEMU for development and testing without hardware.
-The QEMU build isolates board-dependent modules and uses semihosting for I/O. Both hardware and QEMU variants are built automatically.
+You can run the full application in a native POSIX environment (`native_sim`) for development and testing without hardware.
+The `native_sim` build isolates board-dependent modules and uses the host OS for I/O. The `native_sim` variant is automatically orchestrated as a custom target during the main build via CMake's `ExternalProject_Add`.
 
 ```bash
-ninja -C build
-qemu-system-arm -M mps2-an386 -nographic -semihosting \
-  -kernel build/test/sesame_tests-qemu.axf \
-  -serial none -monitor none \
-  -net nic,model=lan9118 -net user,hostfwd=tcp::8080-:80
+# Build the native_sim variant
+west build -b native_sim/native/64 -d build/native_sim
+# Or it will be automatically built alongside the hardware build:
+# west build --sysbuild
+
+# Run the native simulation executable
+./build/native_sim/zephyr/zephyr.exe
 ```
 
-The QEMU build uses a local file `sesame_psm.bin` to persist configuration (PSM) across restarts.
-Networking is supported via QEMU's user-mode stack (SLIRP) with port forwarding.
+The `native_sim` build uses a local file `repl_storage.json` to persist configuration across restarts during tests.
+Networking is supported via native OS tap devices or directly within the simulated application.
 
 ## Tests
 
-The project includes unit, integration, and system tests using the [Unity](https://github.com/ThrowTheSwitch/Unity) and [pytest](https://pytest.org) frameworks. Tests can be run natively, in QEMU, or on physical hardware.
+The project includes unit, integration, and system tests using the [Unity](https://github.com/ThrowTheSwitch/Unity) and [pytest](https://pytest.org) frameworks. Tests can be run natively via `native_sim`, or on physical hardware.
 
-CMake provides convenient targets to execute these test suites:
+The `./run_tests.sh` script provides convenient entrypoints to execute these test suites:
 
 **1. Unit Tests (Type 1)**
-Run native or QEMU-based unit tests. Requires a `native_sim` or `qemu` build:
+Run native logic-only C tests compiled using Zephyr's Ztest framework under `native_sim`:
 ```sh
-ninja -C build test_unit
+./run_tests.sh unit
 ```
 
 **2. Integration Tests (Type 2)**
-Run Matter integration tests (e.g. testing the commissioning sequence using the CHIP python bindings). Requires a `native_sim` build :
+Run Matter integration tests via Pytest (e.g., testing the commissioning sequence using the CHIP python bindings against `native_sim`):
 ```sh
-ninja -C build test_integration
+./run_tests.sh integration
 ```
 
 **3. Physical System Tests (Type 3)**
-Run black-box system tests on actual hardware via the serial port. Requires a flashed device connected at `/dev/ttyUSB0`:
+Run black-box system tests on actual hardware via Pytest. Requires a flashed device connected at `/dev/ttyUSB0`:
 ```sh
-ninja -C build test_system
+./run_tests.sh system /dev/ttyUSB0
 ```
 
 ## References
