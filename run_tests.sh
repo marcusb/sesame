@@ -12,6 +12,10 @@ case "$COMMAND" in
     integration)
         echo "Running Integration Tests via Pytest (QEMU/Native_Sim)..."
         source third_party/connectedhomeip/scripts/activate.sh
+        if [ ! -f third_party/connectedhomeip/out/python_env/bin/activate ]; then
+            echo "Matter python bindings not found. Building them now..."
+            (cd third_party/connectedhomeip && ./scripts/build_python.sh -m minimal -i out/python_env)
+        fi
         source third_party/connectedhomeip/out/python_env/bin/activate
         python -m pytest tests/integration/test_matter_integration.py -v -s
         ;;
