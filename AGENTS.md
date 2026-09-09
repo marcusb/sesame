@@ -167,7 +167,7 @@ contents as suspect until you have proven its mtime is fresh.
 | **LEDs & Buttons**       | `leds.c`      | Status indicators, user input handling, hardware only               |
 | **PIC comms**            | `pic_uart.c`            | Serial I/O with the PIC16 for door control and status, hardware only|
 | **Logging**              | `logging.c`, `sesame_syslog.c` | Circular buffer logs, syslog facility                               |
-| **Board-specific files** | `board/*`               | Flash layout, board config, ld scripts                             |
+| **Board-specific files** | `boards/arm/marvell_mw302/*`               | Flash layout, board config, ld scripts                             |
 | **QEMU Stubs**           | `qemu_stubs.c`          | Mocked peripherals for QEMU emulation                               |
 | **QEMU PSM**             | `qemu_psm.c`            | Persistent storage via semihosting file I/O                         |
 
@@ -290,7 +290,7 @@ ninja -C build sesame/zephyr/zephyr.elf && \
 - Device reboots automatically (`-r` option)
 - Verify output and behavior persist through reboot
 
-**IMPORTANT:** Never use `-l board/flash-layout.txt` with `flashprog.py` during development.
+**IMPORTANT:** Never use `-l boards/arm/marvell_mw302/flash-layout.txt` with `flashprog.py` during development.
 The `-l` flag erases and re-partitions the entire flash, including Boot2 and WiFi firmware.
 Use `--mcuboot ... --image-0 ...` alone to flash only the bootloader and application partition.
 The `-l` flag is only needed for initial device provisioning (first-time install).
@@ -392,7 +392,7 @@ tools/flash_and_monitor.sh [timeout_sec] [logfile]   # defaults: 60 /tmp/sesame_
 ### Device Flashing (first-time install only)
 
 ```sh
-./tools/OpenOCD/flashprog.py -l board/flash_layout.txt \
+./tools/OpenOCD/flashprog.py -l boards/arm/marvell_mw302/flash-layout.txt \
   --boot2 mw320_sdk/mw320_matter_flash/Matter/boot2.bin \
   --wififw mw320_sdk/mw320_matter_flash/Matter/mw32x_uapsta_W14.88.36.p172.bin \
   --mcuboot build/mcuboot/zephyr/mcuboot.bin \
@@ -490,8 +490,7 @@ sesame/
 ├── include/            # Public headers
 │   ├── controller.h    # Common data structues for controller queue
 │   ├── mqtt.h, httpd.h, network.h, etc.
-├── board/              # Board support
-│   ├── board.c
+├── boards/             # Zephyr board definitions
 ├── proto/              # Protobuf definitions
 │   ├── api.proto       # OTA request/response
 │   └── app_config.proto # Configuration schema

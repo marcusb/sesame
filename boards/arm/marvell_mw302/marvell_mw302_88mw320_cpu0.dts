@@ -24,7 +24,7 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 
-        /* these MUST match board/flash-layout.txt */
+        /* these MUST match boards/arm/marvell_mw302/flash-layout.txt */
 		boot2_partition: partition@0 {
 			label = "boot2";
 			reg = <0x00000000 0x00010000>;
