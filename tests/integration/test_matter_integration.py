@@ -35,7 +35,7 @@ def matter_classes():
         import matter.storage
         import matter.clusters as Clusters
         from matter.setup_payload.setup_payload import SetupPayload
-        
+
         return {
             "CertificateAuthorityManager": CertificateAuthorityManager,
             "ChipStack": ChipStack,
@@ -59,16 +59,16 @@ def zephyr_app():
         pytest.fail(f"{zephyr_exe} not found. Please build integration target first.")
 
     cleanup_flash()
-    
+
     master, slave = pty.openpty()
     process = subprocess.Popen(
         [zephyr_exe], stdout=slave, stderr=slave, text=True
     )
     os.close(slave)
-    
+
     firmware_logs = []
     stop_reader = threading.Event()
-    
+
     def log_reader():
         import select
         buf = b""
@@ -89,11 +89,11 @@ def zephyr_app():
 
     reader_thread = threading.Thread(target=log_reader, daemon=True)
     reader_thread.start()
-    
+
     booted = False
     pairing_code = None
     start_time = time.time()
-    
+
     print("Waiting for Zephyr native_sim to boot...")
     while time.time() - start_time < 30:
         for line in list(firmware_logs):
@@ -102,11 +102,11 @@ def zephyr_app():
                 pairing_code = match.group(1)
             if "Network is UP. Opening commissioning window" in line:
                 booted = True
-        
+
         if booted and pairing_code:
             break
         time.sleep(0.1)
-            
+
     if not booted or not pairing_code:
         # Cleanup before asserting so we don't leak process
         stop_reader.set()
@@ -116,13 +116,13 @@ def zephyr_app():
         process.wait(timeout=5)
         cleanup_flash()
         pytest.fail("Firmware failed to boot or output pairing code")
-        
+
     yield {
         "process": process,
         "logs": firmware_logs,
         "pairing_code": pairing_code
     }
-    
+
     # Teardown
     stop_reader.set()
     reader_thread.join(timeout=2)
@@ -138,22 +138,22 @@ def matter_controller(matter_classes):
     Cleans up the stack and temporary persistent storage after the test.
     """
     temp_dir = tempfile.mkdtemp(dir="build")
-    
+
     storage = matter_classes["storage"].PersistentStorageJSON(os.path.join(temp_dir, 'repl_storage.json'))
     stack = matter_classes["ChipStack"](persistentStorage=storage)
     ca_manager = matter_classes["CertificateAuthorityManager"](stack, stack.GetStorageManager())
     ca_manager.LoadAuthoritiesFromStorage()
-    
+
     if len(ca_manager.activeCaList) == 0:
         ca = ca_manager.NewCertificateAuthority()
         ca.NewFabricAdmin(vendorId=0xFFF1, fabricId=1)
-        
+
     ca = ca_manager.activeCaList[0]
     admin = ca.adminList[0]
     controller = admin.NewController(nodeId=112233)
-    
+
     yield controller
-    
+
     # Teardown
     try:
         controller.Shutdown()
@@ -170,27 +170,27 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
     """
     pairing_code = zephyr_app["pairing_code"]
     firmware_logs = zephyr_app["logs"]
-    
+
     parser = matter_classes["SetupPayload"]()
     parser.ParseManualPairingCode(pairing_code)
     setup_pin = int(parser.attributes["SetUpPINCode"])
-    
+
     print(f"Commissioning Node 1 with setup PIN {setup_pin} via IP...")
     async def commission():
         await matter_controller.EstablishPASESessionIP("::1", setup_pin, 1)
-        
+
     asyncio.run(commission())
 
     print("Commissioning successful! Sending Door Open command...")
-    
+
     async def send_command():
         Clusters = matter_classes["Clusters"]
         # 1 is endpoint 1
         await matter_controller.SendCommand(1, 1, Clusters.WindowCovering.Commands.UpOrOpen())
-        
+
     asyncio.run(send_command())
     time.sleep(2) # Give it time to process and log
-    
+
     command_received = False
     end_time = time.time() + 10
     while time.time() < end_time:
@@ -198,6 +198,6 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
             command_received = True
             break
         time.sleep(0.1)
-            
+
     assert command_received, "Firmware did not log receipt of the Open command"
     print("SUCCESS! Integration test passed.")
