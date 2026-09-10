@@ -37,10 +37,18 @@ def inject_nvs_via_gdb(nvs_id: int, data: bytes, elf_path: str):
 @pytest.fixture
 def hardware_device(request, test_network_config):
     port = request.config.getoption("--device-port")
-    elf_path = "build/sesame_test/zephyr/zephyr.elf"
-    
-    if not os.path.exists(elf_path):
-        pytest.fail(f"{elf_path} not found. Run: west build -b marvell_mw302 -d build/sesame_test --sysbuild")
+    elf_paths = [
+        "build/sesame_test/zephyr/zephyr.elf",
+        "build/sesame/sesame_test/zephyr/zephyr.elf",
+    ]
+    elf_path = None
+    for p in elf_paths:
+        if os.path.exists(p):
+            elf_path = p
+            break
+            
+    if not elf_path:
+        pytest.fail(f"sesame_test zephyr.elf not found. Run: west build -b marvell_mw302 -d build/sesame --sysbuild")
         
     print(f"Connecting to hardware on {port}...")
     ser = serial.Serial(port, 115200, timeout=1)
