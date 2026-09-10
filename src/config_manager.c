@@ -149,3 +149,35 @@ int save_logging_config(void) {
     return save_proto_config(NVS_ID_LOGGING_CONFIG, LoggingConfig_fields,
                              &app_config.logging_config, "logging");
 }
+
+#ifdef CONFIG_SESAME_TEST
+// Hook for GDB/Python to inject configurations directly into NVS
+volatile uint32_t test_nvs_inject_cmd = 0;
+volatile uint16_t test_nvs_inject_id = 0;
+volatile uint16_t test_nvs_inject_len = 0;
+volatile uint8_t test_nvs_inject_buf[1024];
+
+void test_nvs_process_hooks(void) {
+    if (test_nvs_inject_cmd == 1) {
+        LOG_INF("Test hook triggered: Writing ID %d, Len %d",
+                test_nvs_inject_id, test_nvs_inject_len);
+        int rc = nvs_write(&fs, test_nvs_inject_id, (void*)test_nvs_inject_buf,
+                           test_nvs_inject_len);
+        if (rc < 0) {
+            LOG_ERR("Test NVS write failed: %d", rc);
+        }
+        test_nvs_inject_cmd = 0;  // Acknowledge
+    }
+}
+#endif
+
+#ifdef CONFIG_SESAME_TEST
+void test_nvs_thread_fn(void* arg1, void* arg2, void* arg3) {
+    while (1) {
+        test_nvs_process_hooks();
+        k_sleep(K_MSEC(100));
+    }
+}
+K_THREAD_DEFINE(test_nvs_tid, 1024, test_nvs_thread_fn, NULL, NULL, NULL, 7, 0,
+                0);
+#endif

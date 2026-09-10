@@ -21,13 +21,14 @@ case "$COMMAND" in
         ;;
     system)
         echo "Running System Tests via Pytest (Hardware)..."
-        if [ -z "$2" ]; then
-            echo "Error: Please specify the serial port for system tests (e.g. ./run_tests.sh system /dev/ttyUSB0)"
-            exit 1
+        PORT=${2:-"/dev/ttyUSB0"}
+        source third_party/connectedhomeip/scripts/activate.sh
+        if [ ! -f third_party/connectedhomeip/out/python_env/bin/activate ]; then
+            echo "Matter python bindings not found. Building them now..."
+            (cd third_party/connectedhomeip && ./scripts/build_python.sh -m minimal -i out/python_env)
         fi
-        PORT=$2
-        echo "Placeholder: Flash firmware, monitor $PORT, provision Wi-Fi, and run OTA."
-        # Placeholder for pytest tests/system
+        source third_party/connectedhomeip/out/python_env/bin/activate
+        python -m pytest tests/system/test_hardware.py --device-port=$PORT -v -s
         ;;
     *)
         echo "Usage: $0 {unit|integration|system} [port]"
