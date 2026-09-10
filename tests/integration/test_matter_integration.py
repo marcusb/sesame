@@ -45,7 +45,7 @@ def matter_classes():
             "SetupPayload": SetupPayload
         }
     except ImportError:
-        pytest.skip("Matter Python bindings not found. Please build them first and activate the venv.")
+        pytest.fail("Matter Python bindings not found. Please build them first and activate the venv.")
 
 @pytest.fixture
 def zephyr_app():
