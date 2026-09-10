@@ -18,7 +18,7 @@ def wifi_credentials(request):
 
 @pytest.fixture
 def test_network_config(wifi_credentials):
-    import app_config_pb2
+    from proto import app_config_pb2
     config = app_config_pb2.NetworkConfig()
     config.hostname = "sesame-test"
     config.ssid = wifi_credentials.get("ssid", "TEST_SSID")
