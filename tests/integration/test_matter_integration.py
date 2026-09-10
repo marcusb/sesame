@@ -33,7 +33,15 @@ def test_matter_provisioning():
     
     master, slave = pty.openpty()
     
-    os.system("rm -f flash.bin repl_storage.json")
+    def cleanup_flash():
+        for f in ["flash.bin", "repl_storage.json"]:
+            try:
+                os.remove(f)
+            except FileNotFoundError:
+                pass
+
+    cleanup_flash()
+    
     process = subprocess.Popen([
         zephyr_exe,
     ], stdout=slave, stderr=slave, text=True)
@@ -158,3 +166,4 @@ def test_matter_provisioning():
             pass
         import shutil
         shutil.rmtree(temp_dir)
+        cleanup_flash()
