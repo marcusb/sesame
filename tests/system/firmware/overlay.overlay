@@ -7,14 +7,25 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 
-		partitions {
-			compatible = "fixed-partitions";
+		sim_flash0: flash@0 {
+			status = "okay";
+			compatible = "soc-nv-flash";
+			reg = <0x00000000 0x8000>;
+			ranges = <0x0 0x0 0x8000>;
+			erase-block-size = <4096>;
+			write-block-size = <4>;
 			#address-cells = <1>;
 			#size-cells = <1>;
 
-			psm_partition: partition@0 {
-				label = "psm";
-				reg = <0x00000000 0x8000>;
+			partitions {
+				compatible = "fixed-partitions";
+				#address-cells = <1>;
+				#size-cells = <1>;
+
+				psm_partition: partition@0 {
+					label = "psm";
+					reg = <0x00000000 0x8000>;
+				};
 			};
 		};
 	};
