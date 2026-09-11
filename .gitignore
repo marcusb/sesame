@@ -44,3 +44,5 @@ tools/axf2firmware/axf2firmware
 /zephyr/
 /tools/
 src/matter/AppVersion.h
+
+wifi.json
