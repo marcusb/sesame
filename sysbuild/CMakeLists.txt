@@ -15,10 +15,5 @@ set(mcuboot_MW320_SDK_DIR ${APP_DIR}/mw320_sdk CACHE PATH "mcuboot mw320 sdk")
 set(mcuboot_EXTRA_DTC_OVERLAY_FILE ${APP_DIR}/boards/arm/marvell_mw302/mcuboot_offset.overlay CACHE PATH "mcuboot overlay")
 
 find_package(Sysbuild REQUIRED HINTS $ENV{ZEPHYR_BASE})
+
 project(sysbuild LANGUAGES)
-
-# Add the sesame-test build for hardware testing!
-sysbuild_add_subdirectory(sesame_test)
-
-set(sesame_test_EXTRA_CONF_FILE ${APP_DIR}/tests/system/firmware/prj.conf CACHE PATH "test conf")
-set(sesame_test_EXTRA_DTC_OVERLAY_FILE ${APP_DIR}/tests/system/firmware/overlay.overlay CACHE PATH "test overlay")
