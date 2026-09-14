@@ -2,40 +2,91 @@ import pytest
 import subprocess
 import time
 import os
-import tempfile
+import re
 import serial
-import json
+import struct
+import tempfile
 import threading
 import requests
 
-def inject_nvs_via_gdb(nvs_id: int, data: bytes, elf_path: str):
-    data_hex = ",".join(str(b) for b in data)
-    commands = [
-        "target extended-remote localhost:3333",
-        f"set test_nvs_inject_id = {nvs_id}",
-        f"set test_nvs_inject_len = {len(data)}"
-    ]
-    if len(data) > 0:
-        commands.append(f"set test_nvs_inject_buf = {{{data_hex}}}")
-    commands.append("set test_nvs_inject_cmd = 1")
-    commands.append("detach")
-    commands.append("quit")
-    
-    with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
-        f.write("\n".join(commands) + "\n")
-        script_path = f.name
-        
+def crc8_ccitt(data: bytes, initial=0xFF) -> int:
+    crc = initial
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            if crc & 0x80:
+                crc = (crc << 1) ^ 0x07
+            else:
+                crc <<= 1
+    return crc & 0xFF
+
+def align(length: int, wbs: int) -> int:
+    if wbs <= 1:
+        return length
+    return (length + wbs - 1) & ~(wbs - 1)
+
+def generate_nvs_blob(entries, flash_size=32768, sector_size=4096, wbs=4):
+    blob = bytearray(b'\xff' * flash_size)
+    data_wra = 0
+    ate_wra = sector_size
+    ate_size = align(8, wbs) # struct nvs_ate is 8 bytes
+
+    for _id, data in entries:
+        data_len = len(data)
+        aligned_data_len = align(data_len, wbs)
+
+        # write data
+        blob[data_wra : data_wra + data_len] = data
+
+        # create ATE (uint16_t id, uint16_t offset, uint16_t len, uint8_t part, uint8_t crc8)
+        offset = data_wra
+        part = 0xff
+        ate_head = struct.pack("<HHHB", _id, offset, data_len, part)
+        crc = crc8_ccitt(ate_head)
+        ate = struct.pack("<HHHBB", _id, offset, data_len, part, crc)
+
+        ate_wra -= ate_size
+        blob[ate_wra : ate_wra + 8] = ate
+
+        data_wra += aligned_data_len
+
+    return bytes(blob)
+
+def resolve_mock_flash_address(elf_path):
+    res = subprocess.run(["/home/marcus/zephyr-sdk/gnu/arm-zephyr-eabi/bin/arm-zephyr-eabi-nm", elf_path], capture_output=True, text=True)
+    if res.returncode != 0:
+        pytest.fail(f"nm failed on {elf_path}: {res.stderr.strip()}")
+    for line in res.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[2] == "mock_flash_0":
+            return int(parts[0], 16)
+    pytest.fail(f"mock_flash_0 symbol missing from {elf_path}")
+
+def inject_nvs_direct(ocd, flash_addr, nvs_id, data):
+    """Halts target during boot delay, writes generated NVS blob directly to RAM flash simulator, and resumes."""
+    blob = generate_nvs_blob([(nvs_id, data)])
+
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".bin", delete=False) as f:
+        f.write(blob)
+        blob_path = f.name
+
     try:
-        res = subprocess.run(["gdb-multiarch", "-batch", "-x", script_path, elf_path], capture_output=True, text=True)
-        if res.returncode != 0:
-            print("GDB Error:", res.stderr)
-            raise RuntimeError("GDB injection failed. Is OpenOCD running on localhost:3333?")
+        # Halt the board (which should be in the boot delay loop)
+        ocd.halt()
+
+        # Load the binary image into RAM at the mock_flash_0 address
+        # OpenOCD load_image writes the file directly
+        # Syntax: load_image filename address bin
+        ocd.run(f"load_image {blob_path} {hex(flash_addr)} bin", wait=1.0)
+
+        # Resume to boot the application with the flashed data
+        ocd.resume()
     finally:
-        os.remove(script_path)
+        os.remove(blob_path)
 
 
 @pytest.fixture
-def hardware_device(request, test_network_config):
+def hardware_device(request, test_network_config, openocd):
     port = request.config.getoption("--device-port")
     elf_paths = [
         "build/sesame_test/zephyr/zephyr.elf",
@@ -46,67 +97,44 @@ def hardware_device(request, test_network_config):
         if os.path.exists(p):
             elf_path = p
             break
-            
+
     if not elf_path:
-        pytest.fail(f"sesame_test zephyr.elf not found. Run: west build -b marvell_mw302 -d build/sesame --sysbuild")
-        
+        pytest.fail(f"sesame_test zephyr.elf not found. Run: west build -b genie_idcm/88mw320/cpu0 -d build/sesame --sysbuild")
+
+    flash_addr = resolve_mock_flash_address(elf_path)
+
     print(f"Connecting to hardware on {port}...")
     ser = serial.Serial(port, 115200, timeout=1)
-    
+
     firmware_logs = []
     stop_reader = threading.Event()
-    
+
     def log_reader():
         while not stop_reader.is_set():
             line = ser.readline()
             if line:
-                line_str = line.decode(errors="ignore").strip()
-                firmware_logs.append(line_str)
-                # print(f"[FIRMWARE] {line_str}")
+                firmware_logs.append(line.decode(errors="ignore").strip())
 
     reader_thread = threading.Thread(target=log_reader, daemon=True)
     reader_thread.start()
-    
-    def gdb_reset():
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
-            f.write("target extended-remote localhost:3333\nmonitor reset run\ndetach\nquit\n")
-            script_path = f.name
-        try:
-            subprocess.run(["gdb-multiarch", "-batch", "-x", script_path], capture_output=True)
-        finally:
-            os.remove(script_path)
-            
-    # Force a reboot so it starts clean
-    gdb_reset()
-                   
-    time.sleep(2) # wait for boot
-    
-    # Inject NetworkConfig via NVS hook (ID 1)
+
+    # Boot the device. The firmware has CONFIG_BOOT_DELAY=2000,
+    # so it will zero .bss and then spin for 2 seconds.
+    openocd.reboot()
+
+    # Wait for .bss zeroing to finish (openocd.reboot waits 1.0s, so we are in the 2s window)
+    time.sleep(0.1)
+
+    # Inject NetworkConfig via direct RAM writing (ID 1)
     config_bytes = test_network_config.SerializeToString()
-    print("Injecting NetworkConfig into NVS...")
-    inject_nvs_via_gdb(1, config_bytes, elf_path)
-    
-    # Wait for the hook log
-    start_time = time.time()
-    hook_triggered = False
-    while time.time() - start_time < 5:
-        if any("Test hook triggered" in line for line in firmware_logs):
-            hook_triggered = True
-            break
-        time.sleep(0.1)
-        
-    assert hook_triggered, "Firmware did not process NVS injection hook"
-    
-    # Reboot again so firmware uses the newly injected NVS
-    print("Rebooting device to apply NVS config...")
-    gdb_reset()
-                   
+    print(f"Injecting NetworkConfig into mock_flash_0 @ {hex(flash_addr)}...")
+    inject_nvs_direct(openocd, flash_addr, 1, config_bytes)
+
     # Wait for Wi-Fi connection and IP
     device_ip = None
     start_time = time.time()
     while time.time() - start_time < 30:
         for line in list(firmware_logs):
-            import re
             ip_match = re.search(r"IPv4 address: ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)", line)
             if ip_match and not device_ip:
                 device_ip = ip_match.group(1)
@@ -114,15 +142,15 @@ def hardware_device(request, test_network_config):
         if device_ip:
             break
         time.sleep(0.1)
-        
+
     assert device_ip, "Device failed to connect to Wi-Fi and acquire IP"
     print(f"Device ready on Wi-Fi at IP {device_ip}")
-    
+
     yield {
         "ip": device_ip,
         "logs": firmware_logs
     }
-    
+
     stop_reader.set()
     ser.close()
 
@@ -130,22 +158,19 @@ def hardware_device(request, test_network_config):
 def test_http_door_endpoints(hardware_device):
     ip = hardware_device["ip"]
     logs = hardware_device["logs"]
-    
-    # Test /open
+
     print(f"Testing POST http://{ip}/open")
     resp = requests.post(f"http://{ip}/open", timeout=5)
     assert resp.status_code == 200
-    
-    # Verify log output
+
     time.sleep(0.5)
     assert any("Target=Open" in line for line in logs), "Door open command not logged by firmware"
-    
-    # Test /close
+
     print(f"Testing POST http://{ip}/close")
     resp = requests.post(f"http://{ip}/close", timeout=5)
     assert resp.status_code == 200
-    
+
     time.sleep(0.5)
     assert any("Target=Close" in line for line in logs), "Door close command not logged by firmware"
-    
+
     print("HTTP endpoints verified successfully!")
