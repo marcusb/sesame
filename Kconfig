@@ -12,6 +12,3 @@ config FORCE_FLASH_PAGE_LAYOUT
 	select FLASH_HAS_PAGE_LAYOUT
 
 
-config SESAME_TEST
-    bool "Enable test hooks for hardware system testing"
-    default n
