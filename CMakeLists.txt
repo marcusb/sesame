@@ -100,6 +100,10 @@ if(CONFIG_BOOTLOADER_MCUBOOT)
     )
 endif()
 
+if(CONFIG_FLASH_SIMULATOR)
+    target_sources(app PRIVATE tests/system/firmware/test_config_injector.c)
+endif()
+
 if(CONFIG_CHIP)
     target_sources(app PRIVATE src/matter/MatterTask.cpp src/matter/MatterOTA.cpp src/matter/MatterInfo.cpp third_party/connectedhomeip/examples/providers/DeviceInfoProviderImpl.cpp)
 endif()
@@ -191,7 +195,7 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
         BUILD_COMMAND ""
         INSTALL_COMMAND ""
         BUILD_ALWAYS TRUE
-        EXCLUDE_FROM_ALL FALSE
+        EXCLUDE_FROM_ALL TRUE
     )
     add_dependencies(test_integration native_sim_build)
 endif()
@@ -215,7 +219,7 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
         BUILD_COMMAND ""
         INSTALL_COMMAND ""
         BUILD_ALWAYS TRUE
-        EXCLUDE_FROM_ALL FALSE
+        EXCLUDE_FROM_ALL TRUE
     )
     add_dependencies(sesame_test_build native_sim_build)
     add_dependencies(test_system sesame_test_build)
