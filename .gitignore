@@ -42,7 +42,6 @@ tools/axf2firmware/axf2firmware
 /deps/
 /bootloader/
 /zephyr/
-/tools/
 src/matter/AppVersion.h
 
 test_config.json
