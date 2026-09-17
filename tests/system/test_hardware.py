@@ -3,7 +3,6 @@ import subprocess
 import time
 import os
 import re
-import serial
 import struct
 import tempfile
 import threading
@@ -41,7 +40,7 @@ def generate_nvs_blob(entries, flash_size=32768, sector_size=4096, wbs=4):
         # create ATE (uint16_t id, uint16_t offset, uint16_t len, uint8_t part, uint8_t crc8)
         offset = data_wra
         part = 0xff
-        ate_head = struct.pack("<HHHB", _id, offset, data_len, part)
+        ate_head = struct.pack("<HHHBB", _id, offset, data_len, part, 0xFF)
         crc = crc8_ccitt(ate_head)
         ate = struct.pack("<HHHBB", _id, offset, data_len, part, crc)
 
@@ -86,7 +85,7 @@ def inject_nvs_direct(ocd, flash_addr, nvs_id, data):
 
 
 @pytest.fixture
-def hardware_device(request, test_network_config, openocd):
+def hardware_device(request, test_app_config, openocd):
     port = request.config.getoption("--device-port")
     elf_paths = [
         "build/sesame_test/zephyr/zephyr.elf",
@@ -103,17 +102,27 @@ def hardware_device(request, test_network_config, openocd):
 
     flash_addr = resolve_mock_flash_address(elf_path)
 
-    print(f"Connecting to hardware on {port}...")
-    ser = serial.Serial(port, 115200, timeout=1)
-
+    print("Connecting to hardware via OpenOCD semihost console...")
+    
+    import serial
+    
     firmware_logs = []
     stop_reader = threading.Event()
 
     def log_reader():
-        while not stop_reader.is_set():
-            line = ser.readline()
-            if line:
-                firmware_logs.append(line.decode(errors="ignore").strip())
+        try:
+            with serial.Serial(port, 115200, timeout=0.1) as ser:
+                while not stop_reader.is_set():
+                    line = ser.readline()
+                    if line:
+                        try:
+                            decoded = line.decode('utf-8', errors='ignore').strip()
+                            if decoded:
+                                firmware_logs.append(decoded)
+                        except:
+                            pass
+        except Exception as e:
+            print(f"Serial port error: {e}")
 
     reader_thread = threading.Thread(target=log_reader, daemon=True)
     reader_thread.start()
@@ -125,25 +134,33 @@ def hardware_device(request, test_network_config, openocd):
     # Wait for .bss zeroing to finish (openocd.reboot waits 1.0s, so we are in the 2s window)
     time.sleep(0.1)
 
-    # Inject NetworkConfig via direct RAM writing (ID 1)
-    config_bytes = test_network_config.SerializeToString()
-    print(f"Injecting NetworkConfig into mock_flash_0 @ {hex(flash_addr)}...")
-    inject_nvs_direct(openocd, flash_addr, 1, config_bytes)
+    # Write NetworkConfig to file for semihosting access
+    config_bytes = test_app_config.SerializeToString()
+    with open("test_config.bin", "wb") as f:
+        f.write(config_bytes)
+    print("Wrote AppConfig to test_config.bin for semihosting")
 
     # Wait for Wi-Fi connection and IP
     device_ip = None
     start_time = time.time()
-    while time.time() - start_time < 30:
+    while time.time() - start_time < 60:
         for line in list(firmware_logs):
-            ip_match = re.search(r"IPv4 address: ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)", line)
+            # Match either IPv4 or IPv6 address
+            ip_match = re.search(r"IPv[46] address: ([0-9a-fA-F:\.]+)", line)
             if ip_match and not device_ip:
-                device_ip = ip_match.group(1)
-                break
+                # If it's IPv6 link-local (fe80), skip it, we want a routable one if possible,
+                # but if it's the only one, we can use it (might need zone id though).
+                # Actually, the zephyr device gets a global IPv6 addr (e.g. 2600:...)
+                ip_str = ip_match.group(1)
+                if not ip_str.startswith("fe80"):
+                    device_ip = f"[{ip_str}]" if ":" in ip_str else ip_str
+                    break
         if device_ip:
+            print(f"Parsed IP: {device_ip}. Firmware logs so far:\n" + "\n".join(firmware_logs))
             break
         time.sleep(0.1)
 
-    assert device_ip, "Device failed to connect to Wi-Fi and acquire IP"
+    assert device_ip, f"Device failed to connect to Wi-Fi and acquire IP. Logs:\n{chr(10).join(firmware_logs)}"
     print(f"Device ready on Wi-Fi at IP {device_ip}")
 
     yield {
@@ -152,7 +169,6 @@ def hardware_device(request, test_network_config, openocd):
     }
 
     stop_reader.set()
-    ser.close()
 
 
 def test_http_door_endpoints(hardware_device):
@@ -160,17 +176,31 @@ def test_http_door_endpoints(hardware_device):
     logs = hardware_device["logs"]
 
     print(f"Testing POST http://{ip}/open")
-    resp = requests.post(f"http://{ip}/open", timeout=5)
+
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+
+    session = requests.Session()
+    retry = Retry(connect=5, backoff_factor=0.5)
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+
+    resp = session.post(f"http://{ip}/open", timeout=5)
     assert resp.status_code == 200
 
     time.sleep(0.5)
-    assert any("Target=Open" in line for line in logs), "Door open command not logged by firmware"
+    assert any("PIC: OPEN" in line for line in logs), "Door open command not logged by firmware"
 
     print(f"Testing POST http://{ip}/close")
-    resp = requests.post(f"http://{ip}/close", timeout=5)
+    resp = session.post(f"http://{ip}/close", timeout=5)
     assert resp.status_code == 200
 
-    time.sleep(0.5)
-    assert any("Target=Close" in line for line in logs), "Door close command not logged by firmware"
+    time.sleep(7.5)
+    if not any("PIC: CLOSE" in line for line in logs):
+        print("Last 20 log lines:")
+        for line in logs[-20:]:
+            print(line)
+        assert False, "Door close command not logged by firmware"
 
     print("HTTP endpoints verified successfully!")

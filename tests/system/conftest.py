@@ -1,31 +1,27 @@
 import pytest
-import json
 import os
+import json
+
+from openocd_fixture import openocd
 
 def pytest_addoption(parser):
-    parser.addoption("--wifi-config", action="store", default="wifi.json",
-                     help="Path to JSON file containing Wi-Fi credentials")
+    parser.addoption("--app-config", action="store", default="test_config.json",
+                     help="Path to JSON file containing the full AppConfig")
     parser.addoption("--device-port", action="store", default="/dev/ttyUSB0",
                      help="Serial port for device")
 
-@pytest.fixture(scope="session")
-def wifi_credentials(request):
-    config_path = request.config.getoption("--wifi-config")
-    if not os.path.exists(config_path):
-        pytest.skip(f"Wi-Fi config file {config_path} not found. Skipping hardware network tests.")
-    with open(config_path, "r") as f:
-        return json.load(f)
-
 @pytest.fixture
-def test_network_config(wifi_credentials):
+def test_app_config(request):
     from proto import app_config_pb2
-    config = app_config_pb2.NetworkConfig()
-    config.hostname = "sesame-test"
-    config.ssid = wifi_credentials.get("ssid", "TEST_SSID")
-    config.password = wifi_credentials.get("password", "TEST_PASS")
+    from google.protobuf import json_format
     
-    # 2 is WPA2 in our enum (or WPA2_PSK depending on definition)
-    # The user protobuf probably defines SecurityType
-    security = wifi_credentials.get("security", 2)
-    config.security = security
+    config_path = request.config.getoption("--app-config")
+    if not os.path.exists(config_path):
+        pytest.skip(f"App config file {config_path} not found. Skipping hardware network tests.")
+        
+    with open(config_path, "r") as f:
+        json_data = f.read()
+        
+    config = app_config_pb2.AppConfig()
+    json_format.Parse(json_data, config, ignore_unknown_fields=True)
     return config

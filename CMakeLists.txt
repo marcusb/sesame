@@ -195,7 +195,6 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
         BUILD_COMMAND ""
         INSTALL_COMMAND ""
         BUILD_ALWAYS TRUE
-        EXCLUDE_FROM_ALL TRUE
     )
     add_dependencies(test_integration native_sim_build)
 endif()
@@ -219,7 +218,6 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
         BUILD_COMMAND ""
         INSTALL_COMMAND ""
         BUILD_ALWAYS TRUE
-        EXCLUDE_FROM_ALL TRUE
     )
     add_dependencies(sesame_test_build native_sim_build)
     add_dependencies(test_system sesame_test_build)
