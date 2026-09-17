@@ -4,7 +4,7 @@ set -e
 COMMAND=$1
 
 setup_test_env() {
-    WHEEL_DIR="third_party/connectedhomeip/out/obj/src/controller/python/matter-controller-wheels"
+    WHEEL_DIR="third_party/connectedhomeip/out/python_lib/obj/src/controller/python/matter-controller-wheels"
     
     if ! ls $WHEEL_DIR/*.whl >/dev/null 2>&1; then
         echo "Matter python bindings wheel not found. Building it now..."
@@ -17,10 +17,10 @@ setup_test_env() {
     fi
 
     if [ ! -d ".venv_tests" ]; then
-        uv venv .venv_tests
+        uv venv --python python3 .venv_tests
     fi
     source .venv_tests/bin/activate
-    uv pip install pytest pyserial protobuf $WHEEL_DIR/*.whl
+    uv pip install pytest pyserial protobuf requests $WHEEL_DIR/*.whl
 }
 
 case "$COMMAND" in

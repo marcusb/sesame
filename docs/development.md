@@ -105,9 +105,9 @@ cd ../..
 
 You can then use `uv` to create a dedicated test environment and install the bindings and test dependencies:
 ```sh
-uv venv .venv_tests
+uv venv --python python3 .venv_tests
 source .venv_tests/bin/activate
-uv pip install pytest pyserial protobuf third_party/connectedhomeip/out/obj/src/controller/python/matter-controller-wheels/*.whl
+uv pip install pytest pyserial protobuf requests third_party/connectedhomeip/out/python_lib/obj/src/controller/python/matter-controller-wheels/*.whl
 ```
 This prepares the virtual environment to run `chip.ChipDeviceCtrl` scripts and Pytest hardware tests.
 
