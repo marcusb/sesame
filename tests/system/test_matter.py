@@ -8,7 +8,6 @@ import time
 import matter.native
 
 matter.native.Init()
-import matter.ChipDeviceCtrl  # noqa: E402
 import matter.clusters as Clusters  # noqa: E402
 import matter.storage  # noqa: E402
 from matter.CertificateAuthority import CertificateAuthorityManager  # noqa: E402
