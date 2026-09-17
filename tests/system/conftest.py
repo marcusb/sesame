@@ -11,7 +11,7 @@ def pytest_addoption(parser):
                      help="Serial port for device")
 
 @pytest.fixture
-def port(request):
+def device_port(request):
     return request.config.getoption("--device-port")
 
 @pytest.fixture

@@ -5,7 +5,7 @@ import re
 import threading
 
 @pytest.fixture
-def hardware_device(port, test_app_config, openocd):
+def hardware_device(device_port, test_app_config, openocd):
     elf_paths = [
         "build/sesame_test/zephyr/zephyr.elf",
         "build/sesame/sesame_test/zephyr/zephyr.elf",
@@ -28,7 +28,7 @@ def hardware_device(port, test_app_config, openocd):
 
     def log_reader():
         try:
-            with serial.Serial(port, 115200, timeout=0.1) as ser:
+            with serial.Serial(device_port, 115200, timeout=0.1) as ser:
                 while not stop_reader.is_set():
                     line = ser.readline()
                     if line:

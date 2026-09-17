@@ -22,12 +22,12 @@ except ImportError:
     print("Matter Python bindings not found. Activate venv first.")
     sys.exit(1)
 
-def test_hardware_case_provisioning(port='/dev/ttyUSB0'):
-    if not os.path.exists(port):
-        pytest.skip(f"Hardware not connected at {port}")
+def test_hardware_case_provisioning(device_port='/dev/ttyUSB0'):
+    if not os.path.exists(device_port):
+        pytest.skip(f"Hardware not connected at {device_port}")
 
-    print(f"Connecting to hardware on {port}...")
-    ser = serial.Serial(port, 115200, timeout=1)
+    print(f"Connecting to hardware on {device_port}...")
+    ser = serial.Serial(device_port, 115200, timeout=1)
 
     # Reboot device
     ser.write(b'\x03') # Ctrl-C
