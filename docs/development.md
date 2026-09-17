@@ -98,10 +98,18 @@ To build the Python bindings:
 source third_party/connectedhomeip/scripts/activate.sh
 cd third_party/connectedhomeip
 
-# Build the python bindings into a virtual environment in out/python_env
-./scripts/build_python.sh -m minimal -i out/python_env
+# Build the python bindings wheels
+./scripts/build_python.sh -m minimal
+cd ../..
 ```
-You can then source the resulting virtual environment (`source third_party/connectedhomeip/out/python_env/bin/activate`) to run scripts using `chip.ChipDeviceCtrl`.
+
+You can then use `uv` to create a dedicated test environment and install the bindings and test dependencies:
+```sh
+uv venv .venv_tests
+source .venv_tests/bin/activate
+uv pip install pytest pyserial protobuf third_party/connectedhomeip/out/obj/src/controller/python/matter-controller-wheels/*.whl
+```
+This prepares the virtual environment to run `chip.ChipDeviceCtrl` scripts and Pytest hardware tests.
 
 ## native_sim Emulation
 

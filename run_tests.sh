@@ -3,6 +3,26 @@ set -e
 
 COMMAND=$1
 
+setup_test_env() {
+    WHEEL_DIR="third_party/connectedhomeip/out/obj/src/controller/python/matter-controller-wheels"
+    
+    if ! ls $WHEEL_DIR/*.whl >/dev/null 2>&1; then
+        echo "Matter python bindings wheel not found. Building it now..."
+        # Run in subshell to avoid polluting test environment with Pigweed PATH
+        (
+            source third_party/connectedhomeip/scripts/activate.sh
+            cd third_party/connectedhomeip
+            ./scripts/build_python.sh -m minimal
+        )
+    fi
+
+    if [ ! -d ".venv_tests" ]; then
+        uv venv .venv_tests
+    fi
+    source .venv_tests/bin/activate
+    uv pip install pytest pyserial protobuf $WHEEL_DIR/*.whl
+}
+
 case "$COMMAND" in
     unit)
         echo "Running Unit Tests via Ztest..."
@@ -11,26 +31,13 @@ case "$COMMAND" in
         ;;
     integration)
         echo "Running Integration Tests via Pytest (QEMU/Native_Sim)..."
-        source third_party/connectedhomeip/scripts/activate.sh
-        if [ ! -f third_party/connectedhomeip/out/python_env/bin/activate ]; then
-            echo "Matter python bindings not found. Building them now..."
-            (cd third_party/connectedhomeip && ./scripts/build_python.sh -m minimal -i out/python_env)
-        fi
-        source third_party/connectedhomeip/out/python_env/bin/activate
+        setup_test_env
         python -m pytest tests/integration/test_matter_integration.py -v -s
         ;;
     system)
         echo "Running System Tests via Pytest (Hardware)..."
         PORT=${2:-"/dev/ttyUSB0"}
-        source third_party/connectedhomeip/scripts/activate.sh
-        if [ ! -f third_party/connectedhomeip/out/python_env/bin/activate ]; then
-            echo "Matter python bindings not found. Building them now..."
-            (cd third_party/connectedhomeip && ./scripts/build_python.sh -m minimal -i out/python_env)
-        fi
-        source third_party/connectedhomeip/out/python_env/bin/activate
-        # Hardware tests need pyserial (serial) and the protobuf runtime for tests/system/proto
-        python -c "import serial" 2>/dev/null || python -m pip install --quiet pyserial
-        python -c "import google.protobuf" 2>/dev/null || python -m pip install --quiet protobuf
+        setup_test_env
         python -m pytest tests/system/test_hardware.py --device-port=$PORT -v -s "${@:3}"
         ;;
     *)
