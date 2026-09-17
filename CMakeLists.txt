@@ -175,9 +175,10 @@ add_custom_target(test_all
     COMMENT "Running all tests"
 )
 
-# Automatically build the native_sim (QEMU/POSIX emulator) target alongside the main hardware target
+# Automatically build the native_sim (QEMU/POSIX emulator) and sesame_test target alongside the main hardware target
 if(NOT CONFIG_BOARD_NATIVE_SIM)
     get_filename_component(BIN_DIR_NAME ${CMAKE_BINARY_DIR} NAME)
+    
     if("${BIN_DIR_NAME}" STREQUAL "sesame")
         # When running under sysbuild, CMAKE_BINARY_DIR is build/sesame
         set(NATIVE_SIM_OUTDIR ${CMAKE_BINARY_DIR}/../native_sim)
@@ -197,29 +198,25 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
         BUILD_ALWAYS TRUE
     )
     add_dependencies(test_integration native_sim_build)
-endif()
 
-if(NOT CONFIG_BOARD_NATIVE_SIM)
-    get_filename_component(BIN_DIR_NAME ${CMAKE_BINARY_DIR} NAME)
     if(NOT "${BIN_DIR_NAME}" STREQUAL "sesame_test")
-    if("${BIN_DIR_NAME}" STREQUAL "sesame")
-        set(SESAME_TEST_OUTDIR ${CMAKE_BINARY_DIR}/../sesame_test)
-    else()
-        set(SESAME_TEST_OUTDIR ${CMAKE_BINARY_DIR}/sesame_test)
-    endif()
-    get_filename_component(SESAME_TEST_OUTDIR ${SESAME_TEST_OUTDIR} ABSOLUTE)
+        if("${BIN_DIR_NAME}" STREQUAL "sesame")
+            set(SESAME_TEST_OUTDIR ${CMAKE_BINARY_DIR}/../sesame_test)
+        else()
+            set(SESAME_TEST_OUTDIR ${CMAKE_BINARY_DIR}/sesame_test)
+        endif()
+        get_filename_component(SESAME_TEST_OUTDIR ${SESAME_TEST_OUTDIR} ABSOLUTE)
 
-    include(ExternalProject)
-    ExternalProject_Add(
-        sesame_test_build
-        SOURCE_DIR ${CMAKE_SOURCE_DIR}
-        BINARY_DIR ${SESAME_TEST_OUTDIR}
-        CONFIGURE_COMMAND west build -b genie_idcm/88mw320/cpu0 -d ${SESAME_TEST_OUTDIR} ${CMAKE_SOURCE_DIR} -- -DEXTRA_CONF_FILE=tests/system/firmware/prj.conf -DDTC_OVERLAY_FILE=tests/system/firmware/overlay.overlay
-        BUILD_COMMAND ""
-        INSTALL_COMMAND ""
-        BUILD_ALWAYS TRUE
-    )
-    add_dependencies(sesame_test_build native_sim_build)
-    add_dependencies(test_system sesame_test_build)
+        ExternalProject_Add(
+            sesame_test_build
+            SOURCE_DIR ${CMAKE_SOURCE_DIR}
+            BINARY_DIR ${SESAME_TEST_OUTDIR}
+            CONFIGURE_COMMAND west build -b genie_idcm/88mw320/cpu0 -d ${SESAME_TEST_OUTDIR} ${CMAKE_SOURCE_DIR} -- -DEXTRA_CONF_FILE=tests/system/firmware/prj.conf -DDTC_OVERLAY_FILE=tests/system/firmware/overlay.overlay
+            BUILD_COMMAND ""
+            INSTALL_COMMAND ""
+            BUILD_ALWAYS TRUE
+        )
+        add_dependencies(sesame_test_build native_sim_build)
+        add_dependencies(test_system sesame_test_build)
     endif()
 endif()
