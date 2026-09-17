@@ -1,3 +1,7 @@
+from openocd_fixture import openocd  # noqa: F401
+from hardware_fixture import hardware_device  # noqa: F401
+
+
 import os
 
 import pytest
