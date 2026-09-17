@@ -16,11 +16,9 @@ setup_test_env() {
         )
     fi
 
-    if [ ! -d ".venv_tests" ]; then
-        uv venv --python python3 .venv_tests
-    fi
-    source .venv_tests/bin/activate
-    uv pip install pytest pyserial protobuf requests $WHEEL_DIR/*.whl
+    uv sync
+    source .venv/bin/activate
+    uv pip install $WHEEL_DIR/*.whl
 }
 
 case "$COMMAND" in
