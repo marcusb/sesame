@@ -36,7 +36,7 @@ case "$COMMAND" in
         echo "Running System Tests via Pytest (Hardware)..."
         PORT=${2:-"/dev/ttyUSB0"}
         setup_test_env
-        python -m pytest tests/system/test_hardware.py --device-port=$PORT -v -s "${@:3}"
+        python -m pytest tests/system/ --device-port=$PORT -v -s "${@:3}"
         ;;
     *)
         echo "Usage: $0 {unit|integration|system} [port]"
