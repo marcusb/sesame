@@ -28,15 +28,15 @@ def test_hardware_case_provisioning(port='/dev/ttyUSB0'):
 
     print(f"Connecting to hardware on {port}...")
     ser = serial.Serial(port, 115200, timeout=1)
-    
+
     # Reboot device
     ser.write(b'\x03') # Ctrl-C
     time.sleep(0.5)
     ser.write(b'reboot\r\n')
-    
+
     firmware_logs = []
     stop_reader = threading.Event()
-    
+
     def log_reader():
         while not stop_reader.is_set():
             line = ser.readline()
@@ -52,7 +52,7 @@ def test_hardware_case_provisioning(port='/dev/ttyUSB0'):
         booted = False
         pairing_code = None
         device_ip = None
-        
+
         print("Waiting for boot, Wi-Fi connection, and pairing code...")
         start_time = time.time()
         while time.time() - start_time < 45:
@@ -61,7 +61,7 @@ def test_hardware_case_provisioning(port='/dev/ttyUSB0'):
                 if match and not pairing_code:
                     pairing_code = match.group(1)
                     print(f"--> Found pairing code: {pairing_code}")
-                
+
                 # Check for IP address in logs
                 ip_match = re.search(r"IPv4 address: ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)", line)
                 if ip_match and not device_ip:
@@ -70,7 +70,7 @@ def test_hardware_case_provisioning(port='/dev/ttyUSB0'):
 
                 if "Network is UP" in line:
                     booted = True
-                    
+
             if booted and pairing_code and device_ip:
                 break
             time.sleep(0.1)
@@ -80,7 +80,7 @@ def test_hardware_case_provisioning(port='/dev/ttyUSB0'):
         assert device_ip, "Firmware did not output IP address"
 
         print(f"Hardware ready at {device_ip}. Commissioning...")
-        
+
         storage = matter.storage.PersistentStorageJSON('hw_repl_storage.json')
         stack = ChipStack(persistentStorage=storage)
         ca_manager = CertificateAuthorityManager(stack, stack.GetStorageManager())
@@ -88,11 +88,11 @@ def test_hardware_case_provisioning(port='/dev/ttyUSB0'):
         if len(ca_manager.activeCaList) == 0:
             ca = ca_manager.NewCertificateAuthority()
             ca.NewFabricAdmin(vendorId=0xFFF1, fabricId=1)
-        
+
         ca = ca_manager.activeCaList[0]
         admin = ca.adminList[0]
         controller = admin.NewController(nodeId=112233)
-        
+
         parser = SetupPayload()
         parser.ParseManualPairingCode(pairing_code)
         setup_pin = int(parser.attributes["SetUpPINCode"])
@@ -105,12 +105,12 @@ def test_hardware_case_provisioning(port='/dev/ttyUSB0'):
             print("Proceeding with CASE Operational Discovery (mDNS)...")
             await controller.Commission(1)
             print("SUCCESS! Device fully commissioned using CASE.")
-            
+
         asyncio.run(commission())
-        
+
     finally:
         stop_reader.set()
         ser.close()
-        
+
 if __name__ == '__main__':
     test_hardware_case_provisioning()

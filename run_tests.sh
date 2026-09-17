@@ -28,7 +28,10 @@ case "$COMMAND" in
             (cd third_party/connectedhomeip && ./scripts/build_python.sh -m minimal -i out/python_env)
         fi
         source third_party/connectedhomeip/out/python_env/bin/activate
-        python -m pytest tests/system/test_hardware.py --device-port=$PORT -v -s
+        # Hardware tests need pyserial (serial) and the protobuf runtime for tests/system/proto
+        python -c "import serial" 2>/dev/null || python -m pip install --quiet pyserial
+        python -c "import google.protobuf" 2>/dev/null || python -m pip install --quiet protobuf
+        python -m pytest tests/system/test_hardware.py --device-port=$PORT -v -s "${@:3}"
         ;;
     *)
         echo "Usage: $0 {unit|integration|system} [port]"

@@ -45,4 +45,4 @@ tools/axf2firmware/axf2firmware
 /tools/
 src/matter/AppVersion.h
 
-wifi.json
+test_config.json

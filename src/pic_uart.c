@@ -323,11 +323,17 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
             cmd_0x04();
             door_poll_tstamp = now;
         }
-        if (queued_cmd && now > door_move_tstamp) {
+        if (queued_cmd && now >= door_move_tstamp) {
             send_door_cmd(queued_cmd == PIC_CMD_OPEN ? 1 : 0);
             queued_cmd = 0;
         }
-        if (k_msgq_get(&pic_queue, &cmd, K_MSEC(READ_TIMEOUT_TICKS)) == 0) {
+
+        uint32_t timeout_ms = READ_TIMEOUT_TICKS;
+        if (queued_cmd && door_move_tstamp > now) {
+            timeout_ms = door_move_tstamp - now;
+        }
+
+        if (k_msgq_get(&pic_queue, &cmd, K_MSEC(timeout_ms)) == 0) {
             switch (cmd) {
                 case PIC_CMD_OPEN:
                     if (direction == DCM_DOOR_DIR_DOWN) {

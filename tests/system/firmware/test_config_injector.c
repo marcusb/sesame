@@ -8,7 +8,13 @@
 #include <zephyr/sys/printk.h>
 #include <string.h>
 
+#include "app_config.pb.h"
+#include "pb_decode.h"
+#include "pb_encode.h"
+
 #define NVS_ID_NETWORK_CONFIG 1
+#define NVS_ID_MQTT_CONFIG 2
+#define NVS_ID_LOGGING_CONFIG 3
 
 #ifdef CONFIG_BOARD_NATIVE_SIM
 #define NVS_PARTITION storage_partition
@@ -21,6 +27,22 @@
 #define NVS_PARTITION_SIZE DT_REG_SIZE(DT_NODELABEL(NVS_PARTITION))
 
 static struct nvs_fs fs;
+
+static int inject_proto_config(uint16_t id, const pb_msgdesc_t* fields, const void* src, const char* name) {
+    static uint8_t buf[256];
+    pb_ostream_t stream = pb_ostream_from_buffer(buf, sizeof(buf));
+    if (!pb_encode(&stream, fields, src)) {
+        printk(">>> encode %s config failed: %s\n", name, PB_GET_ERROR(&stream));
+        return -1;
+    }
+    int ret = nvs_write(&fs, id, buf, stream.bytes_written);
+    if (ret < 0) {
+        printk(">>> nvs write %s config failed %d\n", name, ret);
+        return ret;
+    }
+    printk(">>> Injected %s config into NVS, size=%zu, rc=%d\n", name, stream.bytes_written, ret);
+    return 0;
+}
 
 static int inject_test_config(void)
 {
@@ -55,11 +77,26 @@ static int inject_test_config(void)
         long len = semihost_flen(fd);
         printk(">>> semihost_flen returned %ld\n", len);
         if (len > 0) {
-            uint8_t buf[256];
+            static uint8_t buf[1024];
             long read_len = semihost_read(fd, buf, len);
             if (len <= sizeof(buf) && read_len == len) {
-                int rc = nvs_write(&fs, NVS_ID_NETWORK_CONFIG, buf, len);
-                printk(">>> Injected NetworkConfig into NVS, size=%ld, rc=%d\n", len, rc);
+                static AppConfig app_config; memset(&app_config, 0, sizeof(app_config));
+                pb_istream_t stream = pb_istream_from_buffer(buf, len);
+                if (pb_decode(&stream, AppConfig_fields, &app_config)) {
+                    printk(">>> Successfully decoded AppConfig, ssid=%s\n", app_config.network_config.ssid);
+                    
+                    if (app_config.has_network_config) {
+                        inject_proto_config(NVS_ID_NETWORK_CONFIG, NetworkConfig_fields, &app_config.network_config, "NetworkConfig");
+                    }
+                    if (app_config.has_mqtt_config) {
+                        inject_proto_config(NVS_ID_MQTT_CONFIG, MqttConfig_fields, &app_config.mqtt_config, "MqttConfig");
+                    }
+                    if (app_config.has_logging_config) {
+                        inject_proto_config(NVS_ID_LOGGING_CONFIG, LoggingConfig_fields, &app_config.logging_config, "LoggingConfig");
+                    }
+                } else {
+                    printk(">>> Failed to decode AppConfig: %s\n", PB_GET_ERROR(&stream));
+                }
             } else {
                 printk(">>> Failed to read test_config.bin, read_len=%ld\n", read_len);
             }

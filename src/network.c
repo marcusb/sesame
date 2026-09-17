@@ -283,7 +283,8 @@ void start_ap(void) {
     }
     net_if_ipv4_set_netmask_by_addr(iface, &ap_ip, &ap_mask);
 
-    struct wifi_connect_req_params ap_params = {0};
+    static struct wifi_connect_req_params ap_params;
+    memset(&ap_params, 0, sizeof(ap_params));
     ap_params.ssid = (uint8_t*)"sesame";
     ap_params.ssid_length = strlen("sesame");
     ap_params.channel = 6;
@@ -316,7 +317,8 @@ void start_sta(void) {
         return;
     }
 
-    struct wifi_connect_req_params sta_params = {0};
+    static struct wifi_connect_req_params sta_params;
+    memset(&sta_params, 0, sizeof(sta_params));
     sta_params.ssid = (uint8_t*)app_config.network_config.ssid;
     sta_params.ssid_length = strlen(app_config.network_config.ssid);
 
@@ -331,8 +333,9 @@ void start_sta(void) {
 
     LOG_INF("Starting WiFi STA connection to %s...",
             app_config.network_config.ssid);
-    if (net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &sta_params,
-                 sizeof(sta_params))) {
-        LOG_ERR("Failed to request STA connect");
+    while (net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &sta_params,
+                    sizeof(sta_params))) {
+        LOG_WRN("Failed to request STA connect, retrying...");
+        k_msleep(500);
     }
 }
