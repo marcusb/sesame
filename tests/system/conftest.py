@@ -11,6 +11,10 @@ def pytest_addoption(parser):
                      help="Serial port for device")
 
 @pytest.fixture
+def port(request):
+    return request.config.getoption("--device-port")
+
+@pytest.fixture
 def test_app_config(request):
     from proto import app_config_pb2
     from google.protobuf import json_format

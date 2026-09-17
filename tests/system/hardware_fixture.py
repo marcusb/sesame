@@ -5,8 +5,7 @@ import re
 import threading
 
 @pytest.fixture
-def hardware_device(request, test_app_config, openocd):
-    port = request.config.getoption("--device-port")
+def hardware_device(port, test_app_config, openocd):
     elf_paths = [
         "build/sesame_test/zephyr/zephyr.elf",
         "build/sesame/sesame_test/zephyr/zephyr.elf",
