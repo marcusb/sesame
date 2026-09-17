@@ -1,16 +1,18 @@
+import asyncio
 import logging
-import pytest
-import subprocess
-import time
 import os
 import pty
 import re
-import asyncio
-import tempfile
 import shutil
+import subprocess
+import tempfile
 import threading
+import time
+
+import pytest
 
 logging.basicConfig(level=logging.DEBUG)
+
 
 def cleanup_flash():
     """Helper to remove flash simulation files from the CWD."""
@@ -20,6 +22,7 @@ def cleanup_flash():
         except FileNotFoundError:
             pass
 
+
 @pytest.fixture(scope="module")
 def matter_classes():
     """
@@ -28,12 +31,13 @@ def matter_classes():
     """
     try:
         import matter.native
+
         matter.native.Init()
+        import matter.ChipDeviceCtrl
+        import matter.clusters as Clusters
+        import matter.storage
         from matter.CertificateAuthority import CertificateAuthorityManager
         from matter.ChipStack import ChipStack
-        import matter.ChipDeviceCtrl
-        import matter.storage
-        import matter.clusters as Clusters
         from matter.setup_payload.setup_payload import SetupPayload
 
         return {
@@ -42,10 +46,13 @@ def matter_classes():
             "ChipDeviceCtrl": matter.ChipDeviceCtrl,
             "storage": matter.storage,
             "Clusters": Clusters,
-            "SetupPayload": SetupPayload
+            "SetupPayload": SetupPayload,
         }
     except ImportError:
-        pytest.fail("Matter Python bindings not found. Please build them first and activate the venv.")
+        pytest.fail(
+            "Matter Python bindings not found. Please build them first and activate the venv."
+        )
+
 
 @pytest.fixture
 def zephyr_app():
@@ -61,9 +68,7 @@ def zephyr_app():
     cleanup_flash()
 
     master, slave = pty.openpty()
-    process = subprocess.Popen(
-        [zephyr_exe], stdout=slave, stderr=slave, text=True
-    )
+    process = subprocess.Popen([zephyr_exe], stdout=slave, stderr=slave, text=True)
     os.close(slave)
 
     firmware_logs = []
@@ -71,6 +76,7 @@ def zephyr_app():
 
     def log_reader():
         import select
+
         buf = b""
         while not stop_reader.is_set():
             try:
@@ -117,11 +123,7 @@ def zephyr_app():
         cleanup_flash()
         pytest.fail("Firmware failed to boot or output pairing code")
 
-    yield {
-        "process": process,
-        "logs": firmware_logs,
-        "pairing_code": pairing_code
-    }
+    yield {"process": process, "logs": firmware_logs, "pairing_code": pairing_code}
 
     # Teardown
     stop_reader.set()
@@ -131,6 +133,7 @@ def zephyr_app():
     process.wait(timeout=5)
     cleanup_flash()
 
+
 @pytest.fixture
 def matter_controller(matter_classes):
     """
@@ -139,9 +142,13 @@ def matter_controller(matter_classes):
     """
     temp_dir = tempfile.mkdtemp(dir="build")
 
-    storage = matter_classes["storage"].PersistentStorageJSON(os.path.join(temp_dir, 'repl_storage.json'))
+    storage = matter_classes["storage"].PersistentStorageJSON(
+        os.path.join(temp_dir, "repl_storage.json")
+    )
     stack = matter_classes["ChipStack"](persistentStorage=storage)
-    ca_manager = matter_classes["CertificateAuthorityManager"](stack, stack.GetStorageManager())
+    ca_manager = matter_classes["CertificateAuthorityManager"](
+        stack, stack.GetStorageManager()
+    )
     ca_manager.LoadAuthoritiesFromStorage()
 
     if len(ca_manager.activeCaList) == 0:
@@ -163,6 +170,7 @@ def matter_controller(matter_classes):
         pass
     shutil.rmtree(temp_dir)
 
+
 def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
     """
     Verifies that the firmware can be commissioned over PASE
@@ -176,6 +184,7 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
     setup_pin = int(parser.attributes["SetUpPINCode"])
 
     print(f"Commissioning Node 1 with setup PIN {setup_pin} via IP...")
+
     async def commission():
         await matter_controller.EstablishPASESessionIP("::1", setup_pin, 1)
 
@@ -186,10 +195,12 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
     async def send_command():
         Clusters = matter_classes["Clusters"]
         # 1 is endpoint 1
-        await matter_controller.SendCommand(1, 1, Clusters.WindowCovering.Commands.UpOrOpen())
+        await matter_controller.SendCommand(
+            1, 1, Clusters.WindowCovering.Commands.UpOrOpen()
+        )
 
     asyncio.run(send_command())
-    time.sleep(2) # Give it time to process and log
+    time.sleep(2)  # Give it time to process and log
 
     command_received = False
     end_time = time.time() + 10

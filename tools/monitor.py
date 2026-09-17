@@ -22,10 +22,18 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--port", default="/dev/ttyUSB0")
     p.add_argument("--baud", type=int, default=115200)
-    p.add_argument("--timeout", type=float, default=0.0,
-                   help="stop after N seconds (0 = run forever)")
-    p.add_argument("--until", dest="sentinel", default=None,
-                   help="stop when this string appears in the output")
+    p.add_argument(
+        "--timeout",
+        type=float,
+        default=0.0,
+        help="stop after N seconds (0 = run forever)",
+    )
+    p.add_argument(
+        "--until",
+        dest="sentinel",
+        default=None,
+        help="stop when this string appears in the output",
+    )
     args = p.parse_args()
 
     ser = serial.Serial(args.port, args.baud, timeout=1)

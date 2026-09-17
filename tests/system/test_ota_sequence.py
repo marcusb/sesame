@@ -1,6 +1,3 @@
-import pytest
-import subprocess
-
 def test_hardware_ota(port):
     """
     Placeholder test for Type 3 System tests.
@@ -13,4 +10,3 @@ def test_hardware_ota(port):
     # Commission via Matter
     # Push OTA image
     # Verify success
-    pass

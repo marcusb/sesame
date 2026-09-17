@@ -1,8 +1,10 @@
-import pytest
 import os
-import time
 import re
 import threading
+import time
+
+import pytest
+
 
 @pytest.fixture
 def hardware_device(device_port, test_app_config, openocd):
@@ -17,12 +19,14 @@ def hardware_device(device_port, test_app_config, openocd):
             break
 
     if not elf_path:
-        pytest.fail(f"sesame_test zephyr.elf not found. Run: west build -b genie_idcm/88mw320/cpu0 -d build/sesame --sysbuild")
+        pytest.fail(
+            "sesame_test zephyr.elf not found. Run: west build -b genie_idcm/88mw320/cpu0 -d build/sesame --sysbuild"
+        )
 
     print("Connecting to hardware via OpenOCD semihost console...")
-    
+
     import serial
-    
+
     firmware_logs = []
     stop_reader = threading.Event()
 
@@ -33,10 +37,10 @@ def hardware_device(device_port, test_app_config, openocd):
                     line = ser.readline()
                     if line:
                         try:
-                            decoded = line.decode('utf-8', errors='ignore').strip()
+                            decoded = line.decode("utf-8", errors="ignore").strip()
                             if decoded:
                                 firmware_logs.append(decoded)
-                        except:
+                        except Exception:
                             pass
         except Exception as e:
             print(f"Serial port error: {e}")
@@ -73,16 +77,18 @@ def hardware_device(device_port, test_app_config, openocd):
                     device_ip = f"[{ip_str}]" if ":" in ip_str else ip_str
                     break
         if device_ip:
-            print(f"Parsed IP: {device_ip}. Firmware logs so far:\n" + "\n".join(firmware_logs))
+            print(
+                f"Parsed IP: {device_ip}. Firmware logs so far:\n"
+                + "\n".join(firmware_logs)
+            )
             break
         time.sleep(0.1)
 
-    assert device_ip, f"Device failed to connect to Wi-Fi and acquire IP. Logs:\n{chr(10).join(firmware_logs)}"
+    assert (
+        device_ip
+    ), f"Device failed to connect to Wi-Fi and acquire IP. Logs:\n{chr(10).join(firmware_logs)}"
     print(f"Device ready on Wi-Fi at IP {device_ip}")
 
-    yield {
-        "ip": device_ip,
-        "logs": firmware_logs
-    }
+    yield {"ip": device_ip, "logs": firmware_logs}
 
     stop_reader.set()

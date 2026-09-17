@@ -1,9 +1,10 @@
-import pytest
-import subprocess
-import time
 import os
 import socket
+import subprocess
 import tempfile
+import time
+
+import pytest
 
 TELNET_HOST = "localhost"
 TELNET_PORT = 4444
@@ -93,14 +94,19 @@ def openocd():
         print(f"OpenOCD already running (telnet {TELNET_HOST}:{TELNET_PORT}); reusing.")
     else:
         print(f"Starting OpenOCD (telnet {TELNET_HOST}:{TELNET_PORT}) ...")
-        log = tempfile.NamedTemporaryFile(mode="wb", suffix=".openocd.log", delete=False)
+        log = tempfile.NamedTemporaryFile(
+            mode="wb", suffix=".openocd.log", delete=False
+        )
         log_path = log.name
         proc = subprocess.Popen(
             [
                 "openocd",
-                "-s", "tools/OpenOCD",
-                "-f", "tools/OpenOCD/interface/ftdi.cfg",
-                "-f", "tools/OpenOCD/openocd.cfg",
+                "-s",
+                "tools/OpenOCD",
+                "-f",
+                "tools/OpenOCD/interface/ftdi.cfg",
+                "-f",
+                "tools/OpenOCD/openocd.cfg",
             ],
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -131,7 +137,7 @@ def openocd():
 
     print("OpenOCD ready (JTAG target halt verified).")
     ocd.run("arm semihosting enable", wait=0.5)
-    
+
     ocd.log_path = log_path
 
     try:

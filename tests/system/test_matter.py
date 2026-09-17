@@ -1,19 +1,20 @@
 import asyncio
 import os
 import re
-import time
-import pytest
-import tempfile
 import shutil
+import tempfile
+import time
 
 import matter.native
+
 matter.native.Init()
-from matter.CertificateAuthority import CertificateAuthorityManager
-from matter.ChipStack import ChipStack
-import matter.ChipDeviceCtrl
-import matter.storage
-from matter.setup_payload.setup_payload import SetupPayload
-import matter.clusters as Clusters
+import matter.ChipDeviceCtrl  # noqa: E402
+import matter.clusters as Clusters  # noqa: E402
+import matter.storage  # noqa: E402
+from matter.CertificateAuthority import CertificateAuthorityManager  # noqa: E402
+from matter.ChipStack import ChipStack  # noqa: E402
+from matter.setup_payload.setup_payload import SetupPayload  # noqa: E402
+
 
 def test_hardware_case_provisioning(hardware_device):
     logs = hardware_device["logs"]
@@ -33,7 +34,7 @@ def test_hardware_case_provisioning(hardware_device):
 
     # Use a temporary persistent storage for this test run
     temp_dir = tempfile.mkdtemp(dir="build")
-    storage_path = os.path.join(temp_dir, 'hw_repl_storage.json')
+    storage_path = os.path.join(temp_dir, "hw_repl_storage.json")
 
     try:
         storage = matter.storage.PersistentStorageJSON(storage_path)
@@ -56,30 +57,39 @@ def test_hardware_case_provisioning(hardware_device):
         async def commission_and_control():
             print("Commissioning on Network (mDNS discovery + PASE + CASE)...")
             from matter.ChipDeviceCtrl import DiscoveryFilterType
+
             # This handles mDNS discovery, PASE, and CASE
             await controller.CommissionOnNetwork(
                 nodeId=1,
                 setupPinCode=setup_pin,
                 filterType=DiscoveryFilterType.LONG_DISCRIMINATOR,
-                filter=discriminator
+                filter=discriminator,
             )
             print("SUCCESS! Device fully commissioned using CASE.")
 
             print("Sending Door Open command...")
-            await controller.SendCommand(1, 1, Clusters.WindowCovering.Commands.UpOrOpen())
-            
+            await controller.SendCommand(
+                1, 1, Clusters.WindowCovering.Commands.UpOrOpen()
+            )
+
             print("Sending Door Close command...")
-            await controller.SendCommand(1, 1, Clusters.WindowCovering.Commands.DownOrClose())
+            await controller.SendCommand(
+                1, 1, Clusters.WindowCovering.Commands.DownOrClose()
+            )
 
         asyncio.run(commission_and_control())
 
         # Wait a bit to ensure logs are flushed
         time.sleep(2)
-        
+
         # Verify the firmware actually received and executed the Matter commands
         # The PIC driver logs "PIC: OPEN" and "PIC: CLOSE"
-        assert any("PIC: OPEN" in line for line in hardware_device["logs"]), "Door open command not logged by firmware"
-        assert any("PIC: CLOSE" in line for line in hardware_device["logs"]), "Door close command not logged by firmware"
+        assert any(
+            "PIC: OPEN" in line for line in hardware_device["logs"]
+        ), "Door open command not logged by firmware"
+        assert any(
+            "PIC: CLOSE" in line for line in hardware_device["logs"]
+        ), "Door close command not logged by firmware"
 
     finally:
         try:

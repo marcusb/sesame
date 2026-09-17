@@ -8,3 +8,11 @@ dependencies = [
     "pytest>=8.3.5",
     "requests>=2.32.4",
 ]
+
+[dependency-groups]
+dev = [
+    "autoflake>=1.7.8",
+    "black>=24.8.0",
+    "flake8>=5.0.4",
+    "isort>=5.13.2",
+]
