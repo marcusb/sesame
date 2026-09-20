@@ -48,7 +48,6 @@ This project uses a self-contained [West workspace topology](https://docs.zephyr
    *Note: Pigweed treats its environment as ephemeral. If you update Matter and it re-bootstraps, you may need to re-run the `pip install` step if `west` becomes unavailable.*
 
 3. **Initialize and update the West workspace:**
-   *Note: Ensure you do not have `ZEPHYR_BASE` exported in your environment before running this.*
    ```sh
    west init -l .
    west update
@@ -87,71 +86,50 @@ rm -rf build
 west build --sysbuild
 ```
 
-This produces `build/mcuboot/zephyr/mcuboot.bin`, `build/sesame/zephyr/zephyr.signed.bin`, and the native emulation artifact `build/native_sim/zephyr/zephyr.exe`.
+This produces the following artefacts:
+* `build/mcuboot/zephyr/mcuboot.bin`: boot loader
+* `build/sesame/zephyr/zephyr.signed.bin`: main app firmware
+* `build/native_sim/zephyr/zephyr.exe`: native_sim build for host tests
+* `build/sesame_test/zephyr/zephyr.signed.bin`: on-device test firmware
  
 ## Building Matter Host Tools
 
-For integration testing, you will need the Matter Python bindings.
-
-To build the Python bindings:
-```sh
-source third_party/connectedhomeip/scripts/activate.sh
-cd third_party/connectedhomeip
-
-# Build the python bindings wheels
-./scripts/build_python.sh -m minimal
-cd ../..
-```
-
-You can then use `uv` to create a dedicated test environment and install the bindings and test dependencies:
-```sh
-uv sync
-source .venv/bin/activate
-uv pip install third_party/connectedhomeip/out/python_lib/obj/src/controller/python/matter-controller-wheels/*.whl
-```
-This prepares the virtual environment to run `chip.ChipDeviceCtrl` scripts and Pytest hardware tests.
+For integration testing, you will need the Matter Python bindings. The `run_tests.sh` script
+builds and installs these into the `uv` environment.
 
 ## native_sim Emulation
 
 You can run the full application in a native POSIX environment (`native_sim`) for development and testing without hardware.
 The `native_sim` build isolates board-dependent modules and uses the host OS for I/O. The `native_sim` variant is automatically orchestrated as a custom target during the main build via CMake's `ExternalProject_Add`.
 
-```bash
-# Build the native_sim variant
-west build -b native_sim/native/64 -d build/native_sim
-# Or it will be automatically built alongside the hardware build:
-# west build --sysbuild
-
-# Run the native simulation executable
-./build/native_sim/zephyr/zephyr.exe
-```
-
 The `native_sim` build uses a local file `repl_storage.json` to persist configuration across restarts during tests.
 Networking is supported via native OS tap devices or directly within the simulated application.
 
 ## Tests
 
-The project includes unit, integration, and system tests using the [Unity](https://github.com/ThrowTheSwitch/Unity) and [pytest](https://pytest.org) frameworks. Tests can be run natively via `native_sim`, or on physical hardware.
+The project includes unit, integration, and system tests using the Ztest and [pytest](https://pytest.org) frameworks. Tests can be run natively via native_sim, or on physical hardware.
 
 The `./run_tests.sh` script provides convenient entrypoints to execute these test suites:
 
-**1. Unit Tests (Type 1)**
-Run native logic-only C tests compiled using Zephyr's Ztest framework under `native_sim`:
+**1. Unit Tests**
+Run native logic-only C tests compiled using Zephyr's Ztest framework:
 ```sh
 ./run_tests.sh unit
 ```
 
-**2. Integration Tests (Type 2)**
-Run Matter integration tests via Pytest (e.g., testing the commissioning sequence using the CHIP python bindings against `native_sim`):
+**2. Integration Tests**
+Run native_sim tests via Pytest (e.g., testing the commissioning sequence using the CHIP python bindings):
 ```sh
 ./run_tests.sh integration
 ```
 
-**3. Physical System Tests (Type 3)**
-Run black-box system tests on actual hardware via Pytest. Requires a flashed device connected at `/dev/ttyUSB0`:
+**3. On-Device System Tests**
+Run system tests on the actual hardware via Pytest. Builds and flashes the `sesame_test` binary:
 ```sh
 ./run_tests.sh system /dev/ttyUSB0
 ```
+
+Or run all tests with `./run_tests.sh all /dev/ttyUSB0`.
 
 ## References
 

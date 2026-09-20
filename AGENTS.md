@@ -3,12 +3,12 @@
 Sesame is custom firmware for the Genie 1155 garage door opener (MW300 SoC). It restores network control via MQTT and HTTP, replacing the defunct Aladdin Connect app. The firmware:
 
 - Runs on a Marvell MW320 module with ARM Cortex-M4 processor
-- Communicates locally only (no external network dependency)
-- Uses FreeRTOS for task management
-- Provides HTTP API and MQTT agent for remote control
+- Uses Zephyr RTOS
+- Provides HTTP, MQTT and Matter APIs for remote control
 - Supports over-the-air (OTA) firmware updates with A/B partition scheme
 
 See docs/teardown.md for hardware information.
+See docs/development.md for developer instructions.
 
 ## Build System
 
@@ -21,6 +21,16 @@ Sesame relies on Zephyr's `sysbuild` to coordinate the building of both the prim
 - **`sysbuild.conf`**: Configures the overall sysbuild environment, telling it to build MCUboot alongside the main application.
 - **`sysbuild/mcuboot.conf`**: Contains the Kconfig overrides for the MCUboot image (e.g., enabling Direct-XIP, setting partition sizes, configuring logging).
 - **`mcuboot_module/`**: Contains a custom CMakeLists file integrated via sysbuild that handles compiling the MW320-specific flash and pinctrl drivers into MCUboot, as well as running the `axf2firmware` post-build tool to convert MCUboot's `.elf` into the required `mcuboot.bin`.
+
+### Boot and flash layout
+
+Flash layout is in boards/arm/marvell_mw302/flash-layout.txt.
+
+The boot loader chain:
+* MW320 boot ROM
+* boot2 boot loader from the MW320 SDK
+* mcuboot
+* sesame application
 
 ### Prerequisites
 
@@ -46,7 +56,7 @@ This project uses a self-contained West workspace topology (T2).
    ```
 
 2. **Set up the Python Environment & Matter Bootstrap:**
-   We build Matter within Zephyr, and they both expect a Python environment. To avoid managing two separate virtual environments and dealing with import errors, we use Matter's Pigweed environment as the sole environment and install Zephyr's tools directly into it.
+   We build Matter within Zephyr, and they both expect a Python environment. To avoid managing two separate virtual environments and dealing with import errors, we use Matter's Pigweed environment and install Zephyr's tools directly into it.
 
    ```sh
    # 1. Bootstrap the Matter (CHIP) environment (downloads gn, ninja, zap, and python)
@@ -63,12 +73,11 @@ This project uses a self-contained West workspace topology (T2).
    *Note: Pigweed treats its environment as ephemeral. If you update Matter and it re-bootstraps, you may need to re-run the `pip install` step if `west` becomes unavailable.*
 
 3. **Initialize and update the West workspace:**
-   Ensure `ZEPHYR_BASE` is *not* exported in your shell.
    ```sh
    west init -l .
    west update
    ```
-   *Note: Zephyr modules are placed in `./deps/` to prevent clashing with the local `./modules/mw320_sdk`.*
+   *Note: Zephyr modules are placed in `./deps/` to prevent clashing with the local `./modules/`.
 
 ### Code Generation (ZAP / Matter IDL)
 
@@ -104,27 +113,19 @@ ninja -C build                     # Build all variants (hardware)
 ninja -C build sesame/zephyr/zephyr.elf   # Build only hardware flash version
 ```
 
-**Iterating on native_sim sources and Tests:**
-
-The `native_sim` artifact (used for tests) is automatically orchestrated as a custom target during the main build via CMake's `ExternalProject_Add`. It outputs to `build/native_sim/`.
-
-If you only want to build or run the native_sim integration tests, you can run:
-```sh
-./run_tests.sh integration
-```
-This automatically uses the `build/native_sim/zephyr/zephyr.exe` executable generated during the build.
-
 **Build outputs:**
 
 - `build/sesame/zephyr/zephyr.signed.bin`, `build/mcuboot/zephyr/mcuboot.bin` – Hardware flash versions
 - `build/native_sim/zephyr/zephyr.exe` – Native simulation executable for integration tests
+- `build/sesame_test/zephyr/zephyr.signed.bin` – on-device system test binary
+
 ## Project Architecture
 
 ### App framework and management
 
 1. **System startup** (`main.c`): Initializes generic RTOS scheduler and app tasks. Hardware-specific initialization is handled inline via preprocessor guards (e.g. `CONFIG_SOC_88MW320` vs `native_sim`).
 2. **Network stack** (`network.c`): Manages WiFi on hardware. `native_sim` uses direct Ethernet initialization.
-3. **Configuration** (`config_manager.c`): Reads/writes protobuf config via `psm.h` abstraction.
+3. **Configuration** (`config_manager.c`): Reads/writes protobuf config via Zephyr Settings.
 4. **Control interfaces**:
    - HTTP server (`httpd.c`) for REST API and device setup
    - MQTT agent (`mqtt.c`) for pub/sub commands and door status
@@ -136,12 +137,12 @@ This automatically uses the `build/native_sim/zephyr/zephyr.exe` executable gene
 | **App startup**          | `main.c`                | Initializes generic app tasks, Zephyr OS                             |
 | **Network Manager**      | `network.c`     | WiFi state machine, IP configuration (DHCP), hardware only   |
 | **HTTP Server**          | `httpd.c`               | Receives config and OTA requests via REST, protobuf payloads                |
-| **MQTT**                 | `mqtt.c`                | MQTT agent for pub/sub, topic structure, reconnection logic                 |
-| **Config Manager**       | `config_manager.c`      | Read/write AppConfig (network, MQTT, logging) stored in PSM         |
+| **MQTT**                 | `mqtt.c`                | MQTT pub/sub, topic structure, reconnection logic                 |
+| **Config Manager**       | `config_manager.c`      | Read/write AppConfig (network, MQTT, logging) stored in Settings         |
 | **OTA**                  | `ota.c`, `ota_client.c` | Firmware download, partition management, hardware only              |
 | **LEDs & Buttons**       | `leds.c`      | Status indicators, user input handling, hardware only               |
 | **PIC comms**            | `pic_uart.c`            | Serial I/O with the PIC16 for door control and status, hardware only|
-| **Logging**              | `logging.c`, `sesame_syslog.c` | Circular buffer logs, syslog facility                               |
+| **Logging**              | `sesame_syslog.c` | syslog facility                               |
 | **Board-specific files** | `boards/arm/marvell_mw302/*`               | Flash layout, board config, ld scripts                             |
 
 ### Task Hierarchy (Zephyr)
@@ -155,10 +156,10 @@ This automatically uses the `build/native_sim/zephyr/zephyr.exe` executable gene
 ### Data Flow Example: Open Door via MQTT
 
 ```
-1. MQTT message arrives → coreMQTT processes
-2. MQTT agent task calls callback → publishes to ctrl_queue
+1. MQTT message arrives → MQTT received
+2. MQTT listener publishes to ctrl_queue
 3. Main task consumes ctrl_queue → enqueues command on pic_queue
-4. pic_uart_task actuates door relay, status updated
+4. pic_uart actuates door relay, status updated
 5. MQTT publishes new state to broker
 ```
 
@@ -166,10 +167,10 @@ This automatically uses the `build/native_sim/zephyr/zephyr.exe` executable gene
 
 - **Heap**: Two regions (SRAM0 for small allocations, main SRAM for larger)
 - **Flash partitions** (managed by PSM):
-  - Partition table, bootloader, WiFi firmware (via OpenOCD at first flash)
-  - Primary firmware partition (active boot)
-  - Secondary firmware partition (OTA staging)
-  - PSM config partition (NetworkConfig, MqttConfig, LoggingConfig)
+  - Partition table, boot2, mcuboot, WiFi firmware (via OpenOCD at first flash)
+  - image-0 app firmware partition
+  - image-1 app firmware partition (alternate active/passive for OTA)
+  - storage partition (AppConfig and Matter fabric state)
 
 ### Configuration Format
 
@@ -192,16 +193,11 @@ echo 'hostname: "sesame", ssid: "MY_WIFI", security: 2, password: "pass"' \
 
 ### Development Loop (Rapid Iteration)
 
-**Setup** – Install pyserial:
-```sh
-pip install pyserial
-```
+**Two-terminal workflow** for fast iteration:
 
-**Two-terminal workflow** for fast iteration (no device reboot between builds):
-
-**Terminal 1** – Build and flash:
+**Terminal 1** – Build, flash and reboot:
 ```sh
-ninja -C build sesame/zephyr/zephyr.elf && ./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 build/sesame/zephyr/zephyr.signed.bin -r
+ninja -C build sesame/zephyr/zephyr.elf && ./tools/OpenOCD/flashprog.py --image-0 build/sesame/zephyr/zephyr.signed.bin -r
 ```
 
 **Terminal 2** – Monitor serial output:
@@ -216,52 +212,26 @@ Typical feature development cycle:
 4. Check Terminal 2 for output (device will reboot automatically)
 5. Iterate until feature works
 
-**Automated testing with pyserial** – Claude can help write test scripts:
-```python
-import serial
-import time
-
-ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=2)
-time.sleep(1)
-
-# Read boot output
-output = ser.read_until(b'ready', timeout=5).decode(errors='ignore')
-assert 'WiFi' in output, "WiFi init failed"
-
-ser.write(b'test command\r\n')
-response = ser.read_until(b'\n', timeout=2)
-print(f"Response: {response.decode()}")
-
-ser.close()
-```
-
 ### Final Validation (Before Commit)
 
-Before committing changes, ensure that all unit tests pass in both native_sim and on physical hardware.
+Before committing changes, run unit, integration and system tests.
 
 **1. Run Unit & Integration Tests in native_sim:**
-Build and run the integration tests:
-```sh
-./run_tests.sh integration
-```
 
-**2. Run On-device Unit Tests:**
+Build and run the tests:
 ```sh
+# unit tests (Twister)
+./run_tests.sh unit
+# integration tests (native_sim host)
+./run_tests.sh integration
+# system tests (on-device sesame_test binary)
 ./run_tests.sh system /dev/ttyUSB0
 ```
 
-**3. Flash and Full System Test:**
-Build, flash, and test through full reboot cycle:
-```bash
-ninja -C build sesame/zephyr/zephyr.elf && \
-./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 build/sesame/zephyr/zephyr.signed.bin -r && \
-./tools/monitor.py
+Or run all the tests with:
 ```
-
-- Builds full flash binary
-- Flashes permanently
-- Device reboots automatically (`-r` option)
-- Verify output and behavior persist through reboot
+./run_tests.sh all /dev/ttyUSB0
+```
 
 **IMPORTANT:** Never use `-l boards/arm/marvell_mw302/flash-layout.txt` with `flashprog.py` during development.
 The `-l` flag erases and re-partitions the entire flash, including Boot2 and WiFi firmware.
@@ -275,82 +245,9 @@ The `-l` flag is only needed for initial device provisioning (first-time install
 - Sent to console, circular buffer, and optional syslog
 - Includes task name and timestamp
 
-**Capture logs to file** – Via tee:
-```sh
-./tools/monitor.py | tee output.log
-```
+**Stack traces and Core Dumps**
 
-**Stack traces and Core Dumps** – Compiled with `USE_BACKTRACE=ON` by default; on crash, backtrace printed to console.
 If a kernel panic occurs, Zephyr will dump a hex core block. See `docs/development.md` under "Debugging Kernel Panics" for instructions on how to parse this into a C++ stack trace using GDB.
-
-### Unit Tests
-
-On-device unit tests use the [Unity](https://github.com/ThrowTheSwitch/Unity) framework.
-Tests can be run either on the physical ARM Cortex-M4 target via JTAG flash, or natively via `native_sim`.
-
-**Hardware (JTAG) Build & Run:**
-```sh
-./run_tests.sh system /dev/ttyUSB0
-```
-
-**native_sim (Emulator) Build & Run:**
-The build system integrates with native_sim. Run tests via `./run_tests.sh unit` or `./run_tests.sh integration`.
-
-Each test prints immediately as it executes:
-```
-test/test_string_util.c:14:test_strtcpy_zero_dsize:PASS
-test/test_string_util.c:27:test_strtcpy_normal:PASS
-...
-25 Tests 0 Failures 0 Ignored
-OK
-TEST_RESULT:0
-```
-
-`TEST_RESULT:0` = all passed. The test sources are in `test/`.
-
-### Integration Testing
-
-**Test boot sequence** – Verify device starts and connects:
-```python
-#!/usr/bin/env python3
-import serial
-import time
-import sys
-
-def test_boot(port='/dev/ttyUSB0', timeout=15):
-    """Wait for device to boot and print ready message."""
-    ser = serial.Serial(port, 115200, timeout=2)
-    time.sleep(1)
-
-    try:
-        # Watch for boot logs
-        start = time.time()
-        boot_logs = ""
-        while time.time() - start < timeout:
-            chunk = ser.read(512)
-            if chunk:
-                boot_logs += chunk.decode(errors='ignore')
-                print(chunk.decode(errors='ignore'), end='', flush=True)
-
-        if 'WiFi' in boot_logs and 'ready' in boot_logs:
-            print("\n✓ Boot successful")
-            return True
-        else:
-            print("\n✗ Boot incomplete")
-            return False
-    finally:
-        ser.close()
-
-if __name__ == '__main__':
-    sys.exit(0 if test_boot() else 1)
-```
-
-**Run after flash:**
-```sh
-ninja -C build sesame/zephyr/zephyr.elf && \
-./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 build/sesame/zephyr/zephyr.signed.bin -r && \
-python3 test_boot.py
-```
 
 **One-shot flash + capture** – `tools/flash_and_monitor.sh` starts `monitor.py` in the background, runs `flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 build/sesame/zephyr/zephyr.signed.bin -r`, and writes the serial output to a log file. Useful for grabbing the reset-through-steady-state window in a single step:
 ```sh
@@ -406,28 +303,6 @@ This guarantees the downloaded firmware update is safely written to the *inactiv
 - Zephyr networking features must be correctly configured to allow the Matter Minimal mDNS responder to function. Specifically, `CONFIG_NET_CONTEXT_RECV_PKTINFO=y` is required; without it, `IPV6_PKTINFO` or `IPV6_RECVPKTINFO` sockopt calls fail (error 109 `ENOPROTOOPT`), and `Minimal mDNS` drops incoming queries.
 - Do NOT use `CONFIG_CHIP_ENABLE_PAIRING_AUTOSTART=y` for this device since we do not use BLE for commissioning. This flag starts the mDNS server immediately at boot *before* the WiFi interface connects, causing `Minimal mDNS` to bind to a down interface. Instead, wait for the network to be `UP` and manually open the commissioning window via `chip::Server::GetInstance().GetCommissioningWindowManager().OpenBasicCommissioningWindow()`.
 
-**Automated OTA test with pyserial:**
-```python
-import serial
-import time
-import subprocess
-
-# Monitor serial, wait for "test image running" message
-ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=10)
-time.sleep(2)
-
-output = ser.read_until(b'OTA LED blinks blue', timeout=30).decode(errors='ignore')
-if 'Diagnostic' in output:
-    print("✓ Test image booted successfully")
-    # Promote to primary
-    subprocess.run(['curl', '-v', 'http://sesame/promote'])
-else:
-    print("✗ Test image failed, rolling back")
-    # Let device reboot naturally to rollback
-
-ser.close()
-```
-
 ## Dependencies
 
 ### External Libraries (via Zephyr / FetchContent)
@@ -436,12 +311,8 @@ ser.close()
 | ----------------- | ----------------------------------------- |
 | Zephyr RTOS       | Kernel, scheduler, threads, queues        |
 | Zephyr Net Stack  | IPv4/IPv6 TCP/IP stack                    |
-| coreMQTT          | MQTT client                               |
-| coreMQTT-Agent    | MQTT task wrapper for thread-safety       |
-| coreHTTP          | HTTP/1.1 client & server                  |
 | nanopb            | Protobuf encoder/decoder                  |
 | mbedTLS           | Crypto (AES, TLS), uses custom config     |
-| backoff_algorithm | Exponential backoff for reconnection      |
 
 ## File Organization
 
@@ -481,7 +352,9 @@ Follow Google C/C++ code style for Sesame code.
 Exceptions:
 - Use snake_case for variable and function names.
 
-For library code, follow the style of the library (eg FreeRTOS)
+Python scripts formatted with black, isort, flake8.
+
+For library code, follow the style of the library (eg Zephyr)
 
 Place `#include`s at the top, never in between functions.
 Prefer including function declarations from headers instead of one-off `extern`s.
@@ -563,4 +436,4 @@ gdb-multiarch -batch -x tools/OpenOCD/gdbinit build/zephyr/zephyr.elf \
 
 ### Committing Code
 
-**Always before committing, build and verify the XIP build.**
+**Always before committing, build and run tests.**
