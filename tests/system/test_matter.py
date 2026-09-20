@@ -5,17 +5,8 @@ import shutil
 import tempfile
 import time
 
-import matter.native
 
-matter.native.Init()
-import matter.clusters as Clusters  # noqa: E402
-import matter.storage  # noqa: E402
-from matter.CertificateAuthority import CertificateAuthorityManager  # noqa: E402
-from matter.ChipStack import ChipStack  # noqa: E402
-from matter.setup_payload.setup_payload import SetupPayload  # noqa: E402
-
-
-def test_hardware_case_provisioning(hardware_device):
+def test_hardware_case_provisioning(hardware_device, matter):
     logs = hardware_device["logs"]
     device_ip = hardware_device["ip"]
 
@@ -36,9 +27,11 @@ def test_hardware_case_provisioning(hardware_device):
     storage_path = os.path.join(temp_dir, "hw_repl_storage.json")
 
     try:
-        storage = matter.storage.PersistentStorageJSON(storage_path)
-        stack = ChipStack(persistentStorage=storage)
-        ca_manager = CertificateAuthorityManager(stack, stack.GetStorageManager())
+        storage = matter["storage"].PersistentStorageJSON(storage_path)
+        stack = matter["ChipStack"](persistentStorage=storage)
+        ca_manager = matter["CertificateAuthorityManager"](
+            stack, stack.GetStorageManager()
+        )
         ca_manager.LoadAuthoritiesFromStorage()
         if len(ca_manager.activeCaList) == 0:
             ca = ca_manager.NewCertificateAuthority()
@@ -48,14 +41,14 @@ def test_hardware_case_provisioning(hardware_device):
         admin = ca.adminList[0]
         controller = admin.NewController(nodeId=112233)
 
-        parser = SetupPayload()
+        parser = matter["SetupPayload"]()
         parser.ParseManualPairingCode(pairing_code)
         setup_pin = int(parser.attributes["SetUpPINCode"])
         discriminator = int(parser.attributes["Short discriminator"])
 
         async def commission_and_control():
             print("Commissioning on Network (mDNS discovery + PASE + CASE)...")
-            from matter.ChipDeviceCtrl import DiscoveryFilterType
+            DiscoveryFilterType = matter["ChipDeviceCtrl"].DiscoveryFilterType
 
             # This handles mDNS discovery, PASE, and CASE
             await controller.CommissionOnNetwork(
@@ -68,12 +61,12 @@ def test_hardware_case_provisioning(hardware_device):
 
             print("Sending Door Open command...")
             await controller.SendCommand(
-                1, 1, Clusters.WindowCovering.Commands.UpOrOpen()
+                1, 1, matter["Clusters"].WindowCovering.Commands.UpOrOpen()
             )
 
             print("Sending Door Close command...")
             await controller.SendCommand(
-                1, 1, Clusters.WindowCovering.Commands.DownOrClose()
+                1, 1, matter["Clusters"].WindowCovering.Commands.DownOrClose()
             )
 
         asyncio.run(commission_and_control())
