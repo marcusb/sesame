@@ -24,6 +24,10 @@ extern "C" {
 
 LOG_MODULE_REGISTER(matter_task, LOG_LEVEL_INF);
 
+/* Set by test_config_injector (sesame_test build only) to clear all fabrics on
+ * boot so the commissioning window opens unconditionally. */
+bool g_matter_wipe_fabrics_on_init = false;
+
 extern "C" void matter_task_start(void) {
     LOG_INF("Initializing CHIP Stack");
     (void)chip::DeviceLayer::PlatformMgr().InitChipStack();
@@ -48,6 +52,26 @@ extern "C" void matter_task_start(void) {
 
     (void)chip::Server::GetInstance().Init(initParams);
 
+    // If the test injector requested a fabric wipe, remove all fabrics now
+    // (before StartEventLoopTask) so the commissioning window opens cleanly.
+    // This avoids ScheduleFactoryReset() which would trigger a reboot.
+    if (g_matter_wipe_fabrics_on_init) {
+        LOG_INF("Wiping all Matter fabrics for test run");
+        chip::FabricTable& fabricTable =
+            chip::Server::GetInstance().GetFabricTable();
+        // Collect all fabric indices first, then delete.
+        chip::FabricIndex toDelete[chip::kMaxValidFabricIndex + 1];
+        size_t count = 0;
+        for (const chip::FabricInfo& fabric : fabricTable) {
+            toDelete[count++] = fabric.GetFabricIndex();
+        }
+        for (size_t i = 0; i < count; i++) {
+            fabricTable.Delete(toDelete[i]);
+        }
+        LOG_INF("Wiped %zu fabric(s)", count);
+        g_matter_wipe_fabrics_on_init = false;
+    }
+
     InitOTARequestor();
 
     // Print setup info
@@ -56,18 +80,25 @@ extern "C" void matter_task_start(void) {
 
     (void)chip::DeviceLayer::PlatformMgr().StartEventLoopTask();
 
-    // Wait for network to be up
-    while (!network_is_up()) {
+    // Wait for network to be up (including IPv6 for Matter)
+    while (!network_is_up() || !network_has_ipv6()) {
         k_sleep(K_MSEC(500));
     }
-    LOG_INF("Network is UP. Opening commissioning window...");
+    LOG_INF("Network is UP (IPv6 ready). Opening commissioning window...");
     (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
         [](intptr_t) {
-            (void)chip::Server::GetInstance()
-                .GetCommissioningWindowManager()
-                .OpenBasicCommissioningWindow(
-                    chip::System::Clock::Seconds16(300),
-                    chip::CommissioningWindowAdvertisement::kDnssdOnly);
+            CHIP_ERROR err =
+                chip::Server::GetInstance()
+                    .GetCommissioningWindowManager()
+                    .OpenBasicCommissioningWindow(
+                        chip::System::Clock::Seconds16(300),
+                        chip::CommissioningWindowAdvertisement::kDnssdOnly);
+            if (err == CHIP_NO_ERROR) {
+                LOG_INF("Commissioning window opened successfully");
+            } else {
+                LOG_ERR("Failed to open commissioning window: %d",
+                        (int)err.AsInteger());
+            }
         },
         0);
 }

@@ -40,4 +40,5 @@ message AppConfig {
     NetworkConfig network_config = 2;
     MqttConfig mqtt_config = 3;
     LoggingConfig logging_config = 4;
+    bool wipe_matter_fabrics = 5;
 }

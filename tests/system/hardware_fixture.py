@@ -6,8 +6,8 @@ import time
 import pytest
 
 
-@pytest.fixture
-def hardware_device(device_port, test_app_config, openocd):
+@pytest.fixture(scope="module")
+def hardware_device(request, device_port, test_app_config, openocd):
     elf_paths = [
         "build/sesame_test/zephyr/zephyr.elf",
         "build/sesame/sesame_test/zephyr/zephyr.elf",
@@ -30,65 +30,118 @@ def hardware_device(device_port, test_app_config, openocd):
     firmware_logs = []
     stop_reader = threading.Event()
 
-    def log_reader():
+    def log_reader(ser):
         try:
-            with serial.Serial(device_port, 115200, timeout=0.1) as ser:
-                while not stop_reader.is_set():
-                    line = ser.readline()
-                    if line:
-                        try:
-                            decoded = line.decode("utf-8", errors="ignore").strip()
-                            if decoded:
-                                firmware_logs.append(decoded)
-                        except Exception:
-                            pass
+            while not stop_reader.is_set():
+                line = ser.readline()
+                if line:
+                    try:
+                        decoded = line.decode("utf-8", errors="ignore").strip()
+                        if decoded:
+                            firmware_logs.append(decoded)
+                            print("LOG:", decoded, flush=True)
+                    except Exception:
+                        pass
         except Exception as e:
-            print(f"Serial port error: {e}")
+            print(f"Serial reader error: {e}")
 
-    reader_thread = threading.Thread(target=log_reader, daemon=True)
+    # Open the serial port first — before triggering the reset — so we capture
+    # every byte from the moment the chip comes out of reset.
+    # dsrdtr=False + explicit dtr/rts=False prevents pyserial's constructor from
+    # toggling control lines, which would cause a spurious hardware reset.
+    ser = serial.Serial(
+        device_port,
+        115200,
+        timeout=0.1,
+        dsrdtr=False,
+        rtscts=False,
+    )
+    ser.dtr = False
+    ser.rts = False
+
+    reader_thread = threading.Thread(target=log_reader, args=(ser,), daemon=True)
     reader_thread.start()
 
-    # Boot the device. The firmware has CONFIG_BOOT_DELAY=2000,
-    # so it will zero .bss and then spin for 2 seconds.
-    openocd.reboot()
-
-    # Wait for .bss zeroing to finish (openocd.reboot waits 1.0s, so we are in the 2s window)
-    time.sleep(0.1)
-
-    # Write NetworkConfig to file for semihosting access
+    # Write NetworkConfig to file before reset so semihosting can read it
+    # the instant the firmware starts executing.
     config_bytes = test_app_config.SerializeToString()
     with open("test_config.bin", "wb") as f:
         f.write(config_bytes)
     print("Wrote AppConfig to test_config.bin for semihosting")
 
+    # Reset and keep the OpenOCD telnet connection alive so that it can service
+    # the semihosting calls the firmware makes (reading test_config.bin).
+    # Without a live telnet client the CPU halts at the semihosting BKPT and
+    # never resumes.
+    semihost_done = threading.Event()
+    openocd.reboot_with_semihosting(semihost_done)
+
     # Wait for Wi-Fi connection and IP
     device_ip = None
     start_time = time.time()
     while time.time() - start_time < 60:
-        for line in list(firmware_logs):
-            # Match either IPv4 or IPv6 address
-            ip_match = re.search(r"IPv[46] address: ([0-9a-fA-F:\.]+)", line)
-            if ip_match and not device_ip:
-                # If it's IPv6 link-local (fe80), skip it, we want a routable one if possible,
-                # but if it's the only one, we can use it (might need zone id though).
-                # Actually, the zephyr device gets a global IPv6 addr (e.g. 2600:...)
-                ip_str = ip_match.group(1)
-                if not ip_str.startswith("fe80"):
-                    device_ip = f"[{ip_str}]" if ":" in ip_str else ip_str
-                    break
+        log_snapshot = list(firmware_logs)
+
+        # Stop polling OpenOCD as soon as semihosting is confirmed complete —
+        # keeping poll commands running during WiFi association or Matter
+        # commissioning can briefly halt the CPU and disrupt timing-sensitive
+        # code paths.
+        if not semihost_done.is_set() and any(
+            "Successfully decoded AppConfig" in line or "delaying boot" in line
+            for line in log_snapshot
+        ):
+            semihost_done.set()
+            print("Semihosting complete; stopping keep-alive poll.")
+
+        ipv4_addr = None
+        ipv6_addr = None
+        for line in log_snapshot:
+            m4 = re.search(r"IPv4 address: ([0-9\.]+)", line)
+            if m4 and not ipv4_addr:
+                ipv4_addr = m4.group(1)
+            m6 = re.search(r"IPv6 address: ([0-9a-fA-F:]+)", line)
+            if m6 and not ipv6_addr:
+                ip6_str = m6.group(1)
+                if not ip6_str.startswith("fe80"):
+                    ipv6_addr = f"[{ip6_str}]"
+
+        mod_name = getattr(request.module, "__name__", "").lower()
+        is_matter_test = "matter" in mod_name
+        device_ip = (
+            ipv6_addr if (is_matter_test and ipv6_addr) else (ipv4_addr or ipv6_addr)
+        )
         if device_ip:
-            print(
-                f"Parsed IP: {device_ip}. Firmware logs so far:\n"
-                + "\n".join(firmware_logs)
-            )
-            break
+            if is_matter_test:
+                ready = any(
+                    "Commissioning window opened successfully" in l
+                    for l in firmware_logs
+                )
+            else:
+                ready = any("System ready" in l for l in firmware_logs)
+
+            if ready:
+                print(
+                    f"Parsed IP: {device_ip}. Firmware logs so far:\n"
+                    + "\n".join(firmware_logs)
+                )
+                break
+
+        # No fallback – if timeout expires the fixture will fail.
+
         time.sleep(0.1)
+        if int((time.time() - start_time) * 10) % 10 == 0:
+            print(f"Wait IP: {time.time()-start_time:.1f}s", flush=True)
 
-    assert (
-        device_ip
-    ), f"Device failed to connect to Wi-Fi and acquire IP. Logs:\n{chr(10).join(firmware_logs)}"
-    print(f"Device ready on Wi-Fi at IP {device_ip}")
+    try:
+        semihost_done.set()  # ensure keep-alive exits if we fell out of the loop
+        assert device_ip, (
+            f"Device failed to connect to Wi-Fi and acquire IP.\n"
+            f"Logs:\n{chr(10).join(firmware_logs)}"
+        )
+        print(f"Device ready on Wi-Fi at IP {device_ip}")
 
-    yield {"ip": device_ip, "logs": firmware_logs}
-
-    stop_reader.set()
+        yield {"ip": device_ip, "logs": firmware_logs}
+    finally:
+        stop_reader.set()
+        reader_thread.join(timeout=2)
+        ser.close()

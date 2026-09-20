@@ -66,7 +66,7 @@ int main(void) {
     // Force timer inclusion for chip-gn
     struct k_timer dummy_timer;
     k_timer_init(&dummy_timer, NULL, NULL);
-#ifdef CONFIG_SOC_88MW320
+#if defined(CONFIG_SOC_88MW320) && defined(CONFIG_WATCHDOG)
     init_watchdog();
 #endif
 
@@ -207,7 +207,7 @@ int main(void) {
             }
         }
 
-#ifdef CONFIG_SOC_88MW320
+#if defined(CONFIG_SOC_88MW320) && defined(CONFIG_WATCHDOG)
         feed_watchdog();
 #endif
     }

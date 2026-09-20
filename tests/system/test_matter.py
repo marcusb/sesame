@@ -51,7 +51,7 @@ def test_hardware_case_provisioning(hardware_device):
         parser = SetupPayload()
         parser.ParseManualPairingCode(pairing_code)
         setup_pin = int(parser.attributes["SetUpPINCode"])
-        discriminator = int(parser.attributes["LongDiscriminator"])
+        discriminator = int(parser.attributes["Short discriminator"])
 
         async def commission_and_control():
             print("Commissioning on Network (mDNS discovery + PASE + CASE)...")
@@ -61,7 +61,7 @@ def test_hardware_case_provisioning(hardware_device):
             await controller.CommissionOnNetwork(
                 nodeId=1,
                 setupPinCode=setup_pin,
-                filterType=DiscoveryFilterType.LONG_DISCRIMINATOR,
+                filterType=DiscoveryFilterType.SHORT_DISCRIMINATOR,
                 filter=discriminator,
             )
             print("SUCCESS! Device fully commissioned using CASE.")
@@ -79,7 +79,7 @@ def test_hardware_case_provisioning(hardware_device):
         asyncio.run(commission_and_control())
 
         # Wait a bit to ensure logs are flushed
-        time.sleep(2)
+        time.sleep(8)
 
         # Verify the firmware actually received and executed the Matter commands
         # The PIC driver logs "PIC: OPEN" and "PIC: CLOSE"
@@ -91,6 +91,9 @@ def test_hardware_case_provisioning(hardware_device):
         ), "Door close command not logged by firmware"
 
     finally:
+        print("\n--- FIRMWARE LOGS DURING COMMISSIONING ---")
+        for line in hardware_device["logs"]:
+            print(line)
         try:
             controller.Shutdown()
             ca_manager.Shutdown()

@@ -94,6 +94,13 @@ static int inject_test_config(void)
                     if (app_config.has_logging_config) {
                         inject_proto_config(NVS_ID_LOGGING_CONFIG, LoggingConfig_fields, &app_config.logging_config, "LoggingConfig");
                     }
+#ifdef CONFIG_CHIP
+                    if (app_config.wipe_matter_fabrics) {
+                        printk(">>> wipe_matter_fabrics=true: will factory-reset Matter on boot\n");
+                        extern bool g_matter_wipe_fabrics_on_init;
+                        g_matter_wipe_fabrics_on_init = true;
+                    }
+#endif
                 } else {
                     printk(">>> Failed to decode AppConfig: %s\n", PB_GET_ERROR(&stream));
                 }

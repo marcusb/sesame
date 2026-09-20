@@ -61,6 +61,8 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf
 # Load Zephyr build system
 set(MW320_SDK_DIR ${CMAKE_SOURCE_DIR}/mw320_sdk CACHE PATH "MW320 SDK directory" FORCE)
 
+# Inject IPv6 multicast implementation for mDNS in CHIP
+set(CHIP_CFLAGS "${CHIP_CFLAGS} -DIPV6_MULTICAST_IMPLEMENTED=1 -Dipv6mr_interface=ipv6mr_ifindex")
 list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip/config/zephyr/chip-module)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})

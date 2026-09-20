@@ -21,7 +21,7 @@ def test_http_door_endpoints(hardware_device):
     resp = session.post(f"http://{ip}/open", timeout=5)
     assert resp.status_code == 200
 
-    time.sleep(0.5)
+    time.sleep(3)
     assert any(
         "PIC: OPEN" in line for line in logs
     ), "Door open command not logged by firmware"

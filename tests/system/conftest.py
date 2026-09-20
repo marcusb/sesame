@@ -22,12 +22,12 @@ def pytest_addoption(parser):
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def device_port(request):
     return request.config.getoption("--device-port")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def test_app_config(request):
     from google.protobuf import json_format
 
@@ -44,4 +44,7 @@ def test_app_config(request):
 
     config = app_config_pb2.AppConfig()
     json_format.Parse(json_data, config, ignore_unknown_fields=True)
+    # Always wipe Matter fabrics on test boots so the commissioning window
+    # opens unconditionally regardless of what previous runs left in NVS.
+    config.wipe_matter_fabrics = True
     return config

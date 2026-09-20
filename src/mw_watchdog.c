@@ -17,7 +17,7 @@ void init_watchdog() {
 
     struct wdt_timeout_cfg wdt_config = {
         .window.min = 0U,
-        .window.max = 10000U,
+        .window.max = 30000U,
         .callback = NULL,
         .flags = WDT_FLAG_RESET_SOC,
     };

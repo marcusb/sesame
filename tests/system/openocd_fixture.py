@@ -46,6 +46,63 @@ class OpenOCD:
     def reboot(self):
         return self.run("reset run", wait=1.0)
 
+    def reboot_with_semihosting(self, stop_event):
+        """Reset with halt, then resume with a live keep-alive connection.
+
+        Strategy (no fragile timers):
+          1. `reset halt`  – CPU frozen at the reset vector; we are in control.
+          2. `arm semihosting enable` – ensure semihosting is active.
+          3. Open a persistent telnet connection and send `resume`.
+          4. Keep the connection alive (poll every 500 ms) so OpenOCD's event
+             loop runs.  When the firmware hits the semihosting BKPT the CPU
+             halts, OpenOCD sees the halt on the next poll, services the
+             semihosting call (reads test_config.bin), and resumes the target.
+          5. When the caller sets stop_event the keep-alive thread closes the
+             socket and exits.
+
+        Because the connection is open *before* `resume` is issued there is no
+        race: the BKPT can fire at any time and OpenOCD will catch it.
+        """
+        import threading
+
+        # Halt the CPU at the reset vector so we are in full control before
+        # the firmware starts running.
+        self.run("reset halt", wait=2.0)
+        # Re-issue semihosting enable; a reset can clear the setting.
+        self.run("arm semihosting enable", wait=0.5)
+
+        # Open the persistent connection that will service the BKPT, then send
+        # resume on it so the CPU starts running with the connection already up.
+        s = socket.create_connection((self.host, self.telnet_port), timeout=5)
+        time.sleep(0.25)
+        s.recv(4096)  # consume banner
+        s.sendall(b"resume\r")
+
+        def _keep_alive():
+            s.settimeout(1.0)
+            try:
+                while not stop_event.is_set():
+                    try:
+                        s.sendall(b"poll\r")
+                        time.sleep(0.5)
+                        try:
+                            s.recv(4096)
+                        except socket.timeout:
+                            pass
+                    except OSError:
+                        break  # socket died; semihosting window is likely over
+            except Exception:
+                pass
+            finally:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_keep_alive, daemon=True)
+        t.start()
+        return t
+
     def halt(self):
         return self.run("halt", wait=2.0)
 
@@ -136,7 +193,8 @@ def openocd():
         )
 
     print("OpenOCD ready (JTAG target halt verified).")
-    ocd.run("arm semihosting enable", wait=0.5)
+    # Resume the target (target_up() leaves it halted).
+    ocd.run("resume", wait=0.5)
 
     ocd.log_path = log_path
 
