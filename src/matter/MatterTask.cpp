@@ -20,6 +20,9 @@
 
 extern "C" {
 #include "network.h"
+#if defined(CONFIG_SOC_88MW320) && defined(CONFIG_WATCHDOG)
+#include "mw_watchdog.h"
+#endif
 }
 
 LOG_MODULE_REGISTER(matter_task, LOG_LEVEL_INF);
@@ -58,6 +61,9 @@ extern "C" void matter_task_start(void) {
 
     // Wait for network to be up (including IPv6 for Matter)
     while (!network_is_up() || !network_has_ipv6()) {
+#if defined(CONFIG_SOC_88MW320) && defined(CONFIG_WATCHDOG)
+        feed_watchdog();
+#endif
         k_sleep(K_MSEC(500));
     }
     LOG_INF("Network is UP. Opening commissioning window...");
