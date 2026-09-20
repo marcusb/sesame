@@ -41,13 +41,9 @@
 			label = "image-1";
 			reg = <0x001A0000 0x00170000>;
 		};
-		psm_partition: partition@310000 {
-			label = "psm";
-			reg = <0x00310000 0x00040000>;
-		};
-		storage_partition: partition@3f0000 {
+		storage_partition: partition@310000 {
 			label = "storage";
-			reg = <0x003F0000 0x00010000>;
+			reg = <0x00310000 0x00040000>;
 		};
 		wififw_partition: partition@350000 {
 			label = "wififw";

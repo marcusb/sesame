@@ -1,6 +1,11 @@
-/delete-node/ &psm_partition;
+/delete-node/ &storage_partition;
 
 / {
+	chosen {
+		zephyr,code-partition = &linker_partition;
+		zephyr,settings-partition = &storage_partition;
+	};
+
 	sim_flash: sim_flash {
 		compatible = "zephyr,sim-flash";
 		erase-value = <0xff>;
@@ -22,8 +27,8 @@
 				#address-cells = <1>;
 				#size-cells = <1>;
 
-				psm_partition: partition@0 {
-					label = "psm";
+				storage_partition: partition@0 {
+					label = "storage";
 					reg = <0x00000000 0x8000>;
 				};
 			};
@@ -37,11 +42,5 @@
 			label = "linker";
 			reg = <0x00000000 0x00170000>;
 		};
-	};
-};
-
-/ {
-	chosen {
-		zephyr,code-partition = &linker_partition;
 	};
 };

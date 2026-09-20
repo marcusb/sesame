@@ -14,7 +14,7 @@ _sym_db = _symbol_database.Default()
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
-    b'\n\x10\x61pp_config.proto"v\n\rNetworkConfig\x12\x10\n\x08hostname\x18\x01 \x01(\t\x12\x0c\n\x04ssid\x18\x02 \x01(\t\x12\x1f\n\x08security\x18\x03 \x01(\x0e\x32\r.WifiSecurity\x12\x10\n\x08password\x18\x04 \x01(\t\x12\x12\n\nntp_server\x18\x05 \x01(\t"\x9e\x01\n\nMqttConfig\x12\x0f\n\x07\x65nabled\x18\x01 \x01(\x08\x12\x13\n\x0b\x62roker_host\x18\x02 \x01(\t\x12\x13\n\x0b\x62roker_port\x18\x03 \x01(\r\x12\x0e\n\x06secure\x18\x04 \x01(\x08\x12\x0e\n\x06prefix\x18\x05 \x01(\t\x12\x11\n\tclient_id\x18\x06 \x01(\t\x12\x10\n\x08username\x18\x07 \x01(\t\x12\x10\n\x08password\x18\x08 \x01(\t"I\n\x0cSyslogConfig\x12\x0f\n\x07\x65nabled\x18\x01 \x01(\x08\x12\x13\n\x0bsyslog_host\x18\x02 \x01(\t\x12\x13\n\x0bsyslog_port\x18\x03 \x01(\r"5\n\rLoggingConfig\x12$\n\rsyslog_config\x18\x01 \x01(\x0b\x32\r.SyslogConfig"\xb2\x01\n\tAppConfig\x12\x16\n\x0e\x63onfig_version\x18\x01 \x01(\x05\x12&\n\x0enetwork_config\x18\x02 \x01(\x0b\x32\x0e.NetworkConfig\x12 \n\x0bmqtt_config\x18\x03 \x01(\x0b\x32\x0b.MqttConfig\x12&\n\x0elogging_config\x18\x04 \x01(\x0b\x32\x0e.LoggingConfig\x12\x1b\n\x13wipe_matter_fabrics\x18\x05 \x01(\x08*W\n\x0cWifiSecurity\x12\x19\n\x15WIFI_SECURITY_UNKNOWN\x10\x00\x12\x15\n\x11WIFI_SECURITY_WEP\x10\x01\x12\x15\n\x11WIFI_SECURITY_WPA\x10\x02\x62\x06proto3'
+    b'\n\x10\x61pp_config.proto"v\n\rNetworkConfig\x12\x10\n\x08hostname\x18\x01 \x01(\t\x12\x0c\n\x04ssid\x18\x02 \x01(\t\x12\x1f\n\x08security\x18\x03 \x01(\x0e\x32\r.WifiSecurity\x12\x10\n\x08password\x18\x04 \x01(\t\x12\x12\n\nntp_server\x18\x05 \x01(\t"\x9e\x01\n\nMqttConfig\x12\x0f\n\x07\x65nabled\x18\x01 \x01(\x08\x12\x13\n\x0b\x62roker_host\x18\x02 \x01(\t\x12\x13\n\x0b\x62roker_port\x18\x03 \x01(\r\x12\x0e\n\x06secure\x18\x04 \x01(\x08\x12\x0e\n\x06prefix\x18\x05 \x01(\t\x12\x11\n\tclient_id\x18\x06 \x01(\t\x12\x10\n\x08username\x18\x07 \x01(\t\x12\x10\n\x08password\x18\x08 \x01(\t"I\n\x0cSyslogConfig\x12\x0f\n\x07\x65nabled\x18\x01 \x01(\x08\x12\x13\n\x0bsyslog_host\x18\x02 \x01(\t\x12\x13\n\x0bsyslog_port\x18\x03 \x01(\r"5\n\rLoggingConfig\x12$\n\rsyslog_config\x18\x01 \x01(\x0b\x32\r.SyslogConfig"\x95\x01\n\tAppConfig\x12\x16\n\x0e\x63onfig_version\x18\x01 \x01(\x05\x12&\n\x0enetwork_config\x18\x02 \x01(\x0b\x32\x0e.NetworkConfig\x12 \n\x0bmqtt_config\x18\x03 \x01(\x0b\x32\x0b.MqttConfig\x12&\n\x0elogging_config\x18\x04 \x01(\x0b\x32\x0e.LoggingConfig*W\n\x0cWifiSecurity\x12\x19\n\x15WIFI_SECURITY_UNKNOWN\x10\x00\x12\x15\n\x11WIFI_SECURITY_WEP\x10\x01\x12\x15\n\x11WIFI_SECURITY_WPA\x10\x02\x62\x06proto3'
 )
 
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
@@ -22,8 +22,8 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "app_config_pb2", globals())
 if _descriptor._USE_C_DESCRIPTORS == False:
 
     DESCRIPTOR._options = None
-    _WIFISECURITY._serialized_start = 612
-    _WIFISECURITY._serialized_end = 699
+    _WIFISECURITY._serialized_start = 583
+    _WIFISECURITY._serialized_end = 670
     _NETWORKCONFIG._serialized_start = 20
     _NETWORKCONFIG._serialized_end = 138
     _MQTTCONFIG._serialized_start = 141
@@ -33,5 +33,5 @@ if _descriptor._USE_C_DESCRIPTORS == False:
     _LOGGINGCONFIG._serialized_start = 376
     _LOGGINGCONFIG._serialized_end = 429
     _APPCONFIG._serialized_start = 432
-    _APPCONFIG._serialized_end = 610
+    _APPCONFIG._serialized_end = 581
 # @@protoc_insertion_point(module_scope)
