@@ -26,21 +26,35 @@ int parse_url(char* url, char* hostname, size_t max_hostname_len, char** path,
     if (*p == '\0') {
         return -1;
     }
-    char* q = strchr(p, '/');
-    if (q == NULL) {
-        *path = "/";
-    } else {
-        *path = q;
-    }
 
-    char* colon = strchr(p, ':');
-    int host_len = 0;
-    if (colon && (q == NULL || colon < q)) {
-        host_len = colon - p;
-        *port = atoi(colon + 1);
+    int host_len;
+    if (*p == '[') {
+        // Bracketed IPv6 literal, e.g. http://[2001:db8::1]:8080/path
+        char* close = strchr(p, ']');
+        if (close == NULL) {
+            return -1;
+        }
+        host_len =
+            close - p + 1;  // keep brackets so the Host header stays valid
+        char* after = close + 1;
+        *path = strchr(after, '/') ? strchr(after, '/') : "/";
+        if (*after == ':') {
+            *port = atoi(after + 1);
+        } else {
+            *port = 80;
+        }
     } else {
-        host_len = q ? (q - p) : strlen(p);
-        *port = 80;
+        // IPv4 literal or hostname
+        char* q = strchr(p, '/');
+        *path = q ? q : "/";
+        char* colon = strchr(p, ':');
+        if (colon && (q == NULL || colon < q)) {
+            host_len = colon - p;
+            *port = atoi(colon + 1);
+        } else {
+            host_len = q ? (q - p) : strlen(p);
+            *port = 80;
+        }
     }
 
     if (host_len >= max_hostname_len) {
@@ -85,8 +99,20 @@ void ota_client_start(const FirmwareUpgradeFetchRequest* msg) {
         return;
     }
 
+    // getaddrinfo needs a bare address (no IPv6 brackets); the Host header
+    // (req.host below) keeps the bracketed form
+    char ai_host[64];
+    size_t hlen = strlen(hostname);
+    if (hostname[0] == '[' && hlen > 1 && hostname[hlen - 1] == ']') {
+        size_t alen = hlen - 2;
+        memcpy(ai_host, hostname + 1, alen);
+        ai_host[alen] = '\0';
+    } else {
+        memcpy(ai_host, hostname, hlen + 1);
+    }
+
     struct addrinfo hints = {
-        .ai_family = AF_INET,
+        .ai_family = AF_UNSPEC,
         .ai_socktype = SOCK_STREAM,
     };
     struct addrinfo* res;
@@ -94,7 +120,7 @@ void ota_client_start(const FirmwareUpgradeFetchRequest* msg) {
     char port_str[6];
     snprintf(port_str, sizeof(port_str), "%d", port);
 
-    int ret = zsock_getaddrinfo(hostname, port_str, &hints, &res);
+    int ret = zsock_getaddrinfo(ai_host, port_str, &hints, &res);
     if (ret != 0) {
         LOG_ERR("getaddrinfo failed: %d", ret);
         return;
@@ -141,12 +167,14 @@ void ota_client_start(const FirmwareUpgradeFetchRequest* msg) {
     LOG_INF("Starting HTTP GET %s from %s:%d", path, hostname, port);
 
     ret = http_client_req(sock, &req, 10000, &ota_state);
-    if (ret < 0) {
-        LOG_ERR("http_client_req failed: %d", ret);
-    }
-
     free(req.recv_buf);
     zsock_close(sock);
+
+    if (ret < 0) {
+        LOG_ERR("http_client_req failed: %d", ret);
+        flash_img_buffered_write(&ota_state.ctx, NULL, 0, true);
+        return;
+    }
 
     ota_finish(&ota_state);
 }

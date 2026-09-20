@@ -50,16 +50,6 @@ run_system() {
     local port="${1:-/dev/ttyUSB0}"
     shift || true
     echo "Building sesame_test target..."
-    SESAME_TEST_BIN="build/sesame_test/zephyr/zephyr.signed.bin"
-    WAS_UP_TO_DATE=0
-    if [ -f "$SESAME_TEST_BIN" ]; then
-        NEWER_FILES=$(find src include drivers boards tests/system/firmware CMakeLists.txt prj.conf -type f -newer "$SESAME_TEST_BIN" 2>/dev/null || true)
-        if [ -z "$NEWER_FILES" ]; then
-            WAS_UP_TO_DATE=1
-        fi
-    fi
-
-    BUILD_LOG=$(mktemp)
     (
         source third_party/connectedhomeip/scripts/activate.sh
         if [ ! -d "build/sesame_test" ]; then
@@ -67,16 +57,52 @@ run_system() {
         else
             ninja -C build/sesame_test
         fi
-    ) > "$BUILD_LOG" 2>&1 || { cat "$BUILD_LOG"; rm -f "$BUILD_LOG"; exit 1; }
-    cat "$BUILD_LOG"
+    )
 
-    if [ "$WAS_UP_TO_DATE" -eq 1 ] && ! grep -qE "Building (C|CXX) object (CMakeFiles/app|drivers)" "$BUILD_LOG"; then
-        echo "NOTE: sesame_test was not rebuilt, skipping device flash write"
-    else
-        echo "Flashing sesame_test to device..."
-        ./tools/OpenOCD/flashprog.py --image-0 "$SESAME_TEST_BIN" -r
-    fi
-    rm -f "$BUILD_LOG"
+    echo "Building MCUboot (Direct-XIP)..."
+    (
+        source third_party/connectedhomeip/scripts/activate.sh
+        if [ ! -d "build" ]; then
+            west build --sysbuild -d build .
+        else
+            ninja -C build mcuboot
+        fi
+    )
+
+    echo "Generating OTA test images B and C..."
+    SESAME_TEST_DIR="build/sesame_test/zephyr"
+    SESAME_RAW_BIN="$SESAME_TEST_DIR/zephyr.bin"
+    IMGTOOL="bootloader/mcuboot/scripts/imgtool.py"
+    KEY="bootloader/mcuboot/root-rsa-2048.pem"
+
+    python3 "$IMGTOOL" sign \
+        --version 0.2.1+1 \
+        --header-size 0x200 \
+        --slot-size 1507328 \
+        --align 4 \
+        --key "$KEY" \
+        "$SESAME_RAW_BIN" \
+        "$SESAME_TEST_DIR/image_b.signed.bin"
+
+    python3 "$IMGTOOL" sign \
+        --version 0.2.2+1 \
+        --header-size 0x200 \
+        --slot-size 1507328 \
+        --align 4 \
+        --key "$KEY" \
+        "$SESAME_RAW_BIN" \
+        "$SESAME_TEST_DIR/image_c.signed.bin"
+
+    echo "Preparing device: erasing image-1..."
+    ./tools/OpenOCD/flashprog.py --erase 0,0x1a0000,0x170000
+
+    echo "Flashing MCUboot..."
+    ./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin
+
+    echo "Flashing sesame_test (Image A, confirmed) to image-0..."
+    # Direct-XIP revert mode requires a valid confirmed trailer; a raw signed
+    # image would be treated as a failed test image and erased by MCUboot.
+    ./tools/OpenOCD/flashprog.py --image-0 "$SESAME_TEST_DIR/zephyr.signed.confirmed.bin" -r
 
     echo "Running System Tests via Pytest (Hardware)..."
     setup_test_env

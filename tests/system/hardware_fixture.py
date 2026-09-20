@@ -78,6 +78,9 @@ def hardware_device(request, device_port, test_app_config, openocd):
 
     # Wait for Wi-Fi connection and IP
     device_ip = None
+    ipv4_addr = None
+    ipv6_addr = None
+    second_stack_deadline = None
     start_time = time.time()
     while time.time() - start_time < 60:
         log_snapshot = list(firmware_logs)
@@ -93,8 +96,6 @@ def hardware_device(request, device_port, test_app_config, openocd):
             semihost_done.set()
             print("Semihosting complete; stopping keep-alive poll.")
 
-        ipv4_addr = None
-        ipv6_addr = None
         for line in log_snapshot:
             m4 = re.search(r"IPv4 address: ([0-9\.]+)", line)
             if m4 and not ipv4_addr:
@@ -103,12 +104,15 @@ def hardware_device(request, device_port, test_app_config, openocd):
             if m6 and not ipv6_addr:
                 ip6_str = m6.group(1)
                 if not ip6_str.startswith("fe80"):
-                    ipv6_addr = f"[{ip6_str}]"
+                    ipv6_addr = ip6_str  # bare; bracketed only when forming URLs
 
         mod_name = getattr(request.module, "__name__", "").lower()
         is_matter_test = "matter" in mod_name
+        ipv6_bracketed = f"[{ipv6_addr}]" if ipv6_addr else None
         device_ip = (
-            ipv6_addr if (is_matter_test and ipv6_addr) else (ipv4_addr or ipv6_addr)
+            ipv6_bracketed
+            if (is_matter_test and ipv6_bracketed)
+            else (ipv4_addr or ipv6_bracketed)
         )
         if device_ip:
             if is_matter_test:
@@ -120,11 +124,28 @@ def hardware_device(request, device_port, test_app_config, openocd):
                 ready = any("System ready" in l for l in firmware_logs)
 
             if ready:
-                print(
-                    f"Parsed IP: {device_ip}. Firmware logs so far:\n"
-                    + "\n".join(firmware_logs)
-                )
-                break
+                if is_matter_test:
+                    print(
+                        f"Parsed IP: {device_ip}. Firmware logs so far:\n"
+                        + "\n".join(firmware_logs)
+                    )
+                    break
+                # Non-Matter (e.g. OTA) wants to exercise both address families;
+                # DHCPv4 is usually the slower stack to arrive. Wait a bounded
+                # time for the second stack before proceeding with what we have.
+                if ipv4_addr and ipv6_addr:
+                    print(
+                        f"Parsed IPs: v4={ipv4_addr} v6={ipv6_addr}."
+                        f" Firmware logs so far:\n" + "\n".join(firmware_logs)
+                    )
+                    break
+                if second_stack_deadline is None:
+                    second_stack_deadline = time.time() + 20
+                elif time.time() > second_stack_deadline:
+                    print(
+                        f"Proceeding with single stack: v4={ipv4_addr} v6={ipv6_addr}"
+                    )
+                    break
 
         # No fallback – if timeout expires the fixture will fail.
 
@@ -140,7 +161,12 @@ def hardware_device(request, device_port, test_app_config, openocd):
         )
         print(f"Device ready on Wi-Fi at IP {device_ip}")
 
-        yield {"ip": device_ip, "logs": firmware_logs}
+        yield {
+            "ip": device_ip,
+            "ipv4": ipv4_addr,
+            "ipv6": ipv6_addr,
+            "logs": firmware_logs,
+        }
     finally:
         stop_reader.set()
         reader_thread.join(timeout=2)
