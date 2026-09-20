@@ -4,6 +4,16 @@ import re
 import shutil
 import tempfile
 import time
+from pathlib import Path
+
+# The device signs its Matter attestation with the development (VID 0xFFF1)
+# example creds, which chain to a dev PAA root. The Matter python controller
+# defaults to a CWD-relative trust store that only resolves if `./credentials`
+# is a symlink, so point it at the real PAA root-cert dir explicitly.
+PAA_TRUST_STORE = str(
+    Path(__file__).resolve().parents[2]
+    / "third_party" / "connectedhomeip" / "credentials" / "development" / "paa-root-certs"
+)
 
 
 def test_hardware_case_provisioning(hardware_device, matter):
@@ -39,7 +49,9 @@ def test_hardware_case_provisioning(hardware_device, matter):
 
         ca = ca_manager.activeCaList[0]
         admin = ca.adminList[0]
-        controller = admin.NewController(nodeId=112233)
+        controller = admin.NewController(
+            nodeId=112233, paaTrustStorePath=PAA_TRUST_STORE
+        )
 
         parser = matter["SetupPayload"]()
         parser.ParseManualPairingCode(pairing_code)
