@@ -59,7 +59,7 @@ run_system() {
         fi
     )
 
-    echo "Building MCUboot (Direct-XIP)..."
+    echo "Building MCUboot..."
     (
         source third_party/connectedhomeip/scripts/activate.sh
         if [ ! -d "build" ]; then
@@ -75,34 +75,36 @@ run_system() {
     IMGTOOL="bootloader/mcuboot/scripts/imgtool.py"
     KEY="bootloader/mcuboot/root-rsa-2048.pem"
 
-    python3 "$IMGTOOL" sign \
-        --version 0.2.1+1 \
-        --header-size 0x200 \
-        --slot-size 1507328 \
-        --align 4 \
-        --key "$KEY" \
-        "$SESAME_RAW_BIN" \
-        "$SESAME_TEST_DIR/image_b.signed.bin"
+    # imgtool's Python deps (intelhex, cbor2, ...) live in the Pigweed venv, not
+    # the project .venv that setup_test_env may have activated earlier (e.g. in
+    # the 'all' stage). Run it in a subshell with the Pigweed env so this step
+    # is independent of whichever venv is active in the parent shell.
+    (
+        source third_party/connectedhomeip/scripts/activate.sh
+        python3 "$IMGTOOL" sign \
+            --version 0.2.1+1 \
+            --header-size 0x200 \
+            --slot-size 1507328 \
+            --align 4 \
+            --key "$KEY" \
+            "$SESAME_RAW_BIN" \
+            "$SESAME_TEST_DIR/image_b.signed.bin"
 
-    python3 "$IMGTOOL" sign \
-        --version 0.2.2+1 \
-        --header-size 0x200 \
-        --slot-size 1507328 \
-        --align 4 \
-        --key "$KEY" \
-        "$SESAME_RAW_BIN" \
-        "$SESAME_TEST_DIR/image_c.signed.bin"
+        python3 "$IMGTOOL" sign \
+            --version 0.2.2+1 \
+            --header-size 0x200 \
+            --slot-size 1507328 \
+            --align 4 \
+            --key "$KEY" \
+            "$SESAME_RAW_BIN" \
+            "$SESAME_TEST_DIR/image_c.signed.bin"
+    )
 
     echo "Preparing device: erasing image-1..."
     ./tools/OpenOCD/flashprog.py --erase 0,0x1a0000,0x170000
 
-    echo "Flashing MCUboot..."
-    ./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin
-
-    echo "Flashing sesame_test (Image A, confirmed) to image-0..."
-    # Direct-XIP revert mode requires a valid confirmed trailer; a raw signed
-    # image would be treated as a failed test image and erased by MCUboot.
-    ./tools/OpenOCD/flashprog.py --image-0 "$SESAME_TEST_DIR/zephyr.signed.confirmed.bin" -r
+    echo "Flashing..."
+    ./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 "$SESAME_TEST_DIR/zephyr.signed.confirmed.bin" -r
 
     echo "Running System Tests via Pytest (Hardware)..."
     setup_test_env
