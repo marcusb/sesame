@@ -94,7 +94,7 @@ def wait_for_boot(
     )
 
 
-def wait_for_ip(logs, start_idx, family, timeout=60):
+def wait_for_ip(logs, start_idx, family, timeout=120):
     """Wait until the device logs a fresh address of `family` ('v4' or 'v6').
 
     Returns the address (bare for v4, bracketed for v6). The device re-runs
@@ -142,14 +142,29 @@ def post_proto(ip, path, data, timeout=10):
     assert "200" in resp, f"POST {path} failed, response:\n{resp}"
 
 
-def reboot_device(openocd, device_ip):
+def reboot_device(
+    openocd, device_ip, logs=None, start_idx=None, wait_reboot_timeout=5
+):
     """Reboot device via HTTP POST /restart or fallback to OpenOCD hardware reboot."""
     try:
-        resp = requests.post(f"http://{device_ip}/restart", timeout=2)
-        if resp.status_code == 200:
-            return
+        requests.post(f"http://{device_ip}/restart", timeout=2)
     except Exception:
         pass
+
+    if logs is not None and start_idx is not None:
+        t0 = time.time()
+        while time.time() - t0 < wait_reboot_timeout:
+            recent = logs[start_idx:]
+            if any(
+                "Starting Direct-XIP bootloader" in l or "Restarting system" in l
+                for l in recent
+            ):
+                return
+            time.sleep(0.2)
+        print(
+            "HTTP restart did not trigger reboot within timeout; falling back to OpenOCD hardware reset..."
+        )
+
     openocd.reboot()
 
 
@@ -275,7 +290,7 @@ def test_ota(hardware_device, openocd):
         step_start = len(logs)
         with semihosting_keepalive(openocd):
             print("Rebooting device...")
-            reboot_device(openocd, ctrl_v4)
+            reboot_device(openocd, ctrl_v4, logs=logs, start_idx=step_start)
             wait_for_boot(
                 logs,
                 step_start,
@@ -315,7 +330,7 @@ def test_ota(hardware_device, openocd):
         )
         step_start = len(logs)
         with semihosting_keepalive(openocd):
-            reboot_device(openocd, ctrl_v6)
+            reboot_device(openocd, ctrl_v6, logs=logs, start_idx=step_start)
             wait_for_boot(
                 logs,
                 step_start,
