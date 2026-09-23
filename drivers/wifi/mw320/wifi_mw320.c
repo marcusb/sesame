@@ -63,38 +63,6 @@ int net_configure_address(struct wlan_ip_config *addr, void *intrfc_handle) {
 }
 void *net_get_mlan_handle(void) { return NULL; }
 void *net_get_uap_handle(void) { return NULL; }
-static struct net_if_mcast_monitor mcast_monitor;
-
-static void wifi_mcast_cb(struct net_if *iface, const struct net_addr *addr, bool is_joined)
-{
-	if (net_if_l2(iface) != &NET_L2_GET_NAME(ETHERNET)) {
-		return;
-	}
-
-#if defined(CONFIG_NET_IPV6)
-	if (addr->family == AF_INET6) {
-		struct net_eth_addr mac;
-		net_eth_ipv6_mcast_to_mac_addr(&addr->in6_addr, &mac);
-		if (is_joined) {
-			wifi_add_mcast_filter(mac.addr);
-		} else {
-			wifi_remove_mcast_filter(mac.addr);
-		}
-	}
-#endif
-#if defined(CONFIG_NET_IPV4)
-	if (addr->family == AF_INET) {
-		struct net_eth_addr mac;
-		net_eth_ipv4_mcast_to_mac_addr(&addr->in_addr, &mac);
-		if (is_joined) {
-			wifi_add_mcast_filter(mac.addr);
-		} else {
-			wifi_remove_mcast_filter(mac.addr);
-		}
-	}
-#endif
-}
-
 
 static void wifi_mw320_iface_init(struct net_if *iface)
 {
@@ -110,11 +78,6 @@ static void wifi_mw320_iface_init(struct net_if *iface)
     }
     
     net_if_set_link_addr(iface, dev->mac_addr, 6, NET_LINK_ETHERNET);
-    static bool mcast_registered = false;
-    if (!mcast_registered) {
-        net_if_mcast_mon_register(&mcast_monitor, NULL, wifi_mcast_cb);
-        mcast_registered = true;
-    }
 
     ethernet_init(iface);
     
@@ -297,6 +260,14 @@ static int wifi_mw320_set_config(const struct device *dev,
 {
 	if (type == ETHERNET_CONFIG_TYPE_FILTER) {
 		if (config->filter.type == ETHERNET_FILTER_TYPE_DST_MAC_ADDRESS) {
+			LOG_INF("mcast_filter: %s %02x:%02x:%02x:%02x:%02x:%02x",
+				config->filter.set ? "ADD" : "DEL",
+				config->filter.mac_address.addr[0],
+				config->filter.mac_address.addr[1],
+				config->filter.mac_address.addr[2],
+				config->filter.mac_address.addr[3],
+				config->filter.mac_address.addr[4],
+				config->filter.mac_address.addr[5]);
 			if (config->filter.set) {
 				wifi_add_mcast_filter((uint8_t *)config->filter.mac_address.addr);
 			} else {
@@ -337,6 +308,7 @@ static int wifi_mw320_event_callback(enum wlan_event_reason event, void *data)
         break;
     case WLAN_REASON_SUCCESS:
         LOG_INF("WLAN Connected");
+        wifi_refresh_mcast_filters();
         if (dev->iface) {
             net_eth_carrier_on(dev->iface);
             wifi_mgmt_raise_connect_result_event(dev->iface, 0);
