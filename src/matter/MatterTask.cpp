@@ -66,6 +66,13 @@ extern "C" void matter_task_start(void) {
 #endif
         k_sleep(K_MSEC(500));
     }
+    // Wait for IPv4 DHCP if available (up to 10 seconds)
+    for (int i = 0; i < 20 && !network_has_ipv4(); i++) {
+#if defined(CONFIG_SOC_88MW320) && defined(CONFIG_WATCHDOG)
+        feed_watchdog();
+#endif
+        k_sleep(K_MSEC(500));
+    }
     LOG_INF("Network is UP. Opening commissioning window...");
     (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
         [](intptr_t) {
