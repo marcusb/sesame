@@ -411,7 +411,7 @@ static void wifi_mw320_data_input_callback(const uint8_t interface, const uint8_
     uint8_t *payload = (uint8_t *)rxpd + rxpd->rx_pkt_offset;
     uint16_t payload_len = rxpd->rx_pkt_length;
     
-    struct net_pkt *pkt = net_pkt_rx_alloc_with_buffer(dev->iface, payload_len, AF_UNSPEC, 0, K_NO_WAIT);
+    struct net_pkt *pkt = net_pkt_rx_alloc_with_buffer(dev->iface, payload_len, AF_UNSPEC, 0, K_MSEC(50));
     if (!pkt) {
         LOG_ERR("Failed to allocate RX net_pkt");
         return;
