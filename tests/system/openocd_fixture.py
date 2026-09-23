@@ -46,7 +46,7 @@ class OpenOCD:
     def reboot(self):
         return self.run("reset run", wait=1.0)
 
-    def reboot_with_semihosting(self, stop_event):
+    def reboot_with_semihosting(self, stop_event, on_halt=None):
         """Reset with halt, then resume with a live keep-alive connection.
 
         Strategy (no fragile timers):
@@ -70,6 +70,9 @@ class OpenOCD:
         self.run("reset halt", wait=2.0)
         # Re-issue semihosting enable; a reset can clear the setting.
         self.run("arm semihosting enable", wait=0.5)
+
+        if on_halt:
+            on_halt()
 
         # Open the persistent connection that will service the BKPT, then send
         # resume on it so the CPU starts running with the connection already up.

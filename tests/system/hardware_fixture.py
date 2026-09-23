@@ -74,7 +74,10 @@ def hardware_device(request, device_port, test_app_config, openocd):
     # Without a live telnet client the CPU halts at the semihosting BKPT and
     # never resumes.
     semihost_done = threading.Event()
-    openocd.reboot_with_semihosting(semihost_done)
+    openocd.reboot_with_semihosting(
+        semihost_done,
+        on_halt=lambda: (ser.reset_input_buffer(), firmware_logs.clear()),
+    )
 
     # Wait for Wi-Fi connection and IP
     device_ip = None
@@ -124,15 +127,8 @@ def hardware_device(request, device_port, test_app_config, openocd):
                 ready = any("System ready" in l for l in firmware_logs)
 
             if ready:
-                if is_matter_test:
-                    print(
-                        f"Parsed IP: {device_ip}. Firmware logs so far:\n"
-                        + "\n".join(firmware_logs)
-                    )
-                    break
-                # Non-Matter (e.g. OTA) wants to exercise both address families;
-                # DHCPv4 is usually the slower stack to arrive. Wait a bounded
-                # time for the second stack before proceeding with what we have.
+                # Both stacks are expected; DHCPv4 is usually the slower stack to arrive.
+                # Wait a bounded time for the second stack before proceeding.
                 if ipv4_addr and ipv6_addr:
                     print(
                         f"Parsed IPs: v4={ipv4_addr} v6={ipv6_addr}."

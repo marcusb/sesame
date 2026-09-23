@@ -83,7 +83,7 @@ run_system() {
     # with no pre-existing Matter fabric -- no flash erase needed.
 
     echo "Flashing..."
-    ./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 "$SESAME_TEST_DIR/zephyr.signed.confirmed.bin" -r
+    ./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 "$SESAME_TEST_DIR/zephyr.signed.confirmed.bin"
 
     echo "Running System Tests via Pytest (Hardware)..."
     setup_test_env
