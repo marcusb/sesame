@@ -21,8 +21,11 @@ Sesame relies on Zephyr's `sysbuild` to coordinate the building of both the prim
 - **`sysbuild.conf`**: Configures the overall sysbuild environment, telling it to build MCUboot alongside the main application.
 - **`sysbuild/mcuboot.conf`**: Contains the Kconfig overrides for the MCUboot image (e.g., enabling Direct-XIP, setting partition sizes, configuring logging).
 - **`sysbuild/mcuboot.overlay`**: Hardware devicetree overlay for the MCUboot bootloader image (flash partitions, GPIO LED hogs, retention RAM).
+- **`sysbuild/native_sim.conf`**: Kconfig overrides for the native simulation domain (`native_sim`).
 - **`sysbuild/sesame_test.conf`**: Kconfig overrides for the on-device system test firmware (`sesame_test`).
 - **`sysbuild/sesame_test.overlay`**: Devicetree overlay for the on-device system test firmware (`sesame_test`, configuring simulator flash for storage partition).
+- **`Kconfig.sysbuild`**: Sysbuild Kconfig definitions, including `BUILD_NATIVE_SIM` (default `y`).
+- **`sysbuild.cmake`**: Sysbuild multi-image script adding `native_sim` as an additional domain when `BUILD_NATIVE_SIM` is enabled.
 - **`mcuboot_module/`**: Contains a custom CMakeLists file integrated via sysbuild that handles compiling the MW320-specific flash and pinctrl drivers into MCUboot, as well as running the `axf2firmware` post-build tool to convert MCUboot's `.elf` into the required `mcuboot.bin`.
 
 ### Boot and flash layout

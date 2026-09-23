@@ -1,0 +1,5 @@
+source "${ZEPHYR_BASE}/share/sysbuild/Kconfig"
+
+config BUILD_NATIVE_SIM
+	bool "Build native_sim domain for integration testing"
+	default y

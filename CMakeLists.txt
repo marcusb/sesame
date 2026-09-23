@@ -203,29 +203,9 @@ add_custom_target(test_all
     COMMENT "Running all tests"
 )
 
-# Automatically build the native_sim (QEMU/POSIX emulator) and sesame_test target alongside the main hardware target
+# Automatically build sesame_test target alongside the main hardware target
 if(NOT CONFIG_BOARD_NATIVE_SIM)
     get_filename_component(BIN_DIR_NAME ${CMAKE_BINARY_DIR} NAME)
-    
-    if("${BIN_DIR_NAME}" STREQUAL "sesame")
-        # When running under sysbuild, CMAKE_BINARY_DIR is build/sesame
-        set(NATIVE_SIM_OUTDIR ${CMAKE_BINARY_DIR}/../native_sim)
-    else()
-        set(NATIVE_SIM_OUTDIR ${CMAKE_BINARY_DIR}/native_sim)
-    endif()
-    get_filename_component(NATIVE_SIM_OUTDIR ${NATIVE_SIM_OUTDIR} ABSOLUTE)
-
-    include(ExternalProject)
-    ExternalProject_Add(
-        native_sim_build
-        SOURCE_DIR ${CMAKE_SOURCE_DIR}
-        BINARY_DIR ${NATIVE_SIM_OUTDIR}
-        CONFIGURE_COMMAND west build -b native_sim/native/64 -d ${NATIVE_SIM_OUTDIR} ${CMAKE_SOURCE_DIR} -- -DCONFIG_BOOTLOADER_MCUBOOT=n
-        BUILD_COMMAND ""
-        INSTALL_COMMAND ""
-        BUILD_ALWAYS TRUE
-    )
-    add_dependencies(test_integration native_sim_build)
 
     if(NOT "${BIN_DIR_NAME}" STREQUAL "sesame_test")
         if("${BIN_DIR_NAME}" STREQUAL "sesame")
@@ -235,6 +215,7 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
         endif()
         get_filename_component(SESAME_TEST_OUTDIR ${SESAME_TEST_OUTDIR} ABSOLUTE)
 
+        include(ExternalProject)
         ExternalProject_Add(
             sesame_test_build
             SOURCE_DIR ${CMAKE_SOURCE_DIR}
@@ -244,7 +225,6 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
             INSTALL_COMMAND ""
             BUILD_ALWAYS TRUE
         )
-        add_dependencies(sesame_test_build native_sim_build)
         add_dependencies(test_system sesame_test_build)
     endif()
 

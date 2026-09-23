@@ -100,7 +100,7 @@ builds and installs these into the `uv` environment.
 ## native_sim Emulation
 
 You can run the full application in a native POSIX environment (`native_sim`) for development and testing without hardware.
-The `native_sim` build isolates board-dependent modules and uses the host OS for I/O. The `native_sim` variant is automatically orchestrated as a custom target during the main build via CMake's `ExternalProject_Add`.
+The `native_sim` build isolates board-dependent modules and uses the host OS for I/O. The `native_sim` variant is automatically orchestrated as a multi-image domain during the sysbuild build.
 
 The `native_sim` build uses a local file `repl_storage.json` to persist configuration across restarts during tests.
 Networking is supported via native OS tap devices or directly within the simulated application.
