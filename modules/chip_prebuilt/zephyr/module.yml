@@ -1,0 +1,6 @@
+name: connectedhomeip
+build:
+  cmake: .
+  kconfig: ../../third_party/connectedhomeip/config/zephyr/chip-module/Kconfig
+  depends:
+    - openthread

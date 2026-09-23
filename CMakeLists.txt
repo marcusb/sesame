@@ -61,9 +61,35 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf
 # Load Zephyr build system
 set(MW320_SDK_DIR ${CMAKE_SOURCE_DIR}/mw320_sdk CACHE PATH "MW320 SDK directory" FORCE)
 
-# Inject IPv6 multicast implementation for mDNS in CHIP
-set(CHIP_CFLAGS "${CHIP_CFLAGS} -DIPV6_MULTICAST_IMPLEMENTED=1 -Dipv6mr_interface=ipv6mr_ifindex")
-list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip/config/zephyr/chip-module)
+# Auto-detect or use prebuilt Matter libraries when building sesame_test
+get_filename_component(CHIP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip REALPATH)
+get_filename_component(CURRENT_BIN_DIR_NAME ${CMAKE_BINARY_DIR} NAME)
+set(REUSE_PREBUILT_CHIP FALSE)
+if("${CURRENT_BIN_DIR_NAME}" STREQUAL "sesame_test" OR DEFINED CHIP_PREBUILT_DIR)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sysbuild/sesame_test.conf")
+        list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_SOURCE_DIR}/sysbuild/sesame_test.conf")
+    endif()
+    if(NOT DEFINED DTC_OVERLAY_FILE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sysbuild/sesame_test.overlay")
+        set(DTC_OVERLAY_FILE "${CMAKE_CURRENT_SOURCE_DIR}/sysbuild/sesame_test.overlay")
+    endif()
+
+    if(NOT DEFINED CHIP_PREBUILT_DIR)
+        set(CHIP_PREBUILT_DIR "${CMAKE_BINARY_DIR}/../sesame/modules/connectedhomeip")
+    endif()
+    get_filename_component(CHIP_PREBUILT_DIR "${CHIP_PREBUILT_DIR}" ABSOLUTE)
+    if(EXISTS "${CHIP_PREBUILT_DIR}/lib/libCHIP.a")
+        set(REUSE_PREBUILT_CHIP TRUE)
+        message(STATUS "sesame_test: Reusing prebuilt Matter libraries from ${CHIP_PREBUILT_DIR}")
+    endif()
+endif()
+
+if(REUSE_PREBUILT_CHIP)
+    list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/modules/chip_prebuilt)
+else()
+    # Inject IPv6 multicast implementation for mDNS in CHIP
+    set(CHIP_CFLAGS "${CHIP_CFLAGS} -DIPV6_MULTICAST_IMPLEMENTED=1 -Dipv6mr_interface=ipv6mr_ifindex")
+    list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip/config/zephyr/chip-module)
+endif()
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 
@@ -213,7 +239,7 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
             sesame_test_build
             SOURCE_DIR ${CMAKE_SOURCE_DIR}
             BINARY_DIR ${SESAME_TEST_OUTDIR}
-            CONFIGURE_COMMAND west build -b genie_idcm/88mw320/cpu0 -d ${SESAME_TEST_OUTDIR} ${CMAKE_SOURCE_DIR} -- -DEXTRA_CONF_FILE=tests/system/firmware/prj.conf -DDTC_OVERLAY_FILE=tests/system/firmware/overlay.overlay
+            CONFIGURE_COMMAND west build -b genie_idcm/88mw320/cpu0 -d ${SESAME_TEST_OUTDIR} ${CMAKE_SOURCE_DIR}
             BUILD_COMMAND ""
             INSTALL_COMMAND ""
             BUILD_ALWAYS TRUE

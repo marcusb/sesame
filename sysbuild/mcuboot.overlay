@@ -1,6 +1,7 @@
 / {
 	chosen {
 		zephyr,flash = &flash0;
+		zephyr,code-partition = &mcuboot_xip_partition;
 		zephyr,bootloader-info = &boot_info0;
 	};
 
@@ -21,6 +22,19 @@
 				status = "okay";
 				reg = <0x0 0x100>;
 			};
+		};
+	};
+};
+
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		mcuboot_xip_partition: partition@c8 {
+			label = "mcuboot-xip";
+			reg = <0xc8 0xff38>;
 		};
 	};
 };
