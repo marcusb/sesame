@@ -221,4 +221,74 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
         add_dependencies(sesame_test_build native_sim_build)
         add_dependencies(test_system sesame_test_build)
     endif()
+
+    # When building the on-device system test firmware, also produce the OTA
+    # update images (B and C) and the Matter/BDX container for B so the system
+    # tests don't have to shell out to imgtool/ota_image_tool themselves.
+    # B and C are plain-signed (no --confirm/--pad): they are written to the
+    # secondary slot via OTA and booted in test mode, which the tests assert on.
+    if("${BIN_DIR_NAME}" STREQUAL "sesame_test")
+        set(OTA_IMGTOOL ${CMAKE_CURRENT_SOURCE_DIR}/bootloader/mcuboot/scripts/imgtool.py)
+        set(OTA_SIGN_KEY ${CMAKE_CURRENT_SOURCE_DIR}/bootloader/mcuboot/root-rsa-2048.pem)
+        set(OTA_IMAGE_TOOL ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip/src/app/ota_image_tool.py)
+        set(MATTER_PY_SRC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip/src/controller/python)
+        set(SESAME_RAW_BIN ${CMAKE_BINARY_DIR}/zephyr/zephyr.bin)
+        set(SESAME_OUT_DIR ${CMAKE_BINARY_DIR}/zephyr)
+
+        add_custom_command(
+            OUTPUT ${SESAME_OUT_DIR}/image_b.signed.bin
+            COMMAND ${PYTHON_EXECUTABLE} ${OTA_IMGTOOL} sign
+                    --version 0.2.1+1
+                    --header-size ${CONFIG_ROM_START_OFFSET}
+                    --slot-size ${CONFIG_FLASH_LOAD_SIZE}
+                    --align 4
+                    --key ${OTA_SIGN_KEY}
+                    ${SESAME_RAW_BIN}
+                    ${SESAME_OUT_DIR}/image_b.signed.bin
+            DEPENDS zephyr_final ${SESAME_RAW_BIN}
+            COMMENT "Signing OTA test image B (v0.2.1)"
+            VERBATIM
+        )
+        add_custom_command(
+            OUTPUT ${SESAME_OUT_DIR}/image_c.signed.bin
+            COMMAND ${PYTHON_EXECUTABLE} ${OTA_IMGTOOL} sign
+                    --version 0.2.2+1
+                    --header-size ${CONFIG_ROM_START_OFFSET}
+                    --slot-size ${CONFIG_FLASH_LOAD_SIZE}
+                    --align 4
+                    --key ${OTA_SIGN_KEY}
+                    ${SESAME_RAW_BIN}
+                    ${SESAME_OUT_DIR}/image_c.signed.bin
+            DEPENDS zephyr_final ${SESAME_RAW_BIN}
+            COMMENT "Signing OTA test image C (v0.2.2)"
+            VERBATIM
+        )
+        # The BDX vendor version (-vn) is compared against the running firmware's
+        # CHIP_DEVICE_CONFIG_DEVICE_SOFTWARE_VERSION (MATTER_SOFTWARE_VERSION_INT,
+        # e.g. 131144 for 0.2.0+72). It must be strictly greater or the requestor
+        # silently ignores the update, so derive it from the same formula with the
+        # patch component bumped by one (0.2.1) rather than a hardcoded small int.
+        math(EXPR OTA_B_VN "(${APP_VERSION_MAJOR} << 24) + (${APP_VERSION_MINOR} << 16) + ((${APP_PATCHLEVEL} + 1) << 8) + 1")
+        add_custom_command(
+            OUTPUT ${SESAME_OUT_DIR}/image_b.ota
+            COMMAND ${CMAKE_COMMAND} -E env
+                    PYTHONPATH=${MATTER_PY_SRC}
+                    ${PYTHON_EXECUTABLE} ${OTA_IMAGE_TOOL} create
+                    -v 0xFFF1
+                    -p 0x8001
+                    -vn ${OTA_B_VN}
+                    -vs 0.2.1
+                    -da sha256
+                    ${SESAME_OUT_DIR}/image_b.signed.bin
+                    ${SESAME_OUT_DIR}/image_b.ota
+            DEPENDS ${SESAME_OUT_DIR}/image_b.signed.bin
+            COMMENT "Creating Matter/BDX OTA container for image B (vn ${OTA_B_VN})"
+            VERBATIM
+        )
+        add_custom_target(sesame_test_ota_images ALL
+            DEPENDS ${SESAME_OUT_DIR}/image_b.signed.bin
+                    ${SESAME_OUT_DIR}/image_c.signed.bin
+                    ${SESAME_OUT_DIR}/image_b.ota
+        )
+    endif()
 endif()

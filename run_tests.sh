@@ -69,39 +69,18 @@ run_system() {
         fi
     )
 
-    echo "Generating OTA test images B and C..."
     SESAME_TEST_DIR="build/sesame_test/zephyr"
-    SESAME_RAW_BIN="$SESAME_TEST_DIR/zephyr.bin"
-    IMGTOOL="bootloader/mcuboot/scripts/imgtool.py"
-    KEY="bootloader/mcuboot/root-rsa-2048.pem"
 
-    # imgtool's Python deps (intelhex, cbor2, ...) live in the Pigweed venv, not
-    # the project .venv that setup_test_env may have activated earlier (e.g. in
-    # the 'all' stage). Run it in a subshell with the Pigweed env so this step
-    # is independent of whichever venv is active in the parent shell.
-    (
-        source third_party/connectedhomeip/scripts/activate.sh
-        python3 "$IMGTOOL" sign \
-            --version 0.2.1+1 \
-            --header-size 0x200 \
-            --slot-size 1507328 \
-            --align 4 \
-            --key "$KEY" \
-            "$SESAME_RAW_BIN" \
-            "$SESAME_TEST_DIR/image_b.signed.bin"
-
-        python3 "$IMGTOOL" sign \
-            --version 0.2.2+1 \
-            --header-size 0x200 \
-            --slot-size 1507328 \
-            --align 4 \
-            --key "$KEY" \
-            "$SESAME_RAW_BIN" \
-            "$SESAME_TEST_DIR/image_c.signed.bin"
-    )
+    # image_b.signed.bin, image_c.signed.bin and image_b.ota are produced by the
+    # sesame_test CMake post-build step (see CMakeLists.txt), so no manual imgtool
+    # / ota_image_tool invocations are needed here.
 
     echo "Preparing device: erasing image-1..."
     ./tools/OpenOCD/flashprog.py --erase 0,0x1a0000,0x170000
+
+    # Storage (AppConfig + Matter fabric) is mapped to in-RAM sim_flash by
+    # tests/system/firmware/overlay.overlay, so it starts clean on every boot
+    # with no pre-existing Matter fabric -- no flash erase needed.
 
     echo "Flashing..."
     ./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 "$SESAME_TEST_DIR/zephyr.signed.confirmed.bin" -r

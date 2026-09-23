@@ -1,6 +1,6 @@
 from openocd_fixture import openocd  # noqa: F401
 from hardware_fixture import hardware_device  # noqa: F401
-from matter_fixture import matter  # noqa: F401
+from matter_fixture import matter, chip_stack, fabric_admin  # noqa: F401
 
 
 import os

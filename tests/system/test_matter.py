@@ -1,8 +1,5 @@
 import asyncio
-import os
 import re
-import shutil
-import tempfile
 import time
 from pathlib import Path
 
@@ -16,7 +13,7 @@ PAA_TRUST_STORE = str(
 )
 
 
-def test_hardware_case_provisioning(hardware_device, matter):
+def test_commission_and_control(hardware_device, matter, fabric_admin):
     logs = hardware_device["logs"]
     device_ip = hardware_device["ip"]
 
@@ -32,27 +29,10 @@ def test_hardware_case_provisioning(hardware_device, matter):
 
     print(f"Hardware ready at {device_ip}. Commissioning...")
 
-    # Use a temporary persistent storage for this test run
-    temp_dir = tempfile.mkdtemp(dir="build")
-    storage_path = os.path.join(temp_dir, "hw_repl_storage.json")
-
+    controller = fabric_admin.NewController(
+        nodeId=112233, paaTrustStorePath=PAA_TRUST_STORE
+    )
     try:
-        storage = matter["storage"].PersistentStorageJSON(storage_path)
-        stack = matter["ChipStack"](persistentStorage=storage)
-        ca_manager = matter["CertificateAuthorityManager"](
-            stack, stack.GetStorageManager()
-        )
-        ca_manager.LoadAuthoritiesFromStorage()
-        if len(ca_manager.activeCaList) == 0:
-            ca = ca_manager.NewCertificateAuthority()
-            ca.NewFabricAdmin(vendorId=0xFFF1, fabricId=1)
-
-        ca = ca_manager.activeCaList[0]
-        admin = ca.adminList[0]
-        controller = admin.NewController(
-            nodeId=112233, paaTrustStorePath=PAA_TRUST_STORE
-        )
-
         parser = matter["SetupPayload"]()
         parser.ParseManualPairingCode(pairing_code)
         setup_pin = int(parser.attributes["SetUpPINCode"])
@@ -101,8 +81,5 @@ def test_hardware_case_provisioning(hardware_device, matter):
             print(line)
         try:
             controller.Shutdown()
-            ca_manager.Shutdown()
-            stack.Shutdown()
         except Exception:
             pass
-        shutil.rmtree(temp_dir)
