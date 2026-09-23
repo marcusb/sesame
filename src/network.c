@@ -175,18 +175,18 @@ static void log_existing_ipv6_addresses(struct net_if* iface) {
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                     uint64_t mgmt_event, struct net_if* iface) {
     if (mgmt_event == NET_EVENT_WIFI_CONNECT_RESULT) {
+        struct net_if* target_iface = iface ? iface : net_if_get_default();
         LOG_INF("WiFi connected, starting DHCP");
-        net_dhcpv4_start(net_if_get_default());
+        net_dhcpv4_start(target_iface);
 
         struct net_dhcpv6_params params = {.request_addr = false,
                                            .request_prefix = false};
-        net_dhcpv6_start(net_if_get_default(), &params);
+        net_dhcpv6_start(target_iface, &params);
 
 #if defined(CONFIG_NET_IPV6_ND) && defined(CONFIG_NET_NATIVE_IPV6)
-        struct net_if* def_iface = net_if_get_default();
-        if (def_iface && def_iface->config.ip.ipv6) {
-            def_iface->config.ip.ipv6->rs_count = 0;
-            net_if_start_rs(def_iface);
+        if (target_iface && target_iface->config.ip.ipv6) {
+            target_iface->config.ip.ipv6->rs_count = 0;
+            net_if_start_rs(target_iface);
         }
 #endif
     } else if (mgmt_event == NET_EVENT_WIFI_AP_ENABLE_RESULT) {
