@@ -116,7 +116,7 @@ def zephyr_app():
             match = re.search(r"Manual pairing code: \[([0-9]+)\]", line)
             if match and not pairing_code:
                 pairing_code = match.group(1)
-            if "Network is UP. Opening commissioning window" in line:
+            if "Commissioning window opened successfully" in line:
                 booted = True
 
         if booted and pairing_code:
@@ -196,6 +196,7 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
     setup_pin = int(parser.attributes["SetUpPINCode"])
 
     print(f"Commissioning Node 1 with setup PIN {setup_pin} via IP...")
+    time.sleep(1.0)
 
     async def commission():
         await matter_controller.EstablishPASESessionIP("::1", setup_pin, 1)

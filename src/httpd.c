@@ -1,10 +1,14 @@
+#define _POSIX_C_SOURCE 200809L
 #include "httpd.h"
 
+#include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net/http/server.h>
 #include <zephyr/net/http/service.h>
 #include <zephyr/net/http/status.h>
+#include <zephyr/sys/clock.h>
 
 #include "app_config.pb.h"
 #include "controller.h"
@@ -84,6 +88,31 @@ static int restart_handler(struct http_client_ctx* client,
         }
         response_ctx->body_len = 0;
         response_ctx->body = NULL;
+        response_ctx->final_chunk = true;
+    }
+    return 0;
+}
+
+static int time_handler(struct http_client_ctx* client,
+                        enum http_transaction_status status,
+                        const struct http_request_ctx* request_ctx,
+                        struct http_response_ctx* response_ctx,
+                        void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        static char time_buf[64];
+        struct timespec ts;
+        sys_clock_gettime(SYS_CLOCK_REALTIME, &ts);
+        struct tm tm;
+        time_t t = ts.tv_sec;
+        gmtime_r(&t, &tm);
+        char iso_str[32];
+        strftime(iso_str, sizeof(iso_str), "%Y-%m-%dT%H:%M:%SZ", &tm);
+        int len = snprintf(time_buf, sizeof(time_buf),
+                           "{\"epoch\":%ld,\"time\":\"%s\"}\n", (long)ts.tv_sec,
+                           iso_str);
+        response_ctx->status = HTTP_200_OK;
+        response_ctx->body = (const uint8_t*)time_buf;
+        response_ctx->body_len = len;
         response_ctx->final_chunk = true;
     }
     return 0;
@@ -244,6 +273,13 @@ static struct http_resource_detail_dynamic cfg_logging_detail = {
     .user_data = (void*)(uintptr_t)CTRL_MSG_LOGGING_CONFIG,
 };
 
+static struct http_resource_detail_dynamic time_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_GET)},
+    .cb = time_handler,
+    .user_data = NULL,
+};
+
 static struct http_resource_detail_dynamic restart_resource_detail = {
     .common =
         {
@@ -321,6 +357,7 @@ HTTP_RESOURCE_DEFINE(promote_resource, httpd_service, "/promote",
                      &promote_detail);
 HTTP_RESOURCE_DEFINE(open_resource, httpd_service, "/open", &open_detail);
 HTTP_RESOURCE_DEFINE(close_resource, httpd_service, "/close", &close_detail);
+HTTP_RESOURCE_DEFINE(time_resource, httpd_service, "/time", &time_detail);
 
 #ifdef CONFIG_CHIP
 HTTP_RESOURCE_DEFINE(matter_commission_resource, httpd_service,

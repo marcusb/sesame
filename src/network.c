@@ -25,6 +25,7 @@
 #include "config_manager.h"
 #include "leds.h"
 #include "network.h"
+#include "time_util.h"
 
 LOG_MODULE_REGISTER(network, LOG_LEVEL_INF);
 
@@ -71,15 +72,7 @@ static void sntp_sync_handler(struct k_work* work) {
         struct timespec tspec;
         tspec.tv_sec = ts.seconds;
         tspec.tv_nsec = ((uint64_t)ts.fraction * (uint64_t)1000000000) >> 32;
-        sys_clock_settime(SYS_CLOCK_REALTIME, &tspec);
-
-        struct tm tm;
-        time_t t = tspec.tv_sec;
-        gmtime_r(&t, &tm);
-        char time_str[32];
-        strftime(time_str, sizeof(time_str), "%Y-%m-%dT%H:%M:%SZ", &tm);
-
-        LOG_INF("SNTP sync success, time updated to %s", time_str);
+        hwrtc_timespec_set(&tspec);
     } else {
         k_work_reschedule(&sntp_sync_work, K_SECONDS(60));
     }

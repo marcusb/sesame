@@ -100,6 +100,19 @@
 			interrupts = <22 0>;
 			status = "disabled";
 		};
+
+		rtc: rtc@48090000 {
+			compatible = "nxp,mw320-rtc";
+			reg = <0x48090000 0x1000>;
+			interrupts = <2 0>;
+			status = "disabled";
+		};
+
+		bbram: bbram@480c0000 {
+			compatible = "nxp,mw320-bbram";
+			reg = <0x480c0000 0x1000>;
+			status = "disabled";
+		};
 	};
 };
 

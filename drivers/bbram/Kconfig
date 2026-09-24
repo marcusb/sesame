@@ -1,0 +1,7 @@
+config BBRAM_MW320
+	bool "Marvell MW320 Battery-Backed / Retention RAM Driver"
+	default y
+	depends on DT_HAS_NXP_MW320_BBRAM_ENABLED
+	select BBRAM
+	help
+	  Enable support for Marvell MW320 PMU AON retention RAM.

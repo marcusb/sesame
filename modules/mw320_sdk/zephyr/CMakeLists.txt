@@ -16,6 +16,7 @@ if(CONFIG_SOC_88MW320)
         ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_pinmux.c
         ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_power.c
         ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_wdt.c
+        ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_rtc.c
         ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_flashc.c
         ${MW320_SDK_DIR}/devices/88MW320/drivers/fsl_qspi.c
         fsl_debug_console.c
@@ -61,6 +62,8 @@ if(CONFIG_SOC_88MW320)
     zephyr_library_sources_ifdef(CONFIG_FLASH ../../../drivers/flash/flash_mw320.c)
     zephyr_library_sources_ifdef(CONFIG_PINCTRL_MW320 ../../../drivers/pinctrl/pinctrl_mw320.c)
     zephyr_library_sources_ifdef(CONFIG_WATCHDOG_MW320 ../../../drivers/watchdog/wdt_mw320.c)
+    zephyr_library_sources_ifdef(CONFIG_COUNTER_MW320 ../../../drivers/counter/counter_mw320.c)
+    zephyr_library_sources_ifdef(CONFIG_BBRAM_MW320 ../../../drivers/bbram/bbram_mw320.c)
 endif()
 if(TARGET drivers__serial)
     set_property(TARGET drivers__serial PROPERTY ALLOW_EMPTY TRUE)
@@ -70,4 +73,10 @@ if(TARGET drivers__entropy)
 endif()
 if(TARGET drivers__retained_mem)
     set_property(TARGET drivers__retained_mem PROPERTY ALLOW_EMPTY TRUE)
+endif()
+if(TARGET drivers__counter)
+    set_property(TARGET drivers__counter PROPERTY ALLOW_EMPTY TRUE)
+endif()
+if(TARGET drivers__bbram)
+    set_property(TARGET drivers__bbram PROPERTY ALLOW_EMPTY TRUE)
 endif()

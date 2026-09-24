@@ -29,6 +29,7 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 #endif
 #include "pic_uart.h"
 #include "sesame_syslog.h"
+#include "time_util.h"
 
 K_MSGQ_DEFINE(ctrl_queue, sizeof(ctrl_msg_t), 8, 4);
 
@@ -87,6 +88,7 @@ int main(void) {
         set_ota_led_pattern(LED_GREEN, LED_GREEN, LED_OFF, LED_OFF);
     }
 
+    setup_rtc();
     network_init();
     syslog_init();
 

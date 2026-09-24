@@ -1,0 +1,18 @@
+description: NXP MW320 RTC Counter
+
+compatible: "nxp,mw320-rtc"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+  interrupts:
+    required: true
+  clock-divider-exp:
+    type: int
+    default: 5
+    description: |
+      Exponent for clock division from 32.768 kHz.
+      Frequency = 32768 / (2^clock-divider-exp).
+      Default 5 gives 32768 / 32 = 1024 Hz.

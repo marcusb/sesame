@@ -119,6 +119,7 @@ target_sources(app PRIVATE
     src/pic_uart.c
     src/mqtt.c
     src/sesame_syslog.c
+    src/time_util.c
 )
 
 if(CONFIG_BOOTLOADER_MCUBOOT)

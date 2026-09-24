@@ -1,0 +1,9 @@
+description: NXP MW320 Battery-Backed / Retention RAM (PMU AON RAM)
+
+compatible: "nxp,mw320-bbram"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
