@@ -27,24 +27,27 @@ extern "C" {
 
 LOG_MODULE_REGISTER(matter_task, LOG_LEVEL_INF);
 
-static struct k_thread sMatterCommThreadData;
-K_THREAD_STACK_DEFINE(sMatterCommStack, 1536);
+static struct k_work_delayable sMatterCommWork;
 
-static void MatterCommissioningWaitTask(void* p1, void* p2, void* p3) {
+static void MatterCommissioningWorkHandler(struct k_work* work) {
     // Wait for network to be up (including IPv6 for Matter)
-    while (!network_is_up() || !network_has_ipv6()) {
+    if (!network_is_up() || !network_has_ipv6()) {
 #if defined(CONFIG_SOC_88MW320) && defined(CONFIG_WATCHDOG)
         feed_watchdog();
 #endif
-        k_sleep(K_MSEC(500));
+        k_work_schedule(&sMatterCommWork, K_MSEC(500));
+        return;
     }
     // Wait for IPv4 DHCP if available (up to 10 seconds)
-    for (int i = 0; i < 20 && !network_has_ipv4(); i++) {
+    static int ipv4_wait_count = 0;
+    if (!network_has_ipv4() && ipv4_wait_count++ < 20) {
 #if defined(CONFIG_SOC_88MW320) && defined(CONFIG_WATCHDOG)
         feed_watchdog();
 #endif
-        k_sleep(K_MSEC(500));
+        k_work_schedule(&sMatterCommWork, K_MSEC(500));
+        return;
     }
+
     LOG_INF("Network is UP. Opening commissioning window...");
     (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
         [](intptr_t) {
@@ -96,10 +99,8 @@ extern "C" void matter_task_start(void) {
 
     (void)chip::DeviceLayer::PlatformMgr().StartEventLoopTask();
 
-    k_thread_create(&sMatterCommThreadData, sMatterCommStack,
-                    K_THREAD_STACK_SIZEOF(sMatterCommStack),
-                    MatterCommissioningWaitTask, NULL, NULL, NULL, 7, 0,
-                    K_NO_WAIT);
+    k_work_init_delayable(&sMatterCommWork, MatterCommissioningWorkHandler);
+    k_work_schedule(&sMatterCommWork, K_NO_WAIT);
 }
 
 using namespace ::chip;
