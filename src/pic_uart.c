@@ -11,7 +11,7 @@
 
 LOG_MODULE_REGISTER(pic_uart, LOG_LEVEL_DBG);
 
-K_MSGQ_DEFINE(pic_queue, sizeof(pic_cmd_t), 10, 4);
+K_MSGQ_DEFINE(pic_queue, sizeof(pic_cmd_t), 32, 4);
 
 #define READ_TIMEOUT_TICKS 10000
 #define DOOR_POLL_TICKS (30 * 1000)

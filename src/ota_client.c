@@ -166,7 +166,7 @@ void ota_client_start(const FirmwareUpgradeFetchRequest* msg) {
 
     LOG_INF("Starting HTTP GET %s from %s:%d", path, hostname, port);
 
-    ret = http_client_req(sock, &req, 10000, &ota_state);
+    ret = http_client_req(sock, &req, 60000, &ota_state);
     free(req.recv_buf);
     zsock_close(sock);
 

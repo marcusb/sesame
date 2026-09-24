@@ -184,7 +184,13 @@ int main(void) {
                     }
 
                     if (pcmd != PIC_CMD_UNKNOWN) {
-                        k_msgq_put(&pic_queue, &pcmd, K_NO_WAIT);
+                        int ret = k_msgq_put(&pic_queue, &pcmd, K_MSEC(1000));
+                        if (ret != 0) {
+                            LOG_ERR(
+                                "Failed to enqueue door cmd %d to pic_queue: "
+                                "%d",
+                                pcmd, ret);
+                        }
                     }
                     break;
                 }

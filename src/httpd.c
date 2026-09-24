@@ -129,10 +129,16 @@ static int open_handler(struct http_client_ctx* client,
                         const struct http_request_ctx* req,
                         struct http_response_ctx* res, void* user_data) {
     if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        LOG_INF("open_handler called!");
         ctrl_msg_t msg = {.type = CTRL_MSG_DOOR_CONTROL,
                           .msg.door_control = {DOOR_CMD_OPEN}};
         int ret = k_msgq_put(&ctrl_queue, &msg, K_MSEC(1000));
-        res->status = (ret == 0) ? HTTP_200_OK : HTTP_500_INTERNAL_SERVER_ERROR;
+        if (ret != 0) {
+            LOG_ERR("Failed to enqueue open msg: %d", ret);
+            res->status = HTTP_500_INTERNAL_SERVER_ERROR;
+        } else {
+            res->status = HTTP_200_OK;
+        }
         res->body_len = 0;
         res->body = NULL;
         res->final_chunk = true;
@@ -145,10 +151,16 @@ static int close_handler(struct http_client_ctx* client,
                          const struct http_request_ctx* req,
                          struct http_response_ctx* res, void* user_data) {
     if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        LOG_INF("close_handler called!");
         ctrl_msg_t msg = {.type = CTRL_MSG_DOOR_CONTROL,
                           .msg.door_control = {DOOR_CMD_CLOSE}};
         int ret = k_msgq_put(&ctrl_queue, &msg, K_MSEC(1000));
-        res->status = (ret == 0) ? HTTP_200_OK : HTTP_500_INTERNAL_SERVER_ERROR;
+        if (ret != 0) {
+            LOG_ERR("Failed to enqueue close msg: %d", ret);
+            res->status = HTTP_500_INTERNAL_SERVER_ERROR;
+        } else {
+            res->status = HTTP_200_OK;
+        }
         res->body_len = 0;
         res->body = NULL;
         res->final_chunk = true;

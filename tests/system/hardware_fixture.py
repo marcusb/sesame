@@ -85,7 +85,7 @@ def hardware_device(request, device_port, test_app_config, openocd):
     ipv6_addr = None
     second_stack_deadline = None
     start_time = time.time()
-    while time.time() - start_time < 60:
+    while time.time() - start_time < 120:
         log_snapshot = list(firmware_logs)
 
         # Stop polling OpenOCD as soon as semihosting is confirmed complete —
@@ -120,11 +120,11 @@ def hardware_device(request, device_port, test_app_config, openocd):
         if device_ip:
             if is_matter_test:
                 ready = any(
-                    "Commissioning window opened successfully" in l
-                    for l in firmware_logs
+                    "Commissioning window opened successfully" in line
+                    for line in firmware_logs
                 )
             else:
-                ready = any("System ready" in l for l in firmware_logs)
+                ready = any("System ready" in line for line in firmware_logs)
 
             if ready:
                 # Both stacks are expected; DHCPv4 is usually the slower stack to arrive.
@@ -151,6 +151,11 @@ def hardware_device(request, device_port, test_app_config, openocd):
 
     try:
         semihost_done.set()  # ensure keep-alive exits if we fell out of the loop
+        if is_matter_test:
+            assert ready, (
+                f"Device failed to open commissioning window within timeout.\n"
+                f"Logs:\n{chr(10).join(firmware_logs)}"
+            )
         assert device_ip, (
             f"Device failed to connect to Wi-Fi and acquire IP.\n"
             f"Logs:\n{chr(10).join(firmware_logs)}"
