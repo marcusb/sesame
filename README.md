@@ -61,11 +61,11 @@ to write the firmware image to the flash memory of the MW300 module.
 Use this command to write all the components to flash: the partition table, boot loader, WiFi firmware,
 and Sesame.
 ```sh
-./tools/OpenOCD/flashprog.py -l mw320_sdk/tools/boot2/layout.txt \
+./tools/OpenOCD/flashprog.py -l boards/arm/marvell_mw302/flash-layout.txt \
   --boot2 mw320_sdk/mw320_matter_flash/Matter/boot2.bin \
   --wififw mw320_sdk/mw320_matter_flash/Matter/mw32x_uapsta_W14.88.36.p172.bin \
   --mcuboot build/mcuboot/zephyr/mcuboot.bin \
-  --image-0 build/sesame/zephyr/zephyr.signed.bin -r
+  --image-0 build/sesame/sesame.bin -r
 ```
 
 After successful flash, the device should reboot and sound the buzzer. Logs from Sesame

@@ -162,16 +162,25 @@ endif()
 
 if(NOT CONFIG_BOARD_GENIE_IDCM_RAM)
     if(CONFIG_BUILD_OUTPUT_BIN)
+        get_filename_component(CURRENT_BIN_DIR_NAME ${CMAKE_BINARY_DIR} NAME)
+        if("${CURRENT_BIN_DIR_NAME}" STREQUAL "sesame_test")
+            set(SESAME_BIN_NAME "sesame_test.bin")
+            set(SESAME_TARGET_NAME "sesame_test_bin")
+        else()
+            set(SESAME_BIN_NAME "sesame.bin")
+            set(SESAME_TARGET_NAME "sesame_bin")
+        endif()
+
         add_custom_command(
-            OUTPUT ${CMAKE_BINARY_DIR}/sesame.bin
+            OUTPUT ${CMAKE_BINARY_DIR}/${SESAME_BIN_NAME}
             COMMAND ${CMAKE_COMMAND} -E copy
-                    ${CMAKE_BINARY_DIR}/zephyr/zephyr.signed.bin
-                    ${CMAKE_BINARY_DIR}/sesame.bin
-            DEPENDS zephyr_final ${CMAKE_BINARY_DIR}/zephyr/zephyr.signed.bin
-            COMMENT "Copying zephyr.signed.bin -> sesame.bin"
+                    ${CMAKE_BINARY_DIR}/zephyr/zephyr.signed.confirmed.bin
+                    ${CMAKE_BINARY_DIR}/${SESAME_BIN_NAME}
+            DEPENDS zephyr_final ${CMAKE_BINARY_DIR}/zephyr/zephyr.signed.confirmed.bin
+            COMMENT "Copying zephyr.signed.confirmed.bin -> ${SESAME_BIN_NAME}"
             VERBATIM
         )
-        add_custom_target(sesame_bin ALL DEPENDS ${CMAKE_BINARY_DIR}/sesame.bin)
+        add_custom_target(${SESAME_TARGET_NAME} ALL DEPENDS ${CMAKE_BINARY_DIR}/${SESAME_BIN_NAME})
     endif()
 endif()
 

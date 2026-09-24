@@ -8,7 +8,7 @@ FLASHLOG="${LOG%.log}.flash.log"
 
 cd "$(dirname "$0")/.."
 
-./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 build/sesame/zephyr/zephyr.signed.bin -r > "$FLASHLOG" 2>&1
+./tools/OpenOCD/flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 build/sesame/sesame.bin -r > "$FLASHLOG" 2>&1
 RC=$?
 
 sleep 1

@@ -88,9 +88,9 @@ west build --sysbuild
 
 This produces the following artefacts:
 * `build/mcuboot/zephyr/mcuboot.bin`: boot loader
-* `build/sesame/zephyr/zephyr.signed.bin`: main app firmware
+* `build/sesame/sesame.bin`: main app firmware (confirmed)
 * `build/native_sim/zephyr/zephyr.exe`: native_sim build for host tests
-* `build/sesame_test/zephyr/zephyr.signed.bin`: on-device test firmware
+* `build/sesame_test/sesame_test.bin`: on-device test firmware (confirmed)
  
 ## Building Matter Host Tools
 

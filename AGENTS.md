@@ -116,14 +116,14 @@ rm -rf build && west build --sysbuild
 
 ```sh
 ninja -C build                     # Build all variants (hardware)
-ninja -C build sesame/zephyr/zephyr.elf   # Build only hardware flash version
+ninja -C build sesame              # Build only hardware flash version
 ```
 
 **Build outputs:**
 
-- `build/sesame/zephyr/zephyr.signed.bin`, `build/mcuboot/zephyr/mcuboot.bin` – Hardware flash versions
+- `build/sesame/sesame.bin`, `build/mcuboot/zephyr/mcuboot.bin` – Hardware flash versions
 - `build/native_sim/zephyr/zephyr.exe` – Native simulation executable for integration tests
-- `build/sesame_test/zephyr/zephyr.signed.bin` – on-device system test binary
+- `build/sesame_test/sesame_test.bin` – on-device system test binary
 
 ## Project Architecture
 
@@ -203,7 +203,7 @@ echo 'hostname: "sesame", ssid: "MY_WIFI", security: 2, password: "pass"' \
 
 **Terminal 1** – Build, flash and reboot:
 ```sh
-ninja -C build sesame/zephyr/zephyr.elf && ./tools/OpenOCD/flashprog.py --image-0 build/sesame/zephyr/zephyr.signed.bin -r
+ninja -C build sesame && ./tools/OpenOCD/flashprog.py --image-0 build/sesame/sesame.bin -r
 ```
 
 **Terminal 2** – Monitor serial output:
@@ -255,7 +255,7 @@ The `-l` flag is only needed for initial device provisioning (first-time install
 
 If a kernel panic occurs, Zephyr will dump a hex core block. See `docs/development.md` under "Debugging Kernel Panics" for instructions on how to parse this into a C++ stack trace using GDB.
 
-**One-shot flash + capture** – `tools/flash_and_monitor.sh` starts `monitor.py` in the background, runs `flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 build/sesame/zephyr/zephyr.signed.bin -r`, and writes the serial output to a log file. Useful for grabbing the reset-through-steady-state window in a single step:
+**One-shot flash + capture** – `tools/flash_and_monitor.sh` starts `monitor.py` in the background, runs `flashprog.py --mcuboot build/mcuboot/zephyr/mcuboot.bin --image-0 build/sesame/sesame.bin -r`, and writes the serial output to a log file. Useful for grabbing the reset-through-steady-state window in a single step:
 ```sh
 tools/flash_and_monitor.sh [timeout_sec] [logfile]   # defaults: 60 /tmp/sesame_matter_dbg.log
 ```
@@ -267,7 +267,7 @@ tools/flash_and_monitor.sh [timeout_sec] [logfile]   # defaults: 60 /tmp/sesame_
   --boot2 mw320_sdk/mw320_matter_flash/Matter/boot2.bin \
   --wififw mw320_sdk/mw320_matter_flash/Matter/mw32x_uapsta_W14.88.36.p172.bin \
   --mcuboot build/mcuboot/zephyr/mcuboot.bin \
-  --image-0 build/sesame/zephyr/zephyr.signed.bin -r
+  --image-0 build/sesame/sesame.bin -r
 ```
 
 (Requires Tigard or similar JTAG board connected to J7 on iDCM board.)
@@ -283,7 +283,7 @@ Instead of copying the active image into a single primary slot, the bootloader (
 
 **Build and Configuration:**
 The Zephyr sysbuild framework coordinates building both the application and the MCUboot bootloader.
-- The application flash build produces `build/sesame/zephyr/zephyr.signed.bin`.
+- The application flash build produces `build/sesame/sesame.bin` (confirmed for Direct-XIP execution).
 - The MCUboot build produces `build/mcuboot/zephyr/mcuboot.bin` (via the custom `axf2firmware` tool post-build step in `mcuboot_module/CMakeLists.txt`).
 - MCUboot configuration is managed in `sysbuild/mcuboot.conf`, which enables `CONFIG_BOOT_DIRECT_XIP=y` and `CONFIG_BOOT_DIRECT_XIP_REVERT=y`.
 
