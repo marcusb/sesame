@@ -83,11 +83,6 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
         }
         pos = val;
     }
-    if (state == DCM_DOOR_STATE_CLOSED) {
-        pos = 0;
-    } else if (state == DCM_DOOR_STATE_OPEN) {
-        pos = 100;
-    }
     uint32_t now = k_uptime_get_32();
     if (update || dir != DCM_DOOR_DIR_STOPPED ||
         now > last_state_pub_time + STATE_UPDATE_INTERVAL) {
