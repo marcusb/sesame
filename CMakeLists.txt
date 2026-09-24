@@ -247,14 +247,15 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
         set(OTA_IMGTOOL ${CMAKE_CURRENT_SOURCE_DIR}/bootloader/mcuboot/scripts/imgtool.py)
         set(OTA_SIGN_KEY ${CMAKE_CURRENT_SOURCE_DIR}/bootloader/mcuboot/root-rsa-2048.pem)
         set(OTA_IMAGE_TOOL ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip/src/app/ota_image_tool.py)
-        set(MATTER_PY_SRC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip/src/controller/python)
-        set(SESAME_RAW_BIN ${CMAKE_BINARY_DIR}/zephyr/zephyr.bin)
-        set(SESAME_OUT_DIR ${CMAKE_BINARY_DIR}/zephyr)
+        math(EXPR OTA_B_PATCH "${APP_PATCHLEVEL} + 1")
+        math(EXPR OTA_C_PATCH "${APP_PATCHLEVEL} + 2")
+        set(OTA_B_VERSION "${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${OTA_B_PATCH}")
+        set(OTA_C_VERSION "${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${OTA_C_PATCH}")
 
         add_custom_command(
             OUTPUT ${SESAME_OUT_DIR}/image_b.signed.bin
             COMMAND ${PYTHON_EXECUTABLE} ${OTA_IMGTOOL} sign
-                    --version 0.2.1+1
+                    --version ${OTA_B_VERSION}+1
                     --header-size ${CONFIG_ROM_START_OFFSET}
                     --slot-size ${CONFIG_FLASH_LOAD_SIZE}
                     --align 4
@@ -262,13 +263,13 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
                     ${SESAME_RAW_BIN}
                     ${SESAME_OUT_DIR}/image_b.signed.bin
             DEPENDS zephyr_final ${SESAME_RAW_BIN}
-            COMMENT "Signing OTA test image B (v0.2.1)"
+            COMMENT "Signing OTA test image B (v${OTA_B_VERSION})"
             VERBATIM
         )
         add_custom_command(
             OUTPUT ${SESAME_OUT_DIR}/image_c.signed.bin
             COMMAND ${PYTHON_EXECUTABLE} ${OTA_IMGTOOL} sign
-                    --version 0.2.2+1
+                    --version ${OTA_C_VERSION}+1
                     --header-size ${CONFIG_ROM_START_OFFSET}
                     --slot-size ${CONFIG_FLASH_LOAD_SIZE}
                     --align 4
@@ -276,7 +277,7 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
                     ${SESAME_RAW_BIN}
                     ${SESAME_OUT_DIR}/image_c.signed.bin
             DEPENDS zephyr_final ${SESAME_RAW_BIN}
-            COMMENT "Signing OTA test image C (v0.2.2)"
+            COMMENT "Signing OTA test image C (v${OTA_C_VERSION})"
             VERBATIM
         )
         # The BDX vendor version (-vn) is compared against the running firmware's
@@ -293,7 +294,7 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
                     -v 0xFFF1
                     -p 0x8001
                     -vn ${OTA_B_VN}
-                    -vs 0.2.1
+                    -vs ${OTA_B_VERSION}
                     -da sha256
                     ${SESAME_OUT_DIR}/image_b.signed.bin
                     ${SESAME_OUT_DIR}/image_b.ota

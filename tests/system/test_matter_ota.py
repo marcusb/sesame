@@ -24,7 +24,11 @@ import threading
 from pathlib import Path
 
 import pytest
-from test_ota import semihosting_keepalive, wait_for_boot
+from test_ota import (  # noqa: E402
+    get_system_test_versions,
+    semihosting_keepalive,
+    wait_for_boot,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # The device signs its Matter attestation with the development (VID 0xFFF1)
@@ -54,7 +58,8 @@ ADMIN_NODE_ID = 112233
 PROVIDER_VENDOR_ID = 0xFFF1
 PROVIDER_DISCRIMINATOR = 1111
 PROVIDER_PINCODE = 20202021
-NEW_VERSION = "v0.2.1"
+VERSIONS = get_system_test_versions()
+NEW_VERSION = VERSIONS["b"]
 
 
 def _find_pairing_code(logs):
@@ -124,7 +129,7 @@ def test_matter_ota(hardware_device, openocd, matter, fabric_admin):
         logs,
         0,
         expected_slot=0,
-        expected_version="v0.2.0",
+        expected_version=VERSIONS["base"],
         expect_test_running=False,
         timeout=20,
     )

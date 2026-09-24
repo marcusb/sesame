@@ -17,6 +17,19 @@ sys.path.insert(0, str(Path(__file__).parent))
 from proto import api_pb2  # noqa: E402
 
 
+def get_system_test_versions():
+    repo_root = Path(__file__).resolve().parents[2]
+    content = (repo_root / "VERSION").read_text()
+    major = int(re.search(r"VERSION_MAJOR\s*=\s*(\d+)", content).group(1))
+    minor = int(re.search(r"VERSION_MINOR\s*=\s*(\d+)", content).group(1))
+    patch = int(re.search(r"PATCHLEVEL\s*=\s*(\d+)", content).group(1))
+    return {
+        "base": f"v{major}.{minor}.{patch}",
+        "b": f"v{major}.{minor}.{patch + 1}",
+        "c": f"v{major}.{minor}.{patch + 2}",
+    }
+
+
 @contextlib.contextmanager
 def semihosting_keepalive(openocd):
     """Keepalive thread polling OpenOCD telnet so semihosting BKPT calls are serviced."""
@@ -211,12 +224,14 @@ def test_ota(hardware_device, openocd):
         f"the device must be dual-stack (got v4={device_ipv4}, v6={device_ipv6})"
     )
 
+    versions = get_system_test_versions()
+
     print("\n[Step 1] Verifying initial boot of Image A from slot 0...")
     wait_for_boot(
         logs,
         0,
         expected_slot=0,
-        expected_version="v0.2.0",
+        expected_version=versions["base"],
         expect_test_running=False,
         timeout=10,
     )
@@ -273,7 +288,7 @@ def test_ota(hardware_device, openocd):
                 logs,
                 step_start,
                 expected_slot=1,
-                expected_version="v0.2.1",
+                expected_version=versions["b"],
                 expect_test_running=True,
                 timeout=90,
             )
@@ -295,7 +310,7 @@ def test_ota(hardware_device, openocd):
                 logs,
                 step_start,
                 expected_slot=1,
-                expected_version="v0.2.1",
+                expected_version=versions["b"],
                 expect_test_running=False,
                 timeout=60,
             )
@@ -317,7 +332,7 @@ def test_ota(hardware_device, openocd):
                 logs,
                 step_start,
                 expected_slot=0,
-                expected_version="v0.2.2",
+                expected_version=versions["c"],
                 expect_test_running=True,
                 timeout=90,
             )
@@ -335,7 +350,7 @@ def test_ota(hardware_device, openocd):
                 logs,
                 step_start,
                 expected_slot=1,
-                expected_version="v0.2.1",
+                expected_version=versions["b"],
                 expect_test_running=False,
                 timeout=60,
             )
