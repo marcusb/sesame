@@ -71,7 +71,7 @@ int main(void) {
     init_watchdog();
 #endif
 
-    LOG_INF("Firmware version: %s", APP_VERSION_STRING);
+    LOG_INF("Firmware version: %s", APP_VERSION_TWEAK_STRING);
     if (load_config() == 0) {
         LOG_INF("Config loaded successfully");
     } else {

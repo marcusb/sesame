@@ -387,8 +387,8 @@ void publish_state(const door_state_msg_t* msg) {
         free_heap = stats.free_bytes;
     }
 
-    snprintf(payload, sizeof(payload), fmt, APP_VERSION_STRING, state, dir,
-             msg->pos, days, tm_hms, uptime_s, (unsigned int)free_heap);
+    snprintf(payload, sizeof(payload), fmt, APP_VERSION_TWEAK_STRING, state,
+             dir, msg->pos, days, tm_hms, uptime_s, (unsigned int)free_heap);
     LOG_INF("Publishing to %s: %s", state_topic, payload);
     publish(state_topic, payload, false);
 }
