@@ -27,6 +27,43 @@ extern "C" {
 
 LOG_MODULE_REGISTER(matter_task, LOG_LEVEL_INF);
 
+static struct k_thread sMatterCommThreadData;
+K_THREAD_STACK_DEFINE(sMatterCommStack, 1536);
+
+static void MatterCommissioningWaitTask(void* p1, void* p2, void* p3) {
+    // Wait for network to be up (including IPv6 for Matter)
+    while (!network_is_up() || !network_has_ipv6()) {
+#if defined(CONFIG_SOC_88MW320) && defined(CONFIG_WATCHDOG)
+        feed_watchdog();
+#endif
+        k_sleep(K_MSEC(500));
+    }
+    // Wait for IPv4 DHCP if available (up to 10 seconds)
+    for (int i = 0; i < 20 && !network_has_ipv4(); i++) {
+#if defined(CONFIG_SOC_88MW320) && defined(CONFIG_WATCHDOG)
+        feed_watchdog();
+#endif
+        k_sleep(K_MSEC(500));
+    }
+    LOG_INF("Network is UP. Opening commissioning window...");
+    (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
+        [](intptr_t) {
+            CHIP_ERROR err =
+                chip::Server::GetInstance()
+                    .GetCommissioningWindowManager()
+                    .OpenBasicCommissioningWindow(
+                        chip::System::Clock::Seconds16(300),
+                        chip::CommissioningWindowAdvertisement::kDnssdOnly);
+            if (err == CHIP_NO_ERROR) {
+                LOG_INF("Commissioning window opened successfully");
+            } else {
+                LOG_ERR("Failed to open commissioning window: %d",
+                        (int)err.AsInteger());
+            }
+        },
+        0);
+}
+
 extern "C" void matter_task_start(void) {
     LOG_INF("Initializing CHIP Stack");
     (void)chip::DeviceLayer::PlatformMgr().InitChipStack();
@@ -59,37 +96,10 @@ extern "C" void matter_task_start(void) {
 
     (void)chip::DeviceLayer::PlatformMgr().StartEventLoopTask();
 
-    // Wait for network to be up (including IPv6 for Matter)
-    while (!network_is_up() || !network_has_ipv6()) {
-#if defined(CONFIG_SOC_88MW320) && defined(CONFIG_WATCHDOG)
-        feed_watchdog();
-#endif
-        k_sleep(K_MSEC(500));
-    }
-    // Wait for IPv4 DHCP if available (up to 10 seconds)
-    for (int i = 0; i < 20 && !network_has_ipv4(); i++) {
-#if defined(CONFIG_SOC_88MW320) && defined(CONFIG_WATCHDOG)
-        feed_watchdog();
-#endif
-        k_sleep(K_MSEC(500));
-    }
-    LOG_INF("Network is UP. Opening commissioning window...");
-    (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
-        [](intptr_t) {
-            CHIP_ERROR err =
-                chip::Server::GetInstance()
-                    .GetCommissioningWindowManager()
-                    .OpenBasicCommissioningWindow(
-                        chip::System::Clock::Seconds16(300),
-                        chip::CommissioningWindowAdvertisement::kDnssdOnly);
-            if (err == CHIP_NO_ERROR) {
-                LOG_INF("Commissioning window opened successfully");
-            } else {
-                LOG_ERR("Failed to open commissioning window: %d",
-                        (int)err.AsInteger());
-            }
-        },
-        0);
+    k_thread_create(&sMatterCommThreadData, sMatterCommStack,
+                    K_THREAD_STACK_SIZEOF(sMatterCommStack),
+                    MatterCommissioningWaitTask, NULL, NULL, NULL, 7, 0,
+                    K_NO_WAIT);
 }
 
 using namespace ::chip;
