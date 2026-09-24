@@ -72,8 +72,8 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
     direction = dir;
     LOG_INF("door status: state=%d, dir=%d, pos=%u, down_lim=%u, up_lim=%u",
             state, dir, raw_pos, down_limit, up_limit);
-    if (down_limit != up_limit) {
-        int32_t val = 100 * (int32_t)(up_limit - raw_pos) /
+    if (up_limit != down_limit) {
+        int32_t val = 100 * (int32_t)(raw_pos - down_limit) /
                       (int32_t)(up_limit - down_limit);
         if (val < 0) {
             val = 0;
@@ -82,6 +82,11 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
             val = 100;
         }
         pos = val;
+    }
+    if (state == DCM_DOOR_STATE_CLOSED) {
+        pos = 0;
+    } else if (state == DCM_DOOR_STATE_OPEN) {
+        pos = 100;
     }
     uint32_t now = k_uptime_get_32();
     if (update || dir != DCM_DOOR_DIR_STOPPED ||

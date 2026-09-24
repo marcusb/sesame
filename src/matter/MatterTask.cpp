@@ -151,11 +151,15 @@ void emberAfWindowCoveringClusterInitCallback(chip::EndpointId endpoint) {
 void matter_update_door_state(const door_state_msg_t* msg) {
     chip::app::DataModel::Nullable<chip::Percent100ths> pos;
     if (msg->state == DCM_DOOR_STATE_CLOSED) {
-        pos.SetNonNull(10000);  // 100.00% closed
+        pos.SetNonNull(10000);  // 100.00% closed in Matter
     } else if (msg->state == DCM_DOOR_STATE_OPEN) {
-        pos.SetNonNull(0);  // 0.00% closed
+        pos.SetNonNull(0);  // 0.00% closed (fully open) in Matter
     } else {
-        pos.SetNonNull(5000);  // Partially closed
+        // msg->pos is percentage open (0% = closed, 100% = open).
+        // Matter CurrentPositionLiftPercent100ths is percentage closed (0 =
+        // open, 10000 = closed).
+        uint16_t closed_percent100ths = (100 - msg->pos) * 100;
+        pos.SetNonNull(closed_percent100ths);
     }
 
     (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
