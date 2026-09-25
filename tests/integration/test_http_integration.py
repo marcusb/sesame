@@ -17,16 +17,3 @@ def test_http_version(zephyr_app):
     assert isinstance(data["version"], str) and len(data["version"]) > 0
     assert data["slot"] == "none"
     assert data["confirmed"] is False
-
-
-def test_http_matter_info(zephyr_app):
-    """
-    Verifies that the /matter/info HTTP endpoint returns an empty array
-    when the device has no commissioned fabrics.
-    """
-    req = urllib.request.Request("http://127.0.0.1:8080/matter/info")
-    with urllib.request.urlopen(req, timeout=5) as response:
-        assert response.status == 200
-        assert "application/json" in response.headers.get("Content-Type", "")
-        data = json.loads(response.read().decode("utf-8"))
-        assert data == []

@@ -1,9 +1,11 @@
 import asyncio
+import json
 import logging
 import os
 import shutil
 import tempfile
 import time
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -112,7 +114,7 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
 
     asyncio.run(commission())
 
-    print("Commissioning successful! Sending Door Open command...")
+    print("PASE session established! Sending Door Open command...")
 
     async def send_command():
         Clusters = matter_classes["Clusters"]
@@ -133,4 +135,26 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
         time.sleep(0.1)
 
     assert command_received, "Firmware did not log receipt of the Open command"
+
+    print("Commissioning node to provision fabric...")
+
+    async def complete_commissioning():
+        matter_controller.SetSkipCommissioningComplete(True)
+        await matter_controller.Commission(1)
+
+    asyncio.run(complete_commissioning())
+
+    # Verify that /matter/info returns the provisioned fabric
+    req = urllib.request.Request("http://127.0.0.1:8080/matter/info")
+    with urllib.request.urlopen(req, timeout=5) as response:
+        assert response.status == 200
+        assert "application/json" in response.headers.get("Content-Type", "")
+        data = json.loads(response.read().decode("utf-8"))
+        assert isinstance(data, list) and len(data) >= 1
+        fabric = data[0]
+        assert "node_id" in fabric
+        assert "fabric_id" in fabric
+        assert "vendor_id" in fabric
+        assert fabric["vendor_id"] == 0xFFF1
+
     print("SUCCESS! Integration test passed.")
