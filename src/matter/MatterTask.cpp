@@ -48,23 +48,32 @@ static void MatterCommissioningWorkHandler(struct k_work* work) {
         return;
     }
 
-    LOG_INF("Network is UP. Opening commissioning window...");
-    (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
-        [](intptr_t) {
-            CHIP_ERROR err =
-                chip::Server::GetInstance()
-                    .GetCommissioningWindowManager()
-                    .OpenBasicCommissioningWindow(
-                        chip::System::Clock::Seconds16(300),
-                        chip::CommissioningWindowAdvertisement::kDnssdOnly);
-            if (err == CHIP_NO_ERROR) {
-                LOG_INF("Commissioning window opened successfully");
-            } else {
-                LOG_ERR("Failed to open commissioning window: %d",
-                        (int)err.AsInteger());
-            }
-        },
-        0);
+    LOG_INF("Network is UP.");
+    if (chip::Server::GetInstance().GetFabricTable().FabricCount() == 0) {
+        LOG_INF(
+            "Device not commissioned. Opening basic commissioning window...");
+        (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
+            [](intptr_t) {
+                CHIP_ERROR err =
+                    chip::Server::GetInstance()
+                        .GetCommissioningWindowManager()
+                        .OpenBasicCommissioningWindow(
+                            chip::System::Clock::Seconds16(300),
+                            chip::CommissioningWindowAdvertisement::kDnssdOnly);
+                if (err == CHIP_NO_ERROR) {
+                    LOG_INF("Commissioning window opened successfully");
+                } else {
+                    LOG_ERR("Failed to open commissioning window: %d",
+                            (int)err.AsInteger());
+                }
+            },
+            0);
+    } else {
+        LOG_INF("Device already commissioned (fabrics: %u)",
+                (unsigned)chip::Server::GetInstance()
+                    .GetFabricTable()
+                    .FabricCount());
+    }
 }
 
 extern "C" void matter_task_start(void) {
