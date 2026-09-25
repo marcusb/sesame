@@ -39,7 +39,7 @@ run_integration() {
     )
     echo "Running Integration Tests via Pytest (QEMU/Native_Sim)..."
     setup_test_env
-    python -m pytest tests/integration/test_matter_integration.py -v -s
+    python -m pytest tests/integration -v -s
 }
 
 run_system() {
