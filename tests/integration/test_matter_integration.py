@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import pty
@@ -8,6 +9,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -20,7 +22,11 @@ logging.basicConfig(level=logging.DEBUG)
 # is a symlink, so point it at the real PAA root-cert dir explicitly.
 PAA_TRUST_STORE = str(
     Path(__file__).resolve().parents[2]
-    / "third_party" / "connectedhomeip" / "credentials" / "development" / "paa-root-certs"
+    / "third_party"
+    / "connectedhomeip"
+    / "credentials"
+    / "development"
+    / "paa-root-certs"
 )
 
 
@@ -167,9 +173,7 @@ def matter_controller(matter_classes):
 
     ca = ca_manager.activeCaList[0]
     admin = ca.adminList[0]
-    controller = admin.NewController(
-        nodeId=112233, paaTrustStorePath=PAA_TRUST_STORE
-    )
+    controller = admin.NewController(nodeId=112233, paaTrustStorePath=PAA_TRUST_STORE)
 
     yield controller
 
@@ -225,3 +229,33 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
 
     assert command_received, "Firmware did not log receipt of the Open command"
     print("SUCCESS! Integration test passed.")
+
+
+def test_http_version(zephyr_app):
+    """
+    Verifies that the /version HTTP endpoint returns valid version info,
+    running slot ("none" in native_sim), and image confirmation status.
+    """
+    req = urllib.request.Request("http://127.0.0.1:8080/version")
+    with urllib.request.urlopen(req, timeout=5) as response:
+        assert response.status == 200
+        assert "application/json" in response.headers.get("Content-Type", "")
+        data = json.loads(response.read().decode("utf-8"))
+
+    assert "version" in data
+    assert isinstance(data["version"], str) and len(data["version"]) > 0
+    assert data["slot"] == "none"
+    assert data["confirmed"] is False
+
+
+def test_http_matter_info(zephyr_app):
+    """
+    Verifies that the /matter/info HTTP endpoint returns an empty array
+    when the device has no commissioned fabrics.
+    """
+    req = urllib.request.Request("http://127.0.0.1:8080/matter/info")
+    with urllib.request.urlopen(req, timeout=5) as response:
+        assert response.status == 200
+        assert "application/json" in response.headers.get("Content-Type", "")
+        data = json.loads(response.read().decode("utf-8"))
+        assert data == []

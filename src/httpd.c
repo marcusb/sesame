@@ -23,7 +23,11 @@
 
 LOG_MODULE_REGISTER(httpd, LOG_LEVEL_DBG);
 
+#ifdef CONFIG_BOARD_NATIVE_SIM
+static uint16_t http_port = 8080;
+#else
 static uint16_t http_port = 80;
+#endif
 HTTP_SERVICE_DEFINE(httpd_service, NULL, &http_port, 3, 10, NULL, NULL, NULL);
 
 static int handle_cfg_request(const struct http_request_ctx* req,
