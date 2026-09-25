@@ -86,11 +86,20 @@ def read_image_version(path):
     return f"{major}.{minor}.{revision}+{build_num}"
 
 
+def make_session():
+    """Create a requests Session with minimal headers to avoid exceeding Zephyr HTTP header limits."""
+    s = requests.Session()
+    s.headers.clear()
+    s.headers.update({"User-Agent": "sesame-ota/1.0"})
+    return s
+
+
 def get_device_version(hostname):
     """Query the device /version endpoint. Returns dict or None."""
     url = device_url(hostname, "/version")
     try:
-        r = requests.get(url, timeout=5)
+        s = make_session()
+        r = s.get(url, timeout=5)
         r.raise_for_status()
         return r.json()
     except Exception as e:
@@ -156,7 +165,8 @@ def send_upgrade_request(hostname, url):
     payload = b"\x0a" + varint + url_bytes
 
     target = device_url(hostname, "/fwupgrade")
-    r = requests.post(
+    s = make_session()
+    r = s.post(
         target,
         data=payload,
         headers={"Content-Type": "application/protobuf"},
@@ -169,7 +179,8 @@ def send_upgrade_request(hostname, url):
 def send_promote_request(hostname):
     """Send the /promote POST to confirm the running image."""
     target = device_url(hostname, "/promote")
-    r = requests.post(target, timeout=10)
+    s = make_session()
+    r = s.post(target, timeout=10)
     r.raise_for_status()
     return r.status_code
 
