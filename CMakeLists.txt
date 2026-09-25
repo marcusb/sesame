@@ -106,6 +106,18 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(sesame)
 configure_file(src/matter/AppVersion.h.in ${CMAKE_CURRENT_SOURCE_DIR}/src/matter/AppVersion.h @ONLY)
 
+if(TARGET app_version_h)
+    add_custom_command(
+        TARGET app_version_h POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -DZEPHYR_BASE=${ZEPHYR_BASE}
+          -DOUT_FILE=${PROJECT_BINARY_DIR}/include/generated/zephyr/app_version.h
+          -DVERSION_TYPE=APP
+          -DVERSION_FILE=${CMAKE_CURRENT_BINARY_DIR}/app_version_file
+          -P ${ZEPHYR_BASE}/cmake/gen_version_h.cmake
+        COMMENT "Updating app_version.h with git commit count tweak"
+    )
+endif()
+
 if(CONFIG_CHIP)
     get_filename_component(CHIP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip REALPATH)
     include(${CHIP_ROOT}/src/app/chip_data_model.cmake)
