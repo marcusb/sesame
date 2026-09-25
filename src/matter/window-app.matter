@@ -751,6 +751,158 @@ cluster BasicInformation = 40 {
   command MfgSpecificPing(): DefaultSuccess = 0;
 }
 
+/** This cluster implements the Provider role in the OTA process. */
+cluster OtaSoftwareUpdateProvider = 41 {
+  revision 1;
+
+  enum ApplyUpdateActionEnum : enum8 {
+    kProceed = 0;
+    kAwaitNextAction = 1;
+    kDiscontinue = 2;
+  }
+
+  enum DownloadProtocolEnum : enum8 {
+    kBDXSynchronous = 0;
+    kBDXAsynchronous = 1;
+    kHTTPS = 2 [spec_name = "HTTPS"];
+    kVendorSpecific = 3;
+  }
+
+  enum StatusEnum : enum8 {
+    kUpdateAvailable = 0;
+    kBusy = 1;
+    kNotAvailable = 2;
+    kDownloadProtocolNotSupported = 3;
+  }
+
+  readonly attribute command_id generatedCommandList[] = 65528;
+  readonly attribute command_id acceptedCommandList[] = 65529;
+  readonly attribute attrib_id attributeList[] = 65531;
+  readonly attribute bitmap32 featureMap = 65532;
+  readonly attribute int16u clusterRevision = 65533;
+
+  request struct QueryImageRequest {
+    vendor_id vendorID = 0;
+    int16u productID = 1;
+    int32u softwareVersion = 2;
+    DownloadProtocolEnum protocolsSupported[] = 3;
+    optional int16u hardwareVersion = 4;
+    optional char_string<2> location = 5;
+    optional boolean requestorCanConsent = 6;
+    optional long_octet_string<512> metadataForProvider = 7;
+  }
+
+  response struct QueryImageResponse = 1 {
+    StatusEnum status = 0;
+    optional int32u delayedActionTime = 1;
+    optional long_char_string<256> imageURI = 2;
+    optional int32u softwareVersion = 3;
+    optional char_string<64> softwareVersionString = 4;
+    optional octet_string<32> updateToken = 5;
+    optional boolean userConsentNeeded = 6;
+    optional long_octet_string<512> metadataForRequestor = 7;
+  }
+
+  request struct ApplyUpdateRequestRequest {
+    octet_string<32> updateToken = 0;
+    int32u newVersion = 1;
+  }
+
+  response struct ApplyUpdateResponse = 3 {
+    ApplyUpdateActionEnum action = 0;
+    int32u delayedActionTime = 1;
+  }
+
+  request struct NotifyUpdateAppliedRequest {
+    octet_string<32> updateToken = 0;
+    int32u softwareVersion = 1;
+  }
+
+  /** Upon receipt, this command SHALL trigger an attempt to find an updated Software Image by the OTA Provider to match the OTA Requestor's constraints provided in the payload fields. */
+  command QueryImage(QueryImageRequest): QueryImageResponse = 0;
+  /** This command requests the specified version be installed on the device. */
+  command ApplyUpdateRequest(ApplyUpdateRequestRequest): ApplyUpdateResponse = 2;
+  /** This command tells the Provider that the specified update has been applied. */
+  command NotifyUpdateApplied(NotifyUpdateAppliedRequest): DefaultSuccess = 4;
+}
+
+/** This cluster implements the Requestor role in the OTA process. */
+cluster OtaSoftwareUpdateRequestor = 42 {
+  revision 1;
+
+  enum AnnouncementReasonEnum : enum8 {
+    kSimpleAnnouncement = 0;
+    kUpdateAvailable = 1;
+    kUrgentUpdateAvailable = 2;
+  }
+
+  enum ChangeReasonEnum : enum8 {
+    kUnknown = 0;
+    kSuccess = 1;
+    kFailure = 2;
+    kTimeOut = 3;
+    kDelayByProvider = 4;
+  }
+
+  enum UpdateStateEnum : enum8 {
+    kUnknown = 0;
+    kIdle = 1;
+    kQuerying = 2;
+    kDelayedOnQuery = 3;
+    kDownloading = 4;
+    kApplying = 5;
+    kDelayedOnApply = 6;
+    kRollingBack = 7;
+    kDelayedOnUserConsent = 8;
+  }
+
+  fabric_scoped struct ProviderLocation {
+    node_id providerNodeID = 1;
+    endpoint_no endpoint = 2;
+    fabric_idx fabricIndex = 254;
+  }
+
+  info event StateTransition = 0 {
+    UpdateStateEnum previousState = 0;
+    UpdateStateEnum newState = 1;
+    ChangeReasonEnum reason = 2;
+    nullable int32u targetSoftwareVersion = 3;
+  }
+
+  critical event VersionApplied = 1 {
+    int32u softwareVersion = 0;
+    int16u productID = 1;
+  }
+
+  info event DownloadError = 2 {
+    int32u softwareVersion = 0;
+    int64u bytesDownloaded = 1;
+    nullable int8u progressPercent = 2;
+    nullable int64s platformCode = 3;
+  }
+
+  attribute access(write: administer) ProviderLocation defaultOTAProviders[] = 0;
+  readonly attribute boolean updatePossible = 1;
+  readonly attribute UpdateStateEnum updateState = 2;
+  readonly attribute nullable int8u updateStateProgress = 3;
+  readonly attribute command_id generatedCommandList[] = 65528;
+  readonly attribute command_id acceptedCommandList[] = 65529;
+  readonly attribute attrib_id attributeList[] = 65531;
+  readonly attribute bitmap32 featureMap = 65532;
+  readonly attribute int16u clusterRevision = 65533;
+
+  request struct AnnounceOTAProviderRequest {
+    node_id providerNodeID = 0;
+    vendor_id vendorID = 1;
+    AnnouncementReasonEnum announcementReason = 2;
+    optional long_octet_string<512> metadataForNode = 3;
+    endpoint_no endpoint = 4;
+  }
+
+  /** This command MAY be invoked by Administrators to announce the presence of a particular OTA Provider. */
+  command access(invoke: administer) AnnounceOTAProvider(AnnounceOTAProviderRequest): DefaultSuccess = 0;
+}
+
 /** This cluster is used to manage global aspects of the Commissioning flow. */
 cluster GeneralCommissioning = 48 {
   revision 2;
@@ -1946,8 +2098,9 @@ cluster WindowCovering = 258 {
 }
 
 endpoint 0 {
-  device type ma_rootdevice = 22, version 3;
+  device type ma_rootdevice = 17, version 1;
 
+  binding cluster OtaSoftwareUpdateProvider;
 
   server cluster Descriptor {
     callback attribute deviceTypeList;
@@ -2006,6 +2159,20 @@ endpoint 0 {
     callback attribute attributeList;
     callback attribute featureMap;
     callback attribute clusterRevision;
+  }
+
+  server cluster OtaSoftwareUpdateRequestor {
+    emits event StateTransition;
+    emits event VersionApplied;
+    emits event DownloadError;
+    callback attribute defaultOTAProviders;
+    callback attribute updatePossible;
+    callback attribute updateState;
+    callback attribute updateStateProgress;
+    callback attribute featureMap;
+    callback attribute clusterRevision;
+
+    handle command AnnounceOTAProvider;
   }
 
   server cluster GeneralCommissioning {
