@@ -108,17 +108,25 @@ def get_device_version(hostname):
 
 
 def wait_for_device(hostname, timeout=90, expect_version=None):
-    """Wait for device to come back online after reboot."""
-    print(f"  Waiting for {hostname} to come back online (timeout {timeout}s)...")
+    """Wait for device to reboot and come back online."""
+    print(f"  Waiting for {hostname} to reboot and come online (timeout {timeout}s)...")
     deadline = time.time() + timeout
+
+    # First, wait for device to go offline or already report the expected version
+    while time.time() < deadline:
+        info = get_device_version(hostname)
+        if info is None:
+            # Device went offline for reboot
+            break
+        if expect_version and info.get("version") == expect_version:
+            # Device already rebooted into the expected version
+            return info
+        time.sleep(1)
+
+    # Now wait for device to come back online
     while time.time() < deadline:
         info = get_device_version(hostname)
         if info is not None:
-            if expect_version and info.get("version") != expect_version:
-                print(
-                    f"  ⚠ Device up but running {info['version']}"
-                    f" (expected {expect_version})"
-                )
             return info
         time.sleep(2)
     return None
@@ -132,12 +140,20 @@ class DualStackServer(http.server.ThreadingHTTPServer):
         super().server_bind()
 
 
-def serve_file(directory, port):
+def serve_file(directory, port, download_event=None):
     """Start an HTTP server serving files from directory. Returns (server, thread)."""
 
     class QuietHandler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=directory, **kwargs)
+
+        def copyfile(self, source, outputfile):
+            try:
+                super().copyfile(source, outputfile)
+                if download_event:
+                    download_event.set()
+            except Exception:
+                pass
 
         def log_message(self, format, *args):
             print(f"  [HTTP] {format % args}")
@@ -247,8 +263,9 @@ def cmd_upgrade(args):
     image_name = os.path.basename(image)
     local_ip = get_local_ip(hostname)
 
+    download_event = threading.Event()
     print(f"  Starting HTTP server on {local_ip}:{port}...")
-    server, thread = serve_file(image_dir, port)
+    server, thread = serve_file(image_dir, port, download_event=download_event)
 
     try:
         download_url = f"http://{local_ip}:{port}/{image_name}"
@@ -264,11 +281,13 @@ def cmd_upgrade(args):
             print(f"  ✗ Upgrade request failed: {e}")
             sys.exit(1)
 
-        # Wait for the device to download (watch HTTP server logs)
-        # and then reboot. The device will disconnect.
-        print()
-        print("  Waiting for device to download and reboot...")
-        time.sleep(5)
+        print("  Waiting for device to download image...")
+        if not download_event.wait(timeout=args.timeout):
+            print("  ✗ Timeout waiting for device to finish download")
+            sys.exit(1)
+
+        print("  Download finished. Waiting for reboot...")
+        time.sleep(3)
 
         # Wait for reboot
         post_info = wait_for_device(
