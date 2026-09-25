@@ -109,27 +109,51 @@ echo 'syslog_config: { enabled: true, syslog_host: "log.example.org", syslog_por
 
 ### Firmware update (OTA)
 
-To update the firmware, the binary must be served via HTTP (not HTTPS). Sesame employs
-an active-passive partition scheme, so that the upgrade image is written to a secondary
-partition. The new image can then be safely tested before marking its partition as the
-active one.
+To update the firmware, Sesame employs an active-passive partition scheme (Direct-XIP with revert), so that the upgrade image is written to the secondary partition. The new image can then be tested before confirming (promoting) it.
 
-Having obtained the upgrade image, instruct Sesame to download and apply the update:
+The recommended way to perform an OTA update is using the provided `tools/ota.py` script:
+
 ```sh
-echo 'url: "http://example.org/sesame.bin"' \
+# Perform an upgrade and automatically promote after successful boot:
+uv run tools/ota.py upgrade sesame --promote
+
+# Upgrade without promoting (runs in test mode until next reboot or promotion):
+uv run tools/ota.py upgrade sesame
+
+# Manually promote a running test image:
+uv run tools/ota.py promote sesame
+
+# Specify custom signed image or port:
+uv run tools/ota.py upgrade sesame --image build/sesame/zephyr/zephyr.signed.bin --port 8000
+```
+
+The script:
+1. Queries the `/version` HTTP endpoint on the target device to inspect current running version, active slot (`0`, `1`, or `"none"` for RAM load), and confirmation status.
+2. Reads the MCUboot header of the target firmware image to extract the target version.
+3. Starts a temporary HTTP server hosting the signed image.
+4. Sends the upgrade request protobuf to `/fwupgrade`.
+5. Waits for the device to download the binary and reboot.
+6. Verifies the new firmware version, slot, and confirmation state.
+7. Promotes the image if `--promote` is specified (or when using `tools/ota.py promote`).
+
+#### Manual update via curl
+
+Alternatively, you can perform the update manually. First serve the signed image (e.g. `zephyr.signed.bin`) on a local HTTP server, then send the fetch request:
+```sh
+echo 'url: "http://172.16.1.211:8000/zephyr.signed.bin"' \
   | protoc --encode=FirmwareUpgradeFetchRequest proto/api.proto \
   | curl --data-binary @- -H content-type:application/protobuf -v \
   'http://sesame/fwupgrade'
 ```
 
-Following successful update, the device will reboot into the new
-"testing" image, indicated by the OTA LED blinking blue. Unless it is
-then promoted to primary, subsequent restarts will boot from the old
-firmware.
-
-Once satisfied that the new image is working, finalize the upgrade:
+Following a successful update, the device will reboot into the new image. Verify status via `/version`:
 ```sh
-curl -v 'http://sesame/promote'
+curl http://sesame/version
+```
+
+Once verified, finalize the upgrade by promoting the image:
+```sh
+curl -X POST 'http://sesame/promote'
 ```
 
 ### Matter commissioning recovery

@@ -16,6 +16,10 @@
 #ifdef CONFIG_CHIP
 #include "matter_task.h"
 #endif
+#include <zephyr/app_version.h>
+#ifdef CONFIG_BOOTLOADER_MCUBOOT
+#include "ota.h"
+#endif
 
 LOG_MODULE_REGISTER(httpd, LOG_LEVEL_DBG);
 
@@ -114,6 +118,46 @@ static int time_handler(struct http_client_ctx* client,
         response_ctx->body = (const uint8_t*)time_buf;
         response_ctx->body_len = len;
         response_ctx->final_chunk = true;
+    }
+    return 0;
+}
+
+static int version_handler(struct http_client_ctx* client,
+                           enum http_transaction_status status,
+                           const struct http_request_ctx* req,
+                           struct http_response_ctx* res, void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        static char buf[128];
+#ifdef CONFIG_BOOTLOADER_MCUBOOT
+        int slot = my_boot_fetch_active_slot();
+        bool confirmed =
+            (slot == 0 || slot == 1) ? my_boot_is_img_confirmed() : false;
+        int len;
+        if (slot == 0 || slot == 1) {
+            len = snprintf(
+                buf, sizeof(buf),
+                "{\"version\":\"%s\",\"slot\":%d,\"confirmed\":%s}\n",
+                APP_VERSION_TWEAK_STRING, slot, confirmed ? "true" : "false");
+        } else {
+            len = snprintf(
+                buf, sizeof(buf),
+                "{\"version\":\"%s\",\"slot\":\"none\",\"confirmed\":false}\n",
+                APP_VERSION_TWEAK_STRING);
+        }
+#else
+        int len = snprintf(
+            buf, sizeof(buf),
+            "{\"version\":\"%s\",\"slot\":\"none\",\"confirmed\":false}\n",
+            APP_VERSION_TWEAK_STRING);
+#endif
+        static const struct http_header headers[] = {
+            {.name = "Content-Type", .value = "application/json"}};
+        res->status = HTTP_200_OK;
+        res->headers = headers;
+        res->header_count = 1;
+        res->body = (const uint8_t*)buf;
+        res->body_len = len;
+        res->final_chunk = true;
     }
     return 0;
 }
@@ -280,6 +324,13 @@ static struct http_resource_detail_dynamic time_detail = {
     .user_data = NULL,
 };
 
+static struct http_resource_detail_dynamic version_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_GET)},
+    .cb = version_handler,
+    .user_data = NULL,
+};
+
 static struct http_resource_detail_dynamic restart_resource_detail = {
     .common =
         {
@@ -358,6 +409,8 @@ HTTP_RESOURCE_DEFINE(promote_resource, httpd_service, "/promote",
 HTTP_RESOURCE_DEFINE(open_resource, httpd_service, "/open", &open_detail);
 HTTP_RESOURCE_DEFINE(close_resource, httpd_service, "/close", &close_detail);
 HTTP_RESOURCE_DEFINE(time_resource, httpd_service, "/time", &time_detail);
+HTTP_RESOURCE_DEFINE(version_resource, httpd_service, "/version",
+                     &version_detail);
 
 #ifdef CONFIG_CHIP
 HTTP_RESOURCE_DEFINE(matter_commission_resource, httpd_service,

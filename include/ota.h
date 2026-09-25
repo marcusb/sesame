@@ -41,6 +41,8 @@ int ota_finish(ota_upd_state_t* ota_state);
 void check_ota_test_image();
 int ota_promote_image();
 void ota_client_start(const FirmwareUpgradeFetchRequest* req);
+int my_boot_fetch_active_slot(void);
+bool my_boot_is_img_confirmed(void);
 #ifdef __cplusplus
 }
 #endif
