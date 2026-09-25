@@ -137,18 +137,18 @@ static int version_handler(struct http_client_ctx* client,
             len = snprintf(
                 buf, sizeof(buf),
                 "{\"version\":\"%s\",\"slot\":%d,\"confirmed\":%s}\n",
-                APP_VERSION_TWEAK_STRING, slot, confirmed ? "true" : "false");
+                SESAME_VERSION_STR, slot, confirmed ? "true" : "false");
         } else {
             len = snprintf(
                 buf, sizeof(buf),
                 "{\"version\":\"%s\",\"slot\":\"none\",\"confirmed\":false}\n",
-                APP_VERSION_TWEAK_STRING);
+                SESAME_VERSION_STR);
         }
 #else
         int len = snprintf(
             buf, sizeof(buf),
             "{\"version\":\"%s\",\"slot\":\"none\",\"confirmed\":false}\n",
-            APP_VERSION_TWEAK_STRING);
+            SESAME_VERSION_STR);
 #endif
         static const struct http_header headers[] = {
             {.name = "Content-Type", .value = "application/json"}};
