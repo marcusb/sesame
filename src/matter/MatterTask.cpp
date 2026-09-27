@@ -2,6 +2,7 @@
 #include <app-common/zap-generated/attributes/Accessors.h>
 #include <app-common/zap-generated/ids/Attributes.h>
 #include <app-common/zap-generated/ids/Clusters.h>
+#include <app/clusters/network-commissioning/CodegenInstance.h>
 #include <app/clusters/window-covering-server/CodegenIntegration.h>
 #include <app/clusters/window-covering-server/WindowCoveringCluster.h>
 #include <app/server/CommissioningWindowManager.h>
@@ -10,6 +11,7 @@
 #include <credentials/examples/DeviceAttestationCredsExample.h>
 #include <data-model-providers/codegen/Instance.h>
 #include <platform/CHIPDeviceLayer.h>
+#include <platform/NetworkCommissioning.h>
 #include <setup_payload/OnboardingCodesUtil.h>
 #include <zephyr/logging/log.h>
 
@@ -26,6 +28,60 @@ extern "C" {
 }
 
 LOG_MODULE_REGISTER(matter_task, LOG_LEVEL_INF);
+
+namespace {
+
+class SesameEthernetDriver final
+    : public chip::DeviceLayer::NetworkCommissioning::EthernetDriver {
+   public:
+    class EthernetNetworkIterator final
+        : public chip::DeviceLayer::NetworkCommissioning::NetworkIterator {
+       public:
+        EthernetNetworkIterator(SesameEthernetDriver* aDriver)
+            : mDriver(aDriver) {}
+        size_t Count() override { return 1; }
+        bool Next(
+            chip::DeviceLayer::NetworkCommissioning::Network& item) override {
+            if (mExhausted) {
+                return false;
+            }
+            mExhausted = true;
+            static const char kIfaceName[] = "wlan0";
+            memcpy(item.networkID, kIfaceName, sizeof(kIfaceName) - 1);
+            item.networkIDLen = sizeof(kIfaceName) - 1;
+            item.connected = true;
+            return true;
+        }
+        void Release() override { delete this; }
+        ~EthernetNetworkIterator() override = default;
+
+       private:
+        SesameEthernetDriver* mDriver;
+        bool mExhausted = false;
+    };
+
+    uint8_t GetMaxNetworks() override { return 1; }
+    chip::DeviceLayer::NetworkCommissioning::NetworkIterator* GetNetworks()
+        override {
+        return new EthernetNetworkIterator(this);
+    }
+    CHIP_ERROR Init(
+        chip::DeviceLayer::NetworkCommissioning::Internal::BaseDriver::
+            NetworkStatusChangeCallback* networkStatusChangeCallback) override {
+        return CHIP_NO_ERROR;
+    }
+    void Shutdown() override {}
+
+    static SesameEthernetDriver& Instance() {
+        static SesameEthernetDriver instance;
+        return instance;
+    }
+};
+
+chip::app::Clusters::NetworkCommissioning::Instance
+    sNetworkCommissioningInstance(0, &SesameEthernetDriver::Instance());
+
+}  // namespace
 
 static struct k_work_delayable sMatterCommWork;
 
@@ -99,6 +155,14 @@ extern "C" void matter_task_start(void) {
     chip::DeviceLayer::SetDeviceInfoProvider(&gExampleDeviceInfoProvider);
 
     (void)chip::Server::GetInstance().Init(initParams);
+
+    CHIP_ERROR netErr = sNetworkCommissioningInstance.Init();
+    if (netErr != CHIP_NO_ERROR) {
+        LOG_ERR("Failed to init NetworkCommissioning: %d",
+                (int)netErr.AsInteger());
+    } else {
+        LOG_INF("NetworkCommissioning cluster initialized");
+    }
 
     InitOTARequestor();
 

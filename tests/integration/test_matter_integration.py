@@ -136,6 +136,30 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
 
     assert command_received, "Firmware did not log receipt of the Open command"
 
+    print("Verifying NetworkCommissioning and BasicInformation attributes on Endpoint 0 over PASE...")
+
+    async def verify_endpoint0_attributes():
+        Clusters = matter_classes["Clusters"]
+        res = await matter_controller.ReadAttribute(
+            nodeId=1,
+            attributes=[
+                (0, Clusters.NetworkCommissioning.Attributes.FeatureMap),
+                (0, Clusters.BasicInformation.Attributes.SoftwareVersionString),
+            ],
+            returnClusterObject=True,
+        )
+        assert 0 in res
+        assert Clusters.NetworkCommissioning in res[0]
+        feature_map = res[0][Clusters.NetworkCommissioning].featureMap
+        assert feature_map == 4, f"Expected FeatureMap 4 (Ethernet), got {feature_map}"
+
+        assert Clusters.BasicInformation in res[0]
+        version_str = res[0][Clusters.BasicInformation].softwareVersionString
+        print(f"Matter SoftwareVersionString: {version_str}")
+        assert "+" in version_str and "-" not in version_str, f"Unexpected version string format: {version_str}"
+
+    asyncio.run(verify_endpoint0_attributes())
+
     print("Commissioning node to provision fabric...")
 
     async def complete_commissioning():
