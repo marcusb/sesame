@@ -15,6 +15,45 @@ set(BOARD genie_idcm/88mw320/cpu0 CACHE STRING "Zephyr board")
 
 # --- Dynamically set APP_VERSION based on Git commit and VERSION file ---
 execute_process(
+    COMMAND git rev-parse --git-dir
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_DIR
+    RESULT_VARIABLE GIT_DIR_RESULT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+
+if(GIT_DIR_RESULT EQUAL 0)
+    if(NOT IS_ABSOLUTE "${GIT_DIR}")
+        set(GIT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${GIT_DIR}")
+    endif()
+    get_filename_component(GIT_DIR "${GIT_DIR}" REALPATH)
+
+    set(GIT_DEPS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+    if(EXISTS "${GIT_DIR}/HEAD")
+        list(APPEND GIT_DEPS "${GIT_DIR}/HEAD")
+        file(READ "${GIT_DIR}/HEAD" GIT_HEAD_CONTENT)
+        if("${GIT_HEAD_CONTENT}" MATCHES "ref: ([^\r\n]+)")
+            set(GIT_REF "${CMAKE_MATCH_1}")
+            if(EXISTS "${GIT_DIR}/${GIT_REF}")
+                list(APPEND GIT_DEPS "${GIT_DIR}/${GIT_REF}")
+            endif()
+            if(EXISTS "${GIT_DIR}/logs/${GIT_REF}")
+                list(APPEND GIT_DEPS "${GIT_DIR}/logs/${GIT_REF}")
+            endif()
+        endif()
+    endif()
+    if(EXISTS "${GIT_DIR}/packed-refs")
+        list(APPEND GIT_DEPS "${GIT_DIR}/packed-refs")
+    endif()
+    if(EXISTS "${GIT_DIR}/logs/HEAD")
+        list(APPEND GIT_DEPS "${GIT_DIR}/logs/HEAD")
+    endif()
+
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${GIT_DEPS})
+endif()
+
+execute_process(
     COMMAND git rev-parse --short=7 HEAD
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     OUTPUT_VARIABLE GIT_COMMIT_HASH
@@ -53,21 +92,36 @@ endif()
 math(EXPR MATTER_SOFTWARE_VERSION_INT "(${APP_VERSION_MAJOR} << 24) + (${APP_VERSION_MINOR} << 16) + (${APP_PATCHLEVEL} << 8) + ${GIT_COMMIT_COUNT}")
 set(APP_FIRMWARE_VERSION "${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_PATCHLEVEL}+${GIT_COMMIT_COUNT}")
 
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/app_version_file
+set(NEW_APP_VERSION_FILE_CONTENT
 "VERSION_MAJOR = ${APP_VERSION_MAJOR}
 VERSION_MINOR = ${APP_VERSION_MINOR}
 PATCHLEVEL = ${APP_PATCHLEVEL}
 VERSION_TWEAK = ${GIT_COMMIT_COUNT}
 EXTRAVERSION =
 ")
+if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/app_version_file")
+    file(READ "${CMAKE_CURRENT_BINARY_DIR}/app_version_file" CURRENT_APP_VERSION_FILE_CONTENT)
+else()
+    set(CURRENT_APP_VERSION_FILE_CONTENT "")
+endif()
+if(NOT "${CURRENT_APP_VERSION_FILE_CONTENT}" STREQUAL "${NEW_APP_VERSION_FILE_CONTENT}")
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/app_version_file "${NEW_APP_VERSION_FILE_CONTENT}")
+endif()
+
 set(VERSION_FILE ${CMAKE_CURRENT_SOURCE_DIR}/deps/zephyr/VERSION ${CMAKE_CURRENT_BINARY_DIR}/app_version_file)
 set(VERSION_TYPE KERNEL APP)
 
 # Tell MCUboot to sign the image with this version
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf
-"CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION=\"${APP_FIRMWARE_VERSION}\"
-")
-    list(APPEND EXTRA_CONF_FILE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf)
+set(NEW_APP_VERSION_CONF "CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION=\"${APP_FIRMWARE_VERSION}\"\n")
+if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/app_version.conf")
+    file(READ "${CMAKE_CURRENT_BINARY_DIR}/app_version.conf" CURRENT_APP_VERSION_CONF)
+else()
+    set(CURRENT_APP_VERSION_CONF "")
+endif()
+if(NOT "${CURRENT_APP_VERSION_CONF}" STREQUAL "${NEW_APP_VERSION_CONF}")
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf "${NEW_APP_VERSION_CONF}")
+endif()
+list(APPEND EXTRA_CONF_FILE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf)
 # Load Zephyr build system
 set(MW320_SDK_DIR ${CMAKE_SOURCE_DIR}/mw320_sdk CACHE PATH "MW320 SDK directory" FORCE)
 
