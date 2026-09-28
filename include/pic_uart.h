@@ -11,7 +11,6 @@ typedef enum pic_cmd {
     PIC_SERIAL_DATA = 3,
     PIC_CMD_STOP = 4,
     PIC_CMD_CLOSE_EXEC = 5,
-    PIC_CMD_OPEN_EXEC = 6,
 } pic_cmd_t;
 
 extern struct k_msgq pic_queue;

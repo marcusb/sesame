@@ -34,7 +34,6 @@ static const struct gpio_dt_spec pic_wake =
     GPIO_DT_SPEC_GET(DT_NODELABEL(pic_wake), gpios);
 
 static struct k_work_delayable close_work;
-static struct k_work_delayable open_work;
 static bool close_scheduled;
 static uint16_t last_raw_pos;
 static bool has_last_raw_pos;
@@ -54,14 +53,6 @@ static void close_work_handler(struct k_work* work) {
         if (ret != 0) {
             LOG_ERR("Failed to enqueue PIC_CMD_CLOSE_EXEC: %d", ret);
         }
-    }
-}
-
-static void open_work_handler(struct k_work* work) {
-    pic_cmd_t cmd = PIC_CMD_OPEN_EXEC;
-    int ret = k_msgq_put(&pic_queue, &cmd, K_NO_WAIT);
-    if (ret != 0) {
-        LOG_ERR("Failed to enqueue PIC_CMD_OPEN_EXEC: %d", ret);
     }
 }
 
@@ -339,7 +330,6 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
     }
 
     k_work_init_delayable(&close_work, close_work_handler);
-    k_work_init_delayable(&open_work, open_work_handler);
 
     start_uart_read();
     pic_cmd_t cmd;
@@ -394,30 +384,14 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
             switch (cmd) {
                 case PIC_CMD_OPEN: {
                     cancel_scheduled_close("OPEN command received");
-                    if (direction == DCM_DOOR_DIR_DOWN) {
-                        send_door_cmd(1);
-                        k_work_schedule(&open_work, K_MSEC(1000));
-                    } else if (state != DCM_DOOR_STATE_OPEN &&
-                               direction != DCM_DOOR_DIR_UP) {
-                        k_work_cancel_delayable(&open_work);
-                        send_door_cmd(1);
-                    }
-                    break;
-                }
-
-                case PIC_CMD_OPEN_EXEC: {
                     if (state != DCM_DOOR_STATE_OPEN &&
                         direction != DCM_DOOR_DIR_UP) {
-                        LOG_INF(
-                            "Delayed open after stop: sending OPEN command to "
-                            "PIC");
                         send_door_cmd(1);
                     }
                     break;
                 }
 
                 case PIC_CMD_CLOSE: {
-                    k_work_cancel_delayable(&open_work);
                     if (direction == DCM_DOOR_DIR_UP) {
                         send_door_cmd(0);
                     }
@@ -455,7 +429,6 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
 
                 case PIC_CMD_STOP: {
                     cancel_scheduled_close("STOP command received");
-                    k_work_cancel_delayable(&open_work);
                     if (direction != DCM_DOOR_DIR_STOPPED) {
                         send_door_cmd(1);
                     }
