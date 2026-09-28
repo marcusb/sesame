@@ -18,6 +18,7 @@ K_MSGQ_DEFINE(pic_queue, sizeof(pic_cmd_t), 32, 4);
 #define DOOR_MOVE_ALERT_TICKS 6000
 #define STATE_UPDATE_INTERVAL (30 * 1000)
 
+#if DT_NODE_EXISTS(DT_NODELABEL(pic_rst))
 static bool self_test_done;
 static door_open_state_t state = DCM_DOOR_STATE_UNKNOWN;
 static door_direction_t direction = DCM_DOOR_DIR_UNKNOWN;
@@ -26,12 +27,43 @@ static uint16_t down_limit;
 static uint16_t up_limit;
 static uint32_t last_state_pub_time;
 
-#if DT_NODE_EXISTS(DT_NODELABEL(pic_rst))
 static const struct device* uart_dev = DEVICE_DT_GET(DT_NODELABEL(uart1));
 static const struct gpio_dt_spec pic_rst =
     GPIO_DT_SPEC_GET(DT_NODELABEL(pic_rst), gpios);
 static const struct gpio_dt_spec pic_wake =
     GPIO_DT_SPEC_GET(DT_NODELABEL(pic_wake), gpios);
+
+static struct k_work_delayable close_work;
+static struct k_work_delayable open_work;
+static bool close_scheduled;
+static uint16_t last_raw_pos;
+static bool has_last_raw_pos;
+
+static void cancel_scheduled_close(const char* reason) {
+    if (close_scheduled || k_work_delayable_is_pending(&close_work)) {
+        LOG_INF("Cancelling scheduled close: %s", reason);
+        close_scheduled = false;
+        k_work_cancel_delayable(&close_work);
+    }
+}
+
+static void close_work_handler(struct k_work* work) {
+    if (close_scheduled) {
+        pic_cmd_t cmd = PIC_CMD_CLOSE_EXEC;
+        int ret = k_msgq_put(&pic_queue, &cmd, K_NO_WAIT);
+        if (ret != 0) {
+            LOG_ERR("Failed to enqueue PIC_CMD_CLOSE_EXEC: %d", ret);
+        }
+    }
+}
+
+static void open_work_handler(struct k_work* work) {
+    pic_cmd_t cmd = PIC_CMD_OPEN_EXEC;
+    int ret = k_msgq_put(&pic_queue, &cmd, K_NO_WAIT);
+    if (ret != 0) {
+        LOG_ERR("Failed to enqueue PIC_CMD_OPEN_EXEC: %d", ret);
+    }
+}
 
 #define RX_BUF_SIZE 128
 static uint8_t rx_buf[RX_BUF_SIZE];
@@ -67,6 +99,18 @@ static uint8_t calc_chk_sum(uint8_t* p, int n) {
 
 static void door_state_update(door_open_state_t new_state, door_direction_t dir,
                               uint16_t raw_pos) {
+    if (close_scheduled) {
+        if (dir != DCM_DOOR_DIR_STOPPED && dir != DCM_DOOR_DIR_UNKNOWN) {
+            cancel_scheduled_close("door direction not stopped");
+        } else if (new_state == DCM_DOOR_STATE_CLOSED) {
+            cancel_scheduled_close("door reached closed");
+        } else if (has_last_raw_pos && raw_pos != last_raw_pos) {
+            cancel_scheduled_close("door position changed");
+        }
+    }
+    last_raw_pos = raw_pos;
+    has_last_raw_pos = true;
+
     bool update = state != new_state || direction != dir;
     state = new_state;
     direction = dir;
@@ -116,6 +160,9 @@ static void handle_msg(const dcm_msg_t* msg) {
         case DCM_MSG_OPS_EVENT: {
             const dcm_ops_event_msg_t* p = &msg->payload.ops_event;
             LOG_DBG("ops event %d", p->event);
+            if (p->event == OPS_MOTOR_START) {
+                cancel_scheduled_close("OPS_MOTOR_START");
+            }
             break;
         }
 
@@ -294,6 +341,9 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
         return;
     }
 
+    k_work_init_delayable(&close_work, close_work_handler);
+    k_work_init_delayable(&open_work, open_work_handler);
+
     start_uart_read();
     pic_cmd_t cmd;
 
@@ -309,8 +359,6 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
     sound_buzzer();
 
     uint32_t door_poll_tstamp = k_uptime_get_32() - DOOR_POLL_TICKS + 500;
-    uint32_t door_move_tstamp = 0;
-    pic_cmd_t queued_cmd = 0;
     for (;;) {
         uint32_t now = k_uptime_get_32();
         if (read_state == READ_BODY &&
@@ -323,55 +371,109 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
             cmd_0x04();
             door_poll_tstamp = now;
         }
-        if (queued_cmd && now >= door_move_tstamp) {
-            send_door_cmd(queued_cmd == PIC_CMD_OPEN ? 1 : 0);
-            queued_cmd = 0;
-        }
 
         uint32_t timeout_ms = READ_TIMEOUT_TICKS;
-        if (queued_cmd && door_move_tstamp > now) {
-            timeout_ms = door_move_tstamp - now;
+        if (now - door_poll_tstamp < DOOR_POLL_TICKS) {
+            uint32_t poll_remain = DOOR_POLL_TICKS - (now - door_poll_tstamp);
+            if (poll_remain < timeout_ms) {
+                timeout_ms = poll_remain;
+            }
+        } else {
+            timeout_ms = 0;
+        }
+        if (read_state == READ_BODY) {
+            uint32_t elapsed = now - last_read_tick;
+            if (elapsed < READ_TIMEOUT_TICKS) {
+                uint32_t read_remain = READ_TIMEOUT_TICKS - elapsed;
+                if (read_remain < timeout_ms) {
+                    timeout_ms = read_remain;
+                }
+            } else {
+                timeout_ms = 0;
+            }
         }
 
         if (k_msgq_get(&pic_queue, &cmd, K_MSEC(timeout_ms)) == 0) {
             switch (cmd) {
-                case PIC_CMD_OPEN:
+                case PIC_CMD_OPEN: {
+                    cancel_scheduled_close("OPEN command received");
                     if (direction == DCM_DOOR_DIR_DOWN) {
                         send_door_cmd(1);
-                        queued_cmd = PIC_CMD_OPEN;
-                        door_move_tstamp = now + 1000;
+                        k_work_schedule(&open_work, K_MSEC(1000));
                     } else if (state != DCM_DOOR_STATE_OPEN &&
                                direction != DCM_DOOR_DIR_UP) {
+                        k_work_cancel_delayable(&open_work);
                         send_door_cmd(1);
-                        queued_cmd = 0;
                     }
                     break;
+                }
 
-                case PIC_CMD_CLOSE:
+                case PIC_CMD_OPEN_EXEC: {
+                    if (state != DCM_DOOR_STATE_OPEN &&
+                        direction != DCM_DOOR_DIR_UP) {
+                        LOG_INF(
+                            "Delayed open after stop: sending OPEN command to "
+                            "PIC");
+                        send_door_cmd(1);
+                    }
+                    break;
+                }
+
+                case PIC_CMD_CLOSE: {
+                    k_work_cancel_delayable(&open_work);
                     if (direction == DCM_DOOR_DIR_UP) {
                         send_door_cmd(0);
                     }
                     if (state != DCM_DOOR_STATE_CLOSED &&
-                        direction != DCM_DOOR_DIR_DOWN) {
-                        queued_cmd = cmd;
-                        door_move_tstamp = now + DOOR_MOVE_ALERT_TICKS;
+                        direction != DCM_DOOR_DIR_DOWN &&
+                        direction != DCM_DOOR_DIR_UP) {
+                        cancel_scheduled_close("rescheduling close");
                         alert();
+                        close_scheduled = true;
+                        k_work_schedule(&close_work,
+                                        K_MSEC(DOOR_MOVE_ALERT_TICKS));
+                        LOG_INF("Alerting and scheduled door close in %d ms",
+                                DOOR_MOVE_ALERT_TICKS);
                     }
                     break;
+                }
 
-                case PIC_CMD_STOP:
+                case PIC_CMD_CLOSE_EXEC: {
+                    if (close_scheduled && state != DCM_DOOR_STATE_CLOSED &&
+                        direction != DCM_DOOR_DIR_DOWN &&
+                        direction != DCM_DOOR_DIR_UP) {
+                        LOG_INF(
+                            "Alert period complete, sending CLOSE command to "
+                            "PIC");
+                        send_door_cmd(0);
+                    } else {
+                        LOG_INF(
+                            "Skipping scheduled close (scheduled=%d, state=%d, "
+                            "dir=%d)",
+                            close_scheduled, state, direction);
+                    }
+                    close_scheduled = false;
+                    break;
+                }
+
+                case PIC_CMD_STOP: {
+                    cancel_scheduled_close("STOP command received");
+                    k_work_cancel_delayable(&open_work);
                     if (direction != DCM_DOOR_DIR_STOPPED) {
                         send_door_cmd(1);
                     }
-                    queued_cmd = 0;
                     break;
+                }
 
-                case PIC_SERIAL_DATA:
+                case PIC_SERIAL_DATA: {
                     process_serial_data();
                     break;
+                }
 
-                default:
+                default: {
                     LOG_ERR("unknown cmd %d", cmd);
+                    break;
+                }
             }
         }
     }
