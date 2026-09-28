@@ -18,7 +18,7 @@ K_MSGQ_DEFINE(pic_queue, sizeof(pic_cmd_t), 32, 4);
 #define DOOR_MOVE_ALERT_TICKS 6000
 #define STATE_UPDATE_INTERVAL (30 * 1000)
 
-#if DT_NODE_EXISTS(DT_NODELABEL(pic_rst))
+#if DT_NODE_EXISTS(DT_NODELABEL(pic_rst)) || defined(CONFIG_ZTEST)
 static bool self_test_done;
 static door_open_state_t state = DCM_DOOR_STATE_UNKNOWN;
 static door_direction_t direction = DCM_DOOR_DIR_UNKNOWN;
@@ -27,11 +27,13 @@ static uint16_t down_limit;
 static uint16_t up_limit;
 static uint32_t last_state_pub_time;
 
+#if DT_NODE_EXISTS(DT_NODELABEL(pic_rst))
 static const struct device* uart_dev = DEVICE_DT_GET(DT_NODELABEL(uart1));
 static const struct gpio_dt_spec pic_rst =
     GPIO_DT_SPEC_GET(DT_NODELABEL(pic_rst), gpios);
 static const struct gpio_dt_spec pic_wake =
     GPIO_DT_SPEC_GET(DT_NODELABEL(pic_wake), gpios);
+#endif
 
 static struct k_work_delayable close_work;
 static bool close_scheduled;
@@ -167,7 +169,9 @@ static void start_uart_read() {
     read_state = READ_HEADER;
     rx_idx = 0;
     expected_len = 4;
+#if DT_NODE_EXISTS(DT_NODELABEL(pic_rst))
     gpio_pin_set_dt(&pic_wake, 1);
+#endif
 }
 
 static void process_serial_data() {
@@ -186,7 +190,9 @@ static void process_serial_data() {
             }
             if (rx_idx == 4) {
                 const dcm_msg_t* msg = (const dcm_msg_t*)rx_buf;
+#if DT_NODE_EXISTS(DT_NODELABEL(pic_rst))
                 gpio_pin_set_dt(&pic_wake, 0);
+#endif
                 if (msg->len + 5 > sizeof(rx_buf)) {
                     LOG_INF("invalid msg length %d", msg->len);
                     start_uart_read();
@@ -212,6 +218,7 @@ static void process_serial_data() {
     }
 }
 
+#if DT_NODE_EXISTS(DT_NODELABEL(pic_rst))
 static void uart_cb(const struct device* dev, void* user_data) {
     uart_irq_update(dev);
     while (uart_irq_rx_ready(dev)) {
@@ -266,16 +273,30 @@ static int init_uart(void) {
 
     return 0;
 }
+#endif
+
+#if defined(CONFIG_ZTEST)
+static pic_tx_cb_t test_tx_cb = NULL;
+void pic_set_test_tx_cb(pic_tx_cb_t cb) { test_tx_cb = cb; }
+#endif
 
 static void send_msg(dcm_msg_t* msg) {
     int frame_len = msg->len + 5;
     uint8_t* p = (uint8_t*)msg;
     msg->payload.buf[msg->len] = calc_chk_sum(p, frame_len);
     LOG_HEXDUMP_DBG(p, frame_len, "TX:");
+#if defined(CONFIG_ZTEST)
+    if (test_tx_cb != NULL) {
+        test_tx_cb(msg);
+        return;
+    }
+#endif
+#if DT_NODE_EXISTS(DT_NODELABEL(pic_rst))
     for (int i = 0; i < frame_len; i++) {
         uart_poll_out(uart_dev, p[i]);
     }
     k_msleep(5);
+#endif
 }
 
 static void alert_cmd(uint8_t val) {
@@ -291,9 +312,6 @@ static void audio_cmd(uint8_t val) {
     send_msg(&msg);
 }
 
-static void post_test() { audio_cmd(5); }
-static void sound_buzzer() { audio_cmd(1); }
-
 static void alert() {
     audio_cmd(2);
     alert_cmd(1);
@@ -306,6 +324,79 @@ static void send_door_cmd(uint8_t val) {
                      DCM_MSG_DOOR_CMD, .payload.door_cmd = {val, 0}};
     send_msg(&msg);
 }
+
+void pic_process_cmd(pic_cmd_t cmd) {
+    switch (cmd) {
+        case PIC_CMD_OPEN: {
+            cancel_scheduled_close("OPEN command received");
+            if (direction == DCM_DOOR_DIR_DOWN) {
+                send_door_cmd(1);
+            } else if (direction != DCM_DOOR_DIR_UP) {
+                bool is_fully_open = (state == DCM_DOOR_STATE_OPEN) &&
+                                     (up_limit == down_limit || pos >= 100);
+                if (!is_fully_open) {
+                    send_door_cmd(1);
+                }
+            }
+            break;
+        }
+
+        case PIC_CMD_CLOSE: {
+            if (direction == DCM_DOOR_DIR_UP) {
+                send_door_cmd(0);
+            }
+            if (state != DCM_DOOR_STATE_CLOSED &&
+                direction != DCM_DOOR_DIR_DOWN &&
+                direction != DCM_DOOR_DIR_UP) {
+                cancel_scheduled_close("rescheduling close");
+                alert();
+                close_scheduled = true;
+                k_work_schedule(&close_work, K_MSEC(DOOR_MOVE_ALERT_TICKS));
+                LOG_INF("Alerting and scheduled door close in %d ms",
+                        DOOR_MOVE_ALERT_TICKS);
+            }
+            break;
+        }
+
+        case PIC_CMD_CLOSE_EXEC: {
+            if (close_scheduled && state != DCM_DOOR_STATE_CLOSED &&
+                direction != DCM_DOOR_DIR_DOWN &&
+                direction != DCM_DOOR_DIR_UP) {
+                LOG_INF("Alert period complete, sending CLOSE command to PIC");
+                send_door_cmd(0);
+            } else {
+                LOG_INF(
+                    "Skipping scheduled close (scheduled=%d, state=%d, "
+                    "dir=%d)",
+                    close_scheduled, state, direction);
+            }
+            close_scheduled = false;
+            break;
+        }
+
+        case PIC_CMD_STOP: {
+            cancel_scheduled_close("STOP command received");
+            if (direction != DCM_DOOR_DIR_STOPPED) {
+                send_door_cmd(1);
+            }
+            break;
+        }
+
+        case PIC_SERIAL_DATA: {
+            process_serial_data();
+            break;
+        }
+
+        default: {
+            LOG_ERR("unknown cmd %d", cmd);
+            break;
+        }
+    }
+}
+
+#if DT_NODE_EXISTS(DT_NODELABEL(pic_rst))
+static void post_test() { audio_cmd(5); }
+static void sound_buzzer() { audio_cmd(1); }
 
 static void send_door_status_req() {
     dcm_msg_t msg = {
@@ -381,75 +472,53 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
         }
 
         if (k_msgq_get(&pic_queue, &cmd, K_MSEC(timeout_ms)) == 0) {
-            switch (cmd) {
-                case PIC_CMD_OPEN: {
-                    cancel_scheduled_close("OPEN command received");
-                    if (state != DCM_DOOR_STATE_OPEN &&
-                        direction != DCM_DOOR_DIR_UP) {
-                        send_door_cmd(1);
-                    }
-                    break;
-                }
-
-                case PIC_CMD_CLOSE: {
-                    if (direction == DCM_DOOR_DIR_UP) {
-                        send_door_cmd(0);
-                    }
-                    if (state != DCM_DOOR_STATE_CLOSED &&
-                        direction != DCM_DOOR_DIR_DOWN &&
-                        direction != DCM_DOOR_DIR_UP) {
-                        cancel_scheduled_close("rescheduling close");
-                        alert();
-                        close_scheduled = true;
-                        k_work_schedule(&close_work,
-                                        K_MSEC(DOOR_MOVE_ALERT_TICKS));
-                        LOG_INF("Alerting and scheduled door close in %d ms",
-                                DOOR_MOVE_ALERT_TICKS);
-                    }
-                    break;
-                }
-
-                case PIC_CMD_CLOSE_EXEC: {
-                    if (close_scheduled && state != DCM_DOOR_STATE_CLOSED &&
-                        direction != DCM_DOOR_DIR_DOWN &&
-                        direction != DCM_DOOR_DIR_UP) {
-                        LOG_INF(
-                            "Alert period complete, sending CLOSE command to "
-                            "PIC");
-                        send_door_cmd(0);
-                    } else {
-                        LOG_INF(
-                            "Skipping scheduled close (scheduled=%d, state=%d, "
-                            "dir=%d)",
-                            close_scheduled, state, direction);
-                    }
-                    close_scheduled = false;
-                    break;
-                }
-
-                case PIC_CMD_STOP: {
-                    cancel_scheduled_close("STOP command received");
-                    if (direction != DCM_DOOR_DIR_STOPPED) {
-                        send_door_cmd(1);
-                    }
-                    break;
-                }
-
-                case PIC_SERIAL_DATA: {
-                    process_serial_data();
-                    break;
-                }
-
-                default: {
-                    LOG_ERR("unknown cmd %d", cmd);
-                    break;
-                }
-            }
+            pic_process_cmd(cmd);
         }
     }
 }
 
 K_THREAD_DEFINE(pic_uart_tid, 1024, pic_uart_task, NULL, NULL, NULL, 7, 0, 0);
+#endif
+
+#if defined(CONFIG_ZTEST)
+door_open_state_t pic_get_state(void) { return state; }
+
+door_direction_t pic_get_direction(void) { return direction; }
+
+uint16_t pic_get_pos(void) { return pos; }
+
+uint16_t pic_get_down_limit(void) { return down_limit; }
+
+uint16_t pic_get_up_limit(void) { return up_limit; }
+
+bool pic_is_close_scheduled(void) { return close_scheduled; }
+
+struct k_work_delayable* pic_get_close_work(void) { return &close_work; }
+
+void pic_door_state_update(door_open_state_t new_state, door_direction_t dir,
+                           uint16_t raw_pos) {
+    door_state_update(new_state, dir, raw_pos);
+}
+
+void pic_handle_msg(const dcm_msg_t* msg) { handle_msg(msg); }
+
+void pic_uart_test_init(void) {
+    k_work_init_delayable(&close_work, close_work_handler);
+    k_work_cancel_delayable(&close_work);
+    close_scheduled = false;
+    state = DCM_DOOR_STATE_UNKNOWN;
+    direction = DCM_DOOR_DIR_UNKNOWN;
+    pos = 0;
+    down_limit = 0;
+    up_limit = 0;
+    last_state_pub_time = 0;
+    has_last_raw_pos = false;
+    last_raw_pos = 0;
+    self_test_done = false;
+    test_tx_cb = NULL;
+    k_msgq_purge(&pic_queue);
+}
+#endif
 
 #else
 

@@ -1,0 +1,4 @@
+tests:
+  pic_uart.logic:
+    tags: pic_uart
+    harness: ztest
