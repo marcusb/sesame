@@ -160,9 +160,6 @@ static void handle_msg(const dcm_msg_t* msg) {
         case DCM_MSG_OPS_EVENT: {
             const dcm_ops_event_msg_t* p = &msg->payload.ops_event;
             LOG_DBG("ops event %d", p->event);
-            if (p->event == OPS_MOTOR_START) {
-                cancel_scheduled_close("OPS_MOTOR_START");
-            }
             break;
         }
 
