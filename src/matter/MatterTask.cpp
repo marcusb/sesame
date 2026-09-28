@@ -179,6 +179,52 @@ extern "C" void matter_task_start(void) {
 using namespace ::chip;
 using namespace ::chip::app::Clusters::WindowCovering;
 
+class SesameWindowCoveringDelegate
+    : public chip::app::Clusters::WindowCovering::WindowCoveringDelegate {
+   public:
+    SesameWindowCoveringDelegate() { mEndpoint = 1; }
+
+    CHIP_ERROR HandleMovement(
+        chip::app::Clusters::WindowCovering::WindowCoveringType type) override {
+        if (type ==
+            chip::app::Clusters::WindowCovering::WindowCoveringType::Lift) {
+            auto op = chip::app::Clusters::WindowCovering::OperationalStateGet(
+                1,
+                chip::app::Clusters::WindowCovering::OperationalStatus::kLift);
+            ctrl_msg_t msg = {};
+            msg.type = CTRL_MSG_DOOR_CONTROL;
+            if (op == chip::app::Clusters::WindowCovering::OperationalState::
+                          MovingUpOrOpen) {
+                msg.msg.door_control.command = DOOR_CMD_OPEN;
+                LOG_INF("Matter: Target=Open");
+            } else if (op == chip::app::Clusters::WindowCovering::
+                                 OperationalState::MovingDownOrClose) {
+                msg.msg.door_control.command = DOOR_CMD_CLOSE;
+                LOG_INF("Matter: Target=Close");
+            } else {
+                LOG_WRN(
+                    "Matter: HandleMovement with unexpected operational state "
+                    "%d",
+                    (int)op);
+                return CHIP_NO_ERROR;
+            }
+            k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+        }
+        return CHIP_NO_ERROR;
+    }
+
+    CHIP_ERROR HandleStopMotion() override {
+        ctrl_msg_t msg = {};
+        msg.type = CTRL_MSG_DOOR_CONTROL;
+        msg.msg.door_control.command = DOOR_CMD_STOP;
+        LOG_INF("Matter: Target=Stop");
+        k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+        return CHIP_NO_ERROR;
+    }
+};
+
+static SesameWindowCoveringDelegate sWindowCoveringDelegate;
+
 void MatterPostAttributeChangeCallback(
     const app::ConcreteAttributePath& attributePath, uint8_t mask, uint8_t type,
     uint16_t size, uint8_t* value) {
@@ -186,60 +232,31 @@ void MatterPostAttributeChangeCallback(
 }
 
 void MatterWindowCoveringClusterServerAttributeChangedCallback(
-    const app::ConcreteAttributePath& attributePath) {
-    if (attributePath.mEndpointId == 1)  // Assuming Endpoint 1
-    {
-        if (attributePath.mAttributeId ==
-            Attributes::TargetPositionLiftPercent100ths::Id) {
-            app::DataModel::Nullable<chip::Percent100ths> targetPosition;
-            auto wc =
-                chip::app::Clusters::WindowCovering::FindClusterOnEndpoint(
-                    attributePath.mEndpointId);
-            if (wc) {
-                targetPosition = wc->GetTargetPositionLiftPercent100ths();
-            }
-            if (!targetPosition.IsNull()) {
-                ctrl_msg_t msg = {};
-                msg.type = CTRL_MSG_DOOR_CONTROL;
+    const app::ConcreteAttributePath& attributePath) {}
 
-                if (targetPosition.Value() == 0) {
-                    msg.msg.door_control.command = DOOR_CMD_OPEN;
-                    LOG_INF("Matter: Target=Open");
-                } else {
-                    msg.msg.door_control.command = DOOR_CMD_CLOSE;
-                    LOG_INF("Matter: Target=Close");
-                }
-
-                // Enqueue to the main control queue (no block)
-                k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
-            }
-        }
+void emberAfWindowCoveringClusterInitCallback(chip::EndpointId endpoint) {
+    if (endpoint == 1) {
+        chip::app::Clusters::WindowCovering::SetDefaultDelegate(
+            1, &sWindowCoveringDelegate);
     }
 }
 
-void emberAfWindowCoveringClusterInitCallback(chip::EndpointId endpoint) {
-    // Initialize attributes if needed
-}
-
 void matter_update_door_state(const door_state_msg_t* msg) {
-    // msg->pos is percentage open (0% = closed, 100% = open).
-    // Matter CurrentPositionLiftPercent100ths is percentage closed (0 = open,
-    // 10000 = closed).
-    uint16_t closed_percent100ths = (100 - msg->pos) * 100;
-    chip::app::DataModel::Nullable<chip::Percent100ths> pos;
-    pos.SetNonNull(closed_percent100ths);
+    OperationalState opState = OperationalState::Stall;
+    if (msg->direction == DCM_DOOR_DIR_UP) {
+        opState = OperationalState::MovingUpOrOpen;
+    } else if (msg->direction == DCM_DOOR_DIR_DOWN) {
+        opState = OperationalState::MovingDownOrClose;
+    } else {
+        opState = OperationalState::Stall;
+    }
 
     (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
         [](intptr_t arg) {
-            auto wc =
-                chip::app::Clusters::WindowCovering::FindClusterOnEndpoint(1);
-            if (wc) {
-                chip::app::DataModel::Nullable<chip::Percent100ths> p;
-                p.SetNonNull((uint16_t)arg);
-                wc->SetCurrentPositionLiftPercent100ths(p);
-            }
+            OperationalState state = static_cast<OperationalState>(arg);
+            OperationalStateSet(1, OperationalStatus::kLift, state);
         },
-        pos.Value());
+        static_cast<intptr_t>(opState));
 }
 
 void matter_wipe_fabrics(void) {
