@@ -188,11 +188,33 @@ class SesameWindowCoveringDelegate
         chip::app::Clusters::WindowCovering::WindowCoveringType type) override {
         if (type ==
             chip::app::Clusters::WindowCovering::WindowCoveringType::Lift) {
+            ctrl_msg_t msg = {};
+            msg.type = CTRL_MSG_DOOR_CONTROL;
+
+            auto wc =
+                chip::app::Clusters::WindowCovering::FindClusterOnEndpoint(1);
+            if (wc) {
+                auto target = wc->GetTargetPositionLiftPercent100ths();
+                if (!target.IsNull()) {
+                    // Target is percentage closed: 0 = fully open, 10000 =
+                    // fully closed
+                    if (target.Value() < 5000) {
+                        msg.msg.door_control.command = DOOR_CMD_OPEN;
+                        LOG_INF("Matter: Target=Open (%u)",
+                                (unsigned)target.Value());
+                    } else {
+                        msg.msg.door_control.command = DOOR_CMD_CLOSE;
+                        LOG_INF("Matter: Target=Close (%u)",
+                                (unsigned)target.Value());
+                    }
+                    k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+                    return CHIP_NO_ERROR;
+                }
+            }
+
             auto op = chip::app::Clusters::WindowCovering::OperationalStateGet(
                 1,
                 chip::app::Clusters::WindowCovering::OperationalStatus::kLift);
-            ctrl_msg_t msg = {};
-            msg.type = CTRL_MSG_DOOR_CONTROL;
             if (op == chip::app::Clusters::WindowCovering::OperationalState::
                           MovingUpOrOpen) {
                 msg.msg.door_control.command = DOOR_CMD_OPEN;
@@ -242,6 +264,10 @@ void emberAfWindowCoveringClusterInitCallback(chip::EndpointId endpoint) {
 }
 
 void matter_update_door_state(const door_state_msg_t* msg) {
+    // msg->pos is percentage open (0% = closed, 100% = open).
+    // Matter CurrentPositionLiftPercent100ths is percentage closed (0 = open,
+    // 10000 = closed).
+    uint16_t closed_percent100ths = (100 - msg->pos) * 100;
     OperationalState opState = OperationalState::Stall;
     if (msg->direction == DCM_DOOR_DIR_UP) {
         opState = OperationalState::MovingUpOrOpen;
@@ -251,12 +277,30 @@ void matter_update_door_state(const door_state_msg_t* msg) {
         opState = OperationalState::Stall;
     }
 
+    uint32_t packedArg =
+        (static_cast<uint32_t>(opState) << 16) | closed_percent100ths;
+
     (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
         [](intptr_t arg) {
-            OperationalState state = static_cast<OperationalState>(arg);
+            OperationalState state =
+                static_cast<OperationalState>((arg >> 16) & 0xFF);
+            uint16_t posVal = static_cast<uint16_t>(arg & 0xFFFF);
+
             OperationalStateSet(1, OperationalStatus::kLift, state);
+
+            auto wc =
+                chip::app::Clusters::WindowCovering::FindClusterOnEndpoint(1);
+            if (wc) {
+                chip::app::DataModel::Nullable<chip::Percent100ths> p;
+                p.SetNonNull(posVal);
+                wc->SetCurrentPositionLiftPercent100ths(p);
+
+                if (state == OperationalState::Stall) {
+                    wc->SetTargetPositionLiftPercent100ths(p);
+                }
+            }
         },
-        static_cast<intptr_t>(opState));
+        static_cast<intptr_t>(packedArg));
 }
 
 void matter_wipe_fabrics(void) {
