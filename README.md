@@ -10,14 +10,14 @@ of some breaking API change and the opener having reached end-of-life.
 Hence the need for Sesame.
 
 The Sesame firmware restores network control functionality, and can be
-conveniently integrated into your home automation system via the MQTT
-protocol. It does not communicate outside of your local network, just
-like you like it for a security-sensitive application like a garage door.
+conveniently integrated into your home automation system. It does not
+communicate outside of your local network, just the way you like it for
+a security-sensitive application like a garage door.
 
 ## Features
 
-* MQTT support
-* HTTP server for configuration and control
+* Matter, MQTT and HTTP protocol support
+* Built-in WiFi access point for initial configuration
 * Over-the-air updates
 
 ## Installation
@@ -58,6 +58,7 @@ to write the firmware image to the flash memory of the MW300 module.
    in your terminal of choice, eg `minicom -D /dev/ttyUSB0 -b 115200`.
    At this point you should see the console output from the factory firmware.
 
+Build the firmware according to the [build instructions](./docs/development.md).
 Use this command to write all the components to flash: the partition table, boot loader, WiFi firmware,
 and Sesame.
 ```sh
