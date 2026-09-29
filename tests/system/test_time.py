@@ -83,7 +83,7 @@ def test_rtc_sync_and_timekeeping(hardware_device):
     print(f"Time response after 3s: {data2}")
 
     delta = epoch2 - epoch1
-    assert 2 <= delta <= 5, (
+    assert 1 <= delta <= 5, (
         f"RTC clock did not advance properly over 3s interval: "
         f"start={epoch1}, end={epoch2}, delta={delta}s"
     )

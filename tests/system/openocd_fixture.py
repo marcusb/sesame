@@ -44,20 +44,25 @@ class OpenOCD:
             s.close()
 
     def reboot(self):
-        return self.run("reset run", wait=1.0)
+        self.run("reset halt", wait=1.0)
+        self.run("chip_fixup", wait=0.2)
+        self.run("reset halt", wait=1.0)
+        return self.run("resume", wait=0.5)
 
     def reboot_with_semihosting(self, stop_event, on_halt=None):
         """Reset with halt, then resume with a live keep-alive connection.
 
         Strategy (no fragile timers):
           1. `reset halt`  – CPU frozen at the reset vector; we are in control.
-          2. `arm semihosting enable` – ensure semihosting is active.
-          3. Open a persistent telnet connection and send `resume`.
-          4. Keep the connection alive (poll every 500 ms) so OpenOCD's event
+          2. `chip_fixup`  – Reset WLAN subsystem to avoid warm boot SDIO timeouts.
+          3. `reset halt`  – Reset CPU again so BootROM starts cleanly from 0x0.
+          4. `arm semihosting enable` – ensure semihosting is active.
+          5. Open a persistent telnet connection and send `resume`.
+          6. Keep the connection alive (poll every 500 ms) so OpenOCD's event
              loop runs.  When the firmware hits the semihosting BKPT the CPU
              halts, OpenOCD sees the halt on the next poll, services the
              semihosting call (reads test_config.bin), and resumes the target.
-          5. When the caller sets stop_event the keep-alive thread closes the
+          7. When the caller sets stop_event the keep-alive thread closes the
              socket and exits.
 
         Because the connection is open *before* `resume` is issued there is no
@@ -65,25 +70,29 @@ class OpenOCD:
         """
         import threading
 
-        # Halt the CPU at the reset vector so we are in full control before
-        # the firmware starts running.
-        self.run("reset halt", wait=2.0)
+        # Halt the CPU at the reset vector, reset WLAN, then reset CPU again
+        # so BootROM executes cleanly with WLAN in reset.
+        self.run("reset halt", wait=1.0)
+        self.run("chip_fixup", wait=0.2)
+        self.run("reset halt", wait=1.0)
         # Re-issue semihosting enable; a reset can clear the setting.
         self.run("arm semihosting enable", wait=0.5)
 
         if on_halt:
             on_halt()
 
-        # Open the persistent connection that will service the BKPT, then send
-        # resume on it so the CPU starts running with the connection already up.
-        s = socket.create_connection((self.host, self.telnet_port), timeout=5)
-        time.sleep(0.25)
-        s.recv(4096)  # consume banner
-        s.sendall(b"resume\r")
+        # Synchronously resume the CPU so execution is confirmed started.
+        self.run("resume", wait=0.5)
 
         def _keep_alive():
-            s.settimeout(1.0)
             try:
+                s = socket.create_connection((self.host, self.telnet_port), timeout=5)
+                time.sleep(0.1)
+                try:
+                    s.recv(4096)  # consume banner
+                except Exception:
+                    pass
+                s.settimeout(1.0)
                 while not stop_event.is_set():
                     try:
                         s.sendall(b"poll\r")

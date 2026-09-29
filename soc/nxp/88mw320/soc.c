@@ -1,6 +1,7 @@
 #include <zephyr/init.h>
-#include "fsl_power.h"
+
 #include "fsl_clock.h"
+#include "fsl_power.h"
 
 #ifndef CONFIG_XIP
 #define IS_RAM_BUILD 1
@@ -61,8 +62,7 @@ static void init_boot_clocks(void) {
 
     /* Wait for VDDIO to be ready */
     volatile uint32_t loop = 0x2000;
-    while (loop--)
-    {
+    while (loop--) {
         __NOP();
     }
 
@@ -100,7 +100,6 @@ static void init_boot_clocks(void) {
 
     CLOCK_SetClkDiv(kCLOCK_DivQspi, 4U);
 
-
     /* Calibrate RC32M */
     CLOCK_CalibrateRC32M(true, 0U);
     /* RC32M enabled, controller clock can be gated. */
@@ -112,8 +111,8 @@ static void init_boot_clocks(void) {
     /* Restart flash controller (needed for XIP and mflash operations) */
     init_flashc();
 #else
-    /* For XIP builds, boot2 has already configured the clocks. 
-     * We just need to inform the clock driver of the XTAL frequency 
+    /* For XIP builds, boot2 has already configured the clocks.
+     * We just need to inform the clock driver of the XTAL frequency
      * so that CLOCK_GetSysClkFreq() returns the correct value. */
     CLOCK_SetMainXtalFreq(CLK_MAINXTAL_CLK);
 #endif
@@ -122,11 +121,41 @@ static void init_boot_clocks(void) {
     SystemCoreClock = BOARD_BOOTCLOCKRUN_CORE_CLOCK;
 }
 
-static int nxp_88mw320_init(void)
-{
+static int nxp_88mw320_init(void) {
     init_boot_clocks();
 
     return 0;
 }
 
 SYS_INIT(nxp_88mw320_init, PRE_KERNEL_1, 0);
+
+void sys_arch_reboot(int type) {
+    ARG_UNUSED(type);
+
+    __disable_irq();
+
+    /* Switch system clock to RC32M before power-cycling WLAN.
+     * MAINXTAL is inside the WLAN power domain, so powering off WLAN
+     * kills the SFLL input clock. */
+    CLOCK_EnableClock(kCLOCK_Rc32m);
+    CLOCK_EnableRC32M(false);
+    CLOCK_SetSysClkSource(kCLOCK_SysClkSrcRC32M_1);
+
+    /* Assert WLAN power down to reset radio state machine */
+    PMU->WLAN_CTRL = 0;
+
+    for (volatile int i = 0; i < 10000; i++) {
+        __NOP();
+    }
+
+    /* Power WLAN back on and request REFCLK_SYS (equivalent to chip_fixup mwb
+     * 0x480a0118 3) */
+    PMU->WLAN_CTRL = PMU_WLAN_CTRL_PD_MASK | PMU_WLAN_CTRL_REFCLK_SYS_REQ_MASK;
+
+    /* Wait for REFCLK_SYS to be ready before resetting CPU */
+    while ((PMU->WLAN_CTRL & PMU_WLAN_CTRL_REFCLK_SYS_RDY_MASK) == 0U) {
+        __NOP();
+    }
+
+    NVIC_SystemReset();
+}
