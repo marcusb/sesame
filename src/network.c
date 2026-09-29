@@ -91,6 +91,59 @@ static struct net_mgmt_event_callback l4_mgmt_cb;
 
 K_EVENT_DEFINE(network_events);
 
+static struct k_work_delayable rs_retry_work;
+static int rs_retry_count;
+
+static void log_existing_ipv6_addresses(struct net_if* iface) {
+    if (iface && iface->config.ip.ipv6) {
+        for (int i = 0; i < NET_IF_MAX_IPV6_ADDR; i++) {
+            if (iface->config.ip.ipv6->unicast[i].is_used) {
+                static char buf[NET_IPV6_ADDR_LEN];
+                LOG_INF("IPv6 address: %s",
+                        net_addr_ntop(
+                            AF_INET6,
+                            &iface->config.ip.ipv6->unicast[i].address.in6_addr,
+                            buf, sizeof(buf)));
+                if (!net_ipv6_is_ll_addr(
+                        &iface->config.ip.ipv6->unicast[i].address.in6_addr)) {
+                    k_event_post(&network_events, IPV6_UP_EVENT);
+                    k_work_cancel_delayable(&rs_retry_work);
+                }
+            }
+        }
+    }
+}
+
+static void rs_retry_handler(struct k_work* work) {
+    if (network_has_ipv6()) {
+        return;
+    }
+
+    struct net_if* iface = net_if_get_default();
+    if (!iface) {
+        return;
+    }
+
+    log_existing_ipv6_addresses(iface);
+    if (network_has_ipv6()) {
+        return;
+    }
+
+#if defined(CONFIG_NET_IPV6_ND) && defined(CONFIG_NET_NATIVE_IPV6)
+    if (rs_retry_count < 15) {
+        rs_retry_count++;
+        if (iface->config.ip.ipv6) {
+            LOG_INF("Soliciting IPv6 routers (attempt %d)...", rs_retry_count);
+            iface->config.ip.ipv6->rs_count = 0;
+            net_if_start_rs(iface);
+        }
+        k_work_reschedule(&rs_retry_work, K_SECONDS(2));
+    } else {
+        LOG_WRN("IPv6 Router Solicitation retry limit reached");
+    }
+#endif
+}
+
 static void ip_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                   uint64_t mgmt_event, struct net_if* iface) {
     switch (mgmt_event) {
@@ -111,6 +164,7 @@ static void ip_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                         net_addr_ntop(AF_INET6, cb->info, buf, sizeof(buf)));
                 if (!net_ipv6_is_ll_addr((struct in6_addr*)cb->info)) {
                     k_event_post(&network_events, IPV6_UP_EVENT);
+                    k_work_cancel_delayable(&rs_retry_work);
                 }
             }
             break;
@@ -158,21 +212,6 @@ static void ip_mgmt_event_handler(struct net_mgmt_event_callback* cb,
     }
 }
 
-static void log_existing_ipv6_addresses(struct net_if* iface) {
-    if (iface && iface->config.ip.ipv6) {
-        for (int i = 0; i < NET_IF_MAX_IPV6_ADDR; i++) {
-            if (iface->config.ip.ipv6->unicast[i].is_used) {
-                static char buf[NET_IPV6_ADDR_LEN];
-                LOG_INF("IPv6 address: %s",
-                        net_addr_ntop(
-                            AF_INET6,
-                            &iface->config.ip.ipv6->unicast[i].address.in6_addr,
-                            buf, sizeof(buf)));
-            }
-        }
-    }
-}
-
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                     uint64_t mgmt_event, struct net_if* iface) {
     if (mgmt_event == NET_EVENT_WIFI_CONNECT_RESULT) {
@@ -184,12 +223,8 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback* cb,
                                            .request_prefix = false};
         net_dhcpv6_start(target_iface, &params);
 
-#if defined(CONFIG_NET_IPV6_ND) && defined(CONFIG_NET_NATIVE_IPV6)
-        if (target_iface && target_iface->config.ip.ipv6) {
-            target_iface->config.ip.ipv6->rs_count = 0;
-            net_if_start_rs(target_iface);
-        }
-#endif
+        rs_retry_count = 0;
+        k_work_reschedule(&rs_retry_work, K_MSEC(200));
     } else if (mgmt_event == NET_EVENT_WIFI_AP_ENABLE_RESULT) {
         struct wifi_status* status = (struct wifi_status*)cb->info;
         if (status->status == 0) {
@@ -211,12 +246,15 @@ static void l4_event_handler(struct net_mgmt_event_callback* cb,
         k_work_reschedule(&sntp_sync_work, K_NO_WAIT);
         k_event_post(&network_events, L4_UP_EVENT);
     } else if (mgmt_event == NET_EVENT_L4_DISCONNECTED) {
+        k_work_cancel_delayable(&rs_retry_work);
+        k_work_cancel_delayable(&sntp_sync_work);
         k_event_set(&network_events, 0);
     }
 }
 
 void network_init(void) {
     k_work_init_delayable(&sntp_sync_work, sntp_sync_handler);
+    k_work_init_delayable(&rs_retry_work, rs_retry_handler);
     net_mgmt_init_event_callback(
         &ipv4_mgmt_cb, ip_mgmt_event_handler,
         NET_EVENT_IPV4_ADDR_ADD | NET_EVENT_IPV4_ROUTER_ADD);
@@ -292,6 +330,7 @@ void start_ap(void) {
     ap_params.security = WIFI_SECURITY_TYPE_NONE;
 
     LOG_INF("Starting WiFi AP...");
+    k_work_cancel_delayable(&rs_retry_work);
     mqtt_stop();
     syslog_stop();
 
