@@ -33,6 +33,10 @@ static struct net_mgmt_event_callback ipv4_mgmt_cb;
 static struct net_mgmt_event_callback ipv6_mgmt_cb;
 static struct net_mgmt_event_callback dns_mgmt_cb;
 
+#define SNTP_RETRY_INTERVAL_SEC 60
+#define SNTP_SYNC_INTERVAL_SEC 3600
+#define SNTP_SYNC_JITTER_SEC 600
+
 static struct k_work_delayable sntp_sync_work;
 
 static void sntp_sync_handler(struct k_work* work) {
@@ -73,8 +77,12 @@ static void sntp_sync_handler(struct k_work* work) {
         tspec.tv_sec = ts.seconds;
         tspec.tv_nsec = ((uint64_t)ts.fraction * (uint64_t)1000000000) >> 32;
         hwrtc_timespec_set(&tspec);
+        uint32_t delay_sec =
+            SNTP_SYNC_INTERVAL_SEC + (sys_rand32_get() % SNTP_SYNC_JITTER_SEC);
+        LOG_INF("SNTP sync success, next sync in %u seconds", delay_sec);
+        k_work_reschedule(&sntp_sync_work, K_SECONDS(delay_sec));
     } else {
-        k_work_reschedule(&sntp_sync_work, K_SECONDS(60));
+        k_work_reschedule(&sntp_sync_work, K_SECONDS(SNTP_RETRY_INTERVAL_SEC));
     }
 }
 
