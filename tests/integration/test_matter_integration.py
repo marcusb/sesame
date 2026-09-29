@@ -106,6 +106,20 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
     parser.ParseManualPairingCode(pairing_code)
     setup_pin = int(parser.attributes["SetUpPINCode"])
 
+    # Verify that /matter/info returns empty fabrics and setup details before commissioning
+    req = urllib.request.Request("http://127.0.0.1:8080/matter/info")
+    with urllib.request.urlopen(req, timeout=5) as response:
+        assert response.status == 200
+        assert "application/json" in response.headers.get("Content-Type", "")
+        data = json.loads(response.read().decode("utf-8"))
+        assert isinstance(data, dict)
+        assert data.get("fabrics") == []
+        assert "setup" in data
+        assert "commissioning_open" in data["setup"]
+        assert data["setup"]["manual_pairing_code"] == pairing_code
+        assert "qr_code" in data["setup"]
+        assert data["setup"]["qr_code"].startswith("MT:")
+
     print(f"Commissioning Node 1 with setup PIN {setup_pin} via IP...")
     time.sleep(1.0)
 
@@ -168,14 +182,17 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
 
     asyncio.run(complete_commissioning())
 
-    # Verify that /matter/info returns the provisioned fabric
+    # Verify that /matter/info returns the provisioned fabric in "fabrics" and no "setup"
     req = urllib.request.Request("http://127.0.0.1:8080/matter/info")
     with urllib.request.urlopen(req, timeout=5) as response:
         assert response.status == 200
         assert "application/json" in response.headers.get("Content-Type", "")
         data = json.loads(response.read().decode("utf-8"))
-        assert isinstance(data, list) and len(data) >= 1
-        fabric = data[0]
+        assert isinstance(data, dict)
+        assert "setup" not in data
+        fabrics = data.get("fabrics", [])
+        assert len(fabrics) >= 1
+        fabric = fabrics[0]
         assert "node_id" in fabric
         assert "fabric_id" in fabric
         assert "vendor_id" in fabric
