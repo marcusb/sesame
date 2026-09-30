@@ -188,6 +188,8 @@ target_sources(app PRIVATE
     src/mqtt.c
     src/sesame_syslog.c
     src/time_util.c
+    src/log_ring_buf.c
+    src/ws_logs.c
 )
 
 if(CONFIG_BOOTLOADER_MCUBOOT)

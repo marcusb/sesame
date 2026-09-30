@@ -20,6 +20,7 @@
 #ifdef CONFIG_BOOTLOADER_MCUBOOT
 #include "ota.h"
 #endif
+#include "log_ring_buf.h"
 
 LOG_MODULE_REGISTER(httpd, LOG_LEVEL_DBG);
 
@@ -373,6 +374,123 @@ static struct http_resource_detail_dynamic close_detail = {
     .user_data = NULL,
 };
 
+#include "logs_page.h"
+
+struct logs_tx_state {
+    struct log_chunks chunks;
+    int step;
+};
+
+static struct logs_tx_state s_logs_tx;
+
+static int logs_handler(struct http_client_ctx* client,
+                        enum http_transaction_status status,
+                        const struct http_request_ctx* req,
+                        struct http_response_ctx* res, void* user_data) {
+    static const struct http_header headers[] = {
+        {.name = "Content-Type", .value = "text/plain; charset=utf-8"}};
+
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        const char* url = (const char*)client->url_buffer;
+        if (strstr(url, "?view") || strstr(url, "?html")) {
+            static const struct http_header redir_headers[] = {
+                {.name = "Location", .value = "/logs.html"}};
+            res->status = HTTP_307_TEMPORARY_REDIRECT;
+            res->headers = redir_headers;
+            res->header_count = 1;
+            res->body_len = 0;
+            res->body = NULL;
+            res->final_chunk = true;
+            return 0;
+        }
+
+        if (s_logs_tx.step == 0) {
+            log_ring_buf_get_chunks(&s_logs_tx.chunks);
+            res->status = HTTP_200_OK;
+            res->headers = headers;
+            res->header_count = 1;
+
+            if (s_logs_tx.chunks.len1 == 0 && s_logs_tx.chunks.len2 == 0) {
+                static const char empty_msg[] = "(No logs in buffer)\n";
+                res->body = (const uint8_t*)empty_msg;
+                res->body_len = sizeof(empty_msg) - 1;
+                res->final_chunk = true;
+                s_logs_tx.step = 0;
+                return 0;
+            }
+
+            res->body = (const uint8_t*)s_logs_tx.chunks.chunk1;
+            res->body_len = s_logs_tx.chunks.len1;
+
+            if (s_logs_tx.chunks.len2 > 0) {
+                res->final_chunk = false;
+                s_logs_tx.step = 1;
+            } else {
+                res->final_chunk = true;
+                s_logs_tx.step = 0;
+            }
+            return 0;
+        } else if (s_logs_tx.step == 1) {
+            res->body = (const uint8_t*)s_logs_tx.chunks.chunk2;
+            res->body_len = s_logs_tx.chunks.len2;
+            res->final_chunk = true;
+            s_logs_tx.step = 0;
+            return 0;
+        }
+    } else if (status == HTTP_SERVER_TRANSACTION_COMPLETE ||
+               status == HTTP_SERVER_TRANSACTION_ABORTED) {
+        s_logs_tx.step = 0;
+    }
+    return 0;
+}
+
+static int ws_logs_info_handler(struct http_client_ctx* client,
+                                enum http_transaction_status status,
+                                const struct http_request_ctx* req,
+                                struct http_response_ctx* res,
+                                void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        static const char msg[] =
+            "WebSocket log streaming is available at ws://<host>:8080/ws/logs\n"
+            "Open http://<host>/logs.html in your browser for the web log "
+            "viewer.\n";
+        static const struct http_header headers[] = {
+            {.name = "Content-Type", .value = "text/plain; charset=utf-8"}};
+        res->status = HTTP_200_OK;
+        res->headers = headers;
+        res->header_count = 1;
+        res->body = (const uint8_t*)msg;
+        res->body_len = sizeof(msg) - 1;
+        res->final_chunk = true;
+    }
+    return 0;
+}
+
+static struct http_resource_detail_dynamic logs_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_GET)},
+    .cb = logs_handler,
+    .user_data = NULL,
+};
+
+static struct http_resource_detail_dynamic ws_logs_info_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_GET)},
+    .cb = ws_logs_info_handler,
+    .user_data = NULL,
+};
+
+static struct http_resource_detail_static logs_page_detail = {
+    .common =
+        {
+            .type = HTTP_RESOURCE_TYPE_STATIC,
+            .bitmask_of_supported_http_methods = BIT(HTTP_GET),
+            .content_type = "text/html",
+        },
+    .static_data = logs_html,
+    .static_data_len = sizeof(logs_html) - 1,
+};
+
 #ifdef CONFIG_CHIP
 static struct http_resource_detail_dynamic matter_commission_detail = {
     .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
@@ -428,6 +546,13 @@ HTTP_RESOURCE_DEFINE(close_resource, httpd_service, "/close", &close_detail);
 HTTP_RESOURCE_DEFINE(time_resource, httpd_service, "/time", &time_detail);
 HTTP_RESOURCE_DEFINE(version_resource, httpd_service, "/version",
                      &version_detail);
+HTTP_RESOURCE_DEFINE(logs_resource, httpd_service, "/logs", &logs_detail);
+HTTP_RESOURCE_DEFINE(logs_html_resource, httpd_service, "/logs.html",
+                     &logs_page_detail);
+HTTP_RESOURCE_DEFINE(logs_view_resource, httpd_service, "/logs/view",
+                     &logs_page_detail);
+HTTP_RESOURCE_DEFINE(ws_logs_info_resource, httpd_service, "/ws/logs",
+                     &ws_logs_info_detail);
 
 #ifdef CONFIG_CHIP
 HTTP_RESOURCE_DEFINE(matter_commission_resource, httpd_service,
