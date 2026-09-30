@@ -112,7 +112,11 @@ echo 'syslog_config: { enabled: true, syslog_host: "log.example.org", syslog_por
 
 Sesame supports Matter over Wi-Fi, allowing integration with Apple Home, Google Home, Home Assistant, and other Matter ecosystems.
 
-When the device connects to Wi-Fi and is not yet commissioned, it automatically opens a commissioning window. To pair Sesame with your Matter controller, obtain the setup pairing codes (manual pairing code and QR code payload) from the `/matter/info` HTTP endpoint:
+When the device connects to Wi-Fi and is not yet commissioned, it automatically opens a commissioning window. To pair Sesame with your Matter controller, open `http://sesame/matter` in any web browser on your phone or desktop:
+- The page renders the scannable QR code directly on screen alongside the manual pairing code.
+- It also displays the list of currently commissioned Matter fabrics (e.g. Apple Home, Google Home, Home Assistant).
+
+Alternatively, you can query the `/matter/info` HTTP endpoint:
 ```sh
 curl http://sesame/matter/info
 ```
@@ -128,7 +132,8 @@ When not commissioned to a Matter fabric, this returns:
 }
 ```
 Pairing codes are also printed to the serial console.
-(Once the device is paired to a Matter fabric, pairing codes for commissioning other fabrics are obtained from the first fabric's controller instead.)
+(Once the device is paired to a Matter fabric, pairing codes for commissioning other fabrics are obtained from the first fabric's controller instead, or by clicking "Open Commissioning" on `http://sesame/matter`.)
+
 
 ### Firmware update (OTA)
 

@@ -394,6 +394,19 @@ static struct http_resource_detail_dynamic matter_info_detail = {
     .cb = matter_info_handler,
     .user_data = NULL,
 };
+
+#include "matter_page.h"
+
+static struct http_resource_detail_static matter_page_detail = {
+    .common =
+        {
+            .type = HTTP_RESOURCE_TYPE_STATIC,
+            .bitmask_of_supported_http_methods = BIT(HTTP_GET),
+            .content_type = "text/html",
+        },
+    .static_data = matter_html,
+    .static_data_len = sizeof(matter_html) - 1,
+};
 #endif
 
 /* --- HTTP Resources Definitions --- */
@@ -423,4 +436,8 @@ HTTP_RESOURCE_DEFINE(matter_reset_resource, httpd_service, "/matter/reset",
                      &matter_reset_detail);
 HTTP_RESOURCE_DEFINE(matter_info_resource, httpd_service, "/matter/info",
                      &matter_info_detail);
+HTTP_RESOURCE_DEFINE(matter_page_resource, httpd_service, "/matter",
+                     &matter_page_detail);
+HTTP_RESOURCE_DEFINE(matter_slash_page_resource, httpd_service, "/matter/",
+                     &matter_page_detail);
 #endif

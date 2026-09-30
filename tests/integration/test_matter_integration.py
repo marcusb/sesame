@@ -120,6 +120,18 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
         assert "qr_code" in data["setup"]
         assert data["setup"]["qr_code"].startswith("MT:")
 
+    # Verify that /matter and /matter/ return the static HTML page
+    for path in ["/matter", "/matter/"]:
+        req_page = urllib.request.Request(f"http://127.0.0.1:8080{path}")
+        with urllib.request.urlopen(req_page, timeout=5) as response:
+            assert response.status == 200
+            assert "text/html" in response.headers.get("Content-Type", "")
+            page_body = response.read().decode("utf-8")
+            assert "Sesame Matter" in page_body
+            assert "Commissioned Fabrics" in page_body
+            assert "qrcode" in page_body
+            assert "/matter/info" in page_body
+
     print(f"Commissioning Node 1 with setup PIN {setup_pin} via IP...")
     time.sleep(1.0)
 
@@ -150,7 +162,9 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
 
     assert command_received, "Firmware did not log receipt of the Open command"
 
-    print("Verifying NetworkCommissioning and BasicInformation attributes on Endpoint 0 over PASE...")
+    print(
+        "Verifying NetworkCommissioning and BasicInformation attributes on Endpoint 0 over PASE..."
+    )
 
     async def verify_endpoint0_attributes():
         Clusters = matter_classes["Clusters"]
@@ -170,7 +184,9 @@ def test_matter_provisioning(zephyr_app, matter_controller, matter_classes):
         assert Clusters.BasicInformation in res[0]
         version_str = res[0][Clusters.BasicInformation].softwareVersionString
         print(f"Matter SoftwareVersionString: {version_str}")
-        assert "+" in version_str and "-" not in version_str, f"Unexpected version string format: {version_str}"
+        assert (
+            "+" in version_str and "-" not in version_str
+        ), f"Unexpected version string format: {version_str}"
 
     asyncio.run(verify_endpoint0_attributes())
 

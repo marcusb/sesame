@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sesame Matter</title>
+<style>
+:root {
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --text: #0f172a;
+  --sub: #64748b;
+  --border: #e2e8f0;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --green-bg: #dcfce7;
+  --green-fg: #166534;
+  --gray-bg: #f1f5f9;
+  --gray-fg: #475569;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --text: #f8fafc;
+    --sub: #94a3b8;
+    --border: #334155;
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --green-bg: #064e3b;
+    --green-fg: #6ee7b7;
+    --gray-bg: #334155;
+    --gray-fg: #cbd5e1;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding: 24px 16px;
+  display: flex;
+  justify-content: center;
+}
+.wrap {
+  width: 100%;
+  max-width: 440px;
+}
+header {
+  margin-bottom: 20px;
+  text-align: center;
+}
+h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+.sub {
+  color: var(--sub);
+  font-size: 0.85rem;
+  margin-top: 2px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.card-head h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+}
+.b-open {
+  background: var(--green-bg);
+  color: var(--green-fg);
+}
+.b-closed {
+  background: var(--gray-bg);
+  color: var(--gray-fg);
+}
+#qrcode {
+  display: block;
+  margin: 14px auto;
+  max-width: 100%;
+  width: 264px;
+  height: 264px;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+}
+.code-box {
+  text-align: center;
+  margin: 14px 0 4px;
+}
+.code-lbl {
+  font-size: 0.75rem;
+  color: var(--sub);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.code-val {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  margin: 4px 0;
+  user-select: all;
+}
+.code-raw {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--sub);
+  word-break: break-all;
+  user-select: all;
+  margin-top: 6px;
+}
+.fabric {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.fabric:last-child {
+  margin-bottom: 0;
+}
+.fab-top {
+  font-weight: 600;
+  font-size: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+}
+.fab-row {
+  font-size: 0.8rem;
+  color: var(--sub);
+  font-family: ui-monospace, monospace;
+  margin-top: 2px;
+}
+.fab-row span {
+  color: var(--text);
+}
+.empty {
+  color: var(--sub);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  text-align: center;
+  padding: 8px 0;
+}
+.btn {
+  display: inline-block;
+  width: 100%;
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 9px 16px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 10px;
+  text-align: center;
+}
+.btn:hover {
+  background: var(--primary-hover);
+}
+.btn-sec {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-sec:hover {
+  background: var(--border);
+}
+.btn-copy {
+  display: inline-block;
+  width: auto;
+  padding: 3px 12px;
+  font-size: 0.75rem;
+  margin-top: 4px;
+  border-radius: 4px;
+}
+.btn-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.btn-row .btn {
+  margin-top: 0;
+}
+.status-msg {
+  font-size: 0.8rem;
+  color: var(--sub);
+  text-align: center;
+  margin-top: 8px;
+}
+.hidden {
+  display: none !important;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Sesame Matter</h1>
+    <p class="sub">Garage Door Opener</p>
+  </header>
+
+  <div id="setup-card" class="card hidden">
+    <div class="card-head">
+      <h2>Commissioning</h2>
+      <span class="badge b-open">Open</span>
+    </div>
+    <p class="sub" style="text-align:center">Scan with Apple Home, Google Home, or Home Assistant</p>
+    <canvas id="qrcode"></canvas>
+    <div class="code-box">
+      <div class="code-lbl">Manual Pairing Code</div>
+      <div id="pair-code" class="code-val"></div>
+      <button class="btn btn-sec btn-copy" onclick="copyPairCode(this)">Copy Code</button>
+      <div id="qr-payload" class="code-raw"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Commissioned Fabrics</h2>
+      <span id="fab-count" class="badge b-closed">0</span>
+    </div>
+    <div id="fabrics-list"></div>
+    <div class="btn-row">
+      <button id="btn-commission" class="btn hidden" onclick="openCommission()">Open Commissioning</button>
+      <button class="btn btn-sec" onclick="loadInfo()">Refresh</button>
+    </div>
+    <div id="status-msg" class="status-msg hidden"></div>
+  </div>
+</div>
+
+<script>
+const t=[.2,3/8,5/9,2/3],o=(o,r)=>e=>{const n=4*o+e-4,f="*-04-39?2$%%$%%'$%''%'''%')(%'))%(++'(++'(+.'+-.',/3',33)-/5)-43).36)058*18<+37<+4:<,4:E,5<A-7>C/8@F/:EH/<EK0=FM1?IP2@KS3BNV4DPY5FS\\6HV_6IXb7K[e8N^i9Pam;Rdp<Tgt".charCodeAt(n)-35,s=n>8?f:1,l=r/s|0,c=r%s,a=s-c,i=n>8?l*t[e]+(o>5)&-2:f,d=l-i;return{t:a*d+c*d+c,o:[[a,d],[c,d+1]],l:i}},r={L:0,M:1,Q:2,H:3},e=t=>new Uint8Array(t),n=t=>{const o=new Error(`lean-qr error ${t}`);throw o.code=t,o},f=(t,o=t*t,r=e(o))=>({size:t,i:r,get:(o,e)=>o>=0&&o<t&&!!(1&r[e*t+o]),u(o,{on:r=[0,0,0],off:e=[0,0,0,0],pad:n=4,padX:f=n,padY:s=n}={}){const l=t+2*f,c=t+2*s,a=o.createImageData(l,c),i=new Uint32Array(a.data.buffer);a.data.set([...r,255]);const d=i[0];a.data.set([...e,255]);const u=i[0];for(let t=0;t<c;++t)for(let o=0;o<l;++o)i[t*l+o]=this.get(o-f,t-s)?d:u;return a},toCanvas(t,o){const r=t.getContext("2d"),e=this.u(r,o);t.width=e.width,t.height=e.height,r.putImageData(e,0,0)}}),s=[(t,o)=>1&(t^o),(t,o)=>1&o,t=>t%3,(t,o)=>(t+o)%3,(t,o)=>1&(t/3^o>>1),(t,o)=>(t&o&1)+t*o%3,(t,o)=>(t&o)+t*o%3&1,(t,o)=>(t^o)+t*o%3&1],l=e(511);for(let t=0,o=1;t<255;o=2*o^285*(o>127))l[l[o+255]=t++]=o;const c=t=>l[t%255],a=t=>l[t+255],i=(t,o)=>{const r=e(t.length+o.length-1);for(let e=0;e<t.length;++e)for(let n=0;n<o.length;++n)r[e+n]^=c(t[e]+o[n]);return r.map(a)},d=(t,o)=>{const r=e(t.length+o.length-1);r.set(t,0);for(let e=0;e<t.length;++e)if(r[e]){const t=a(r[e]);for(let n=0;n<o.length;++n)r[e+n]^=c(o[n]+t)}return r.slice(t.length)},u=[[0],[0,0]];for(let t=1;t<30;++t)u.push(i(u[t],[0,t]));const _=(t,o)=>{const r=[[],[]];let n=0,f=0;for(const[e,s]of o.o)for(let l=0;l<e;++l,n+=s){const e=t.slice(n,n+s);r[0].push(e),r[1].push(d(e,u[o.l])),f+=s+o.l}const s=e(f);f=0;for(const t of r)for(let o=0,r=-1;r<f;++o){r=f;for(const r of t)o<r.length&&(s[f++]=r[o])}return s},p=(t,o,r)=>{let e=t<<=r;for(let t=134217728;t>>=1;)e&t&&(e^=o*(t>>r));return e|t},z=({size:t,i:o},r)=>{const e=(r,e,n,f)=>{for(;n-- >0;r+=t)o.fill(f,r,r+e)},n=(o,r,n)=>{for(let f=0;f++<3;n-=2)e(r*t+o-(n>>1)*(t+1),n,n,2|f)},f=2*((t-13)/(1+(r/7|0))/2+.75|0);if(r>1)for(let o=t-7;o>8;o-=f){for(let t=o;t>8;t-=f)n(o,t,5);o<t-7&&n(o,6,5)}if(r>6)for(let e=p(r,7973,12),n=1;n<7;++n)for(let r=12;r-- >9;e>>=1)o[n*t-r]=2|1&e;e(7,2,9,2),e(t-8,8,9,2);for(let r=0;r<t;++r)o[6*t+r]=3^1&r;n(3,3,7),n(t-4,3,7);for(let r=0;r<t;++r)for(let e=r;e<t;++e)o[e*t+r]=o[r*t+e];o[(t-8)*t+8]=3},g=({size:t,i:o})=>{const r=[];for(let e=t-2,n=t,f=-1;e>=0;e-=2){for(5===e&&(e=4);n+=f,-1!==n&&n!==t;){const f=n*t+e;o[f+1]||r.push(f+1),o[f]||r.push(f)}f*=-1}return r},w=({i:t},o,r)=>o.forEach((o,e)=>t[o]=r[e>>3]>>(7&~e)&1),y=({size:t,i:o},r,e,n)=>{for(let e=0;e<t;++e)for(let n=0;n<t;++n){const f=e*t+n;o[f]^=!(r(n,e)||2&o[f])}let f=21522^p((1^n)<<3|e,1335,10);for(let r=0;r++<8;f>>=1)o[(r-(r<7))*t+8]=1&f,o[9*t-r]=1&f;for(let r=8;--r,f;f>>=1)o[8*t+r-(r<7)]=1&f,o[(t-r)*t+8]=1&f},E=({size:t,i:o},r=0,e=0)=>{for(let n=0;n<t;++n){for(let f=0;f<2;++f)for(let s,l=0,c=0,a=2;l<t;++l){const i=1&o[f?n*t+l:l*t+n];e+=i,c=(c>>1|2098176)&(3047517^i-1),2049&c&&(r+=40),i^a&&(s=0),a=i,r+=5===++s?3:s>5}if(n)for(let e=t+n,f=5*o[n-1]^o[n];e<t*t;e+=t){const t=5*o[e-1]^o[e];r+=3*!(1&(f|t)|4&(f^t)),f=t}}return r+10*(10*Math.abs(e/(t*t)-1)|0)},h=[],m=(t=n(1),{minCorrectionLevel:r=0,minVersion:l=1}={})=>{"string"!=typeof t&&n(5),t=(new TextEncoder).encode(t);const c=e(2957);c.set([113,164,t.length>>8]);for(let e=l;e<41;++e){let n=h[e];n||(h[e]=n=f(4*e+17),z(n,e),n.p=g(n));const l=o(e,n.p.length>>3)(r);if(l.t>=3+(e>9)+t.length){let o=e>9?3:2;for(c[o++]=t.length,c.set(t,o),o+=t.length-1;o<2954;c.set([236,17],o+=2));const a=f(n.size,n.i);return w(a,n.p,_(c,l)),s.map((t,o)=>{const e=f(a.size,a.i);return y(e,t,o,r),e.s=E(e),e}).sort((t,o)=>t.s-o.s)[0]}}n(4)};window.generateQR=m;
+
+let rawPairCode = "";
+
+function drawQR(canvas, text) {
+  const qr = window.generateQR(text);
+  const pad = 4;
+  const scale = 8;
+  const size = (qr.size + pad * 2) * scale;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = "#000000";
+  for (let y = 0; y < qr.size; y++) {
+    for (let x = 0; x < qr.size; x++) {
+      if (qr.get(x, y)) {
+        ctx.fillRect((x + pad) * scale, (y + pad) * scale, scale, scale);
+      }
+    }
+  }
+}
+
+function fmtCode(c) {
+  if (c && c.length === 11) {
+    return c.slice(0, 4) + "-" + c.slice(4, 7) + "-" + c.slice(7);
+  }
+  return c || "";
+}
+
+function copyPairCode(btn) {
+  if (!rawPairCode) return;
+  const onDone = () => {
+    const orig = btn.textContent;
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(rawPairCode).then(onDone).catch(() => fallbackCopy(rawPairCode, onDone));
+  } else {
+    fallbackCopy(rawPairCode, onDone);
+  }
+}
+
+function fallbackCopy(text, onDone) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand("copy");
+    onDone();
+  } catch (e) {}
+  document.body.removeChild(ta);
+}
+
+async function loadInfo() {
+  const statusEl = document.getElementById("status-msg");
+  try {
+    const res = await fetch("/matter/info");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    render(data);
+    statusEl.classList.add("hidden");
+  } catch (e) {
+    statusEl.textContent = "Error: " + e.message;
+    statusEl.classList.remove("hidden");
+  }
+}
+
+function render(data) {
+  const setupCard = document.getElementById("setup-card");
+  const btnComm = document.getElementById("btn-commission");
+  const fabList = document.getElementById("fabrics-list");
+  const fabCount = document.getElementById("fab-count");
+
+  const fabrics = data.fabrics || [];
+  fabCount.textContent = fabrics.length;
+  fabCount.className = "badge " + (fabrics.length > 0 ? "b-open" : "b-closed");
+
+  if (data.setup && (data.setup.qr_code || data.setup.manual_pairing_code)) {
+    setupCard.classList.remove("hidden");
+    if (data.setup.qr_code) {
+      drawQR(document.getElementById("qrcode"), data.setup.qr_code);
+      document.getElementById("qr-payload").textContent = data.setup.qr_code;
+    }
+    rawPairCode = data.setup.manual_pairing_code || "";
+    document.getElementById("pair-code").textContent = fmtCode(rawPairCode);
+    btnComm.classList.add("hidden");
+  } else {
+    setupCard.classList.add("hidden");
+    btnComm.classList.remove("hidden");
+  }
+
+  if (fabrics.length === 0) {
+    fabList.innerHTML = "<p class=\"empty\">No fabrics commissioned yet.</p>";
+  } else {
+    fabList.innerHTML = fabrics.map((f, i) => `
+      <div class="fabric">
+        <div class="fab-top">
+          <span>${f.label || "Fabric #" + (i + 1)}</span>
+          <span style="font-size:0.75rem;color:var(--sub)">VID: ${f.vendor_id}</span>
+        </div>
+        <div class="fab-row">Fabric ID: <span>${f.fabric_id}</span></div>
+        <div class="fab-row">Node ID: <span>${f.node_id}</span></div>
+      </div>
+    `).join("");
+  }
+}
+
+async function openCommission() {
+  const statusEl = document.getElementById("status-msg");
+  statusEl.textContent = "Opening commissioning window...";
+  statusEl.classList.remove("hidden");
+  try {
+    const res = await fetch("/matter/commission", { method: "POST" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    await loadInfo();
+  } catch (e) {
+    statusEl.textContent = "Error: " + e.message;
+  }
+}
+
+window.addEventListener("DOMContentLoaded", loadInfo);
+</script>
+</body>
+</html>
