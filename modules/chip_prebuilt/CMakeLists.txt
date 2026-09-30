@@ -28,7 +28,6 @@ if(CONFIG_CHIP)
         -Wl,--start-group
         ${CHIP_PREBUILT_DIR}/lib/libCHIP.a
         ${CHIP_PREBUILT_DIR}/lib/libMatterDeviceInfoProviderExample.a
-        ${CHIP_PREBUILT_DIR}/lib/libmbedtls.a
         -Wl,--end-group
     )
     set_property(GLOBAL APPEND PROPERTY ZEPHYR_INTERFACE_LIBS chip)
