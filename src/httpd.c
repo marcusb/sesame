@@ -21,6 +21,7 @@
 #include "ota.h"
 #endif
 #include "log_ring_buf.h"
+#include "ws_logs.h"
 
 LOG_MODULE_REGISTER(httpd, LOG_LEVEL_DBG);
 
@@ -444,39 +445,10 @@ static int logs_handler(struct http_client_ctx* client,
     return 0;
 }
 
-static int ws_logs_info_handler(struct http_client_ctx* client,
-                                enum http_transaction_status status,
-                                const struct http_request_ctx* req,
-                                struct http_response_ctx* res,
-                                void* user_data) {
-    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
-        static const char msg[] =
-            "WebSocket log streaming is available at ws://<host>:8080/ws/logs\n"
-            "Open http://<host>/logs.html in your browser for the web log "
-            "viewer.\n";
-        static const struct http_header headers[] = {
-            {.name = "Content-Type", .value = "text/plain; charset=utf-8"}};
-        res->status = HTTP_200_OK;
-        res->headers = headers;
-        res->header_count = 1;
-        res->body = (const uint8_t*)msg;
-        res->body_len = sizeof(msg) - 1;
-        res->final_chunk = true;
-    }
-    return 0;
-}
-
 static struct http_resource_detail_dynamic logs_detail = {
     .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
                .bitmask_of_supported_http_methods = BIT(HTTP_GET)},
     .cb = logs_handler,
-    .user_data = NULL,
-};
-
-static struct http_resource_detail_dynamic ws_logs_info_detail = {
-    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
-               .bitmask_of_supported_http_methods = BIT(HTTP_GET)},
-    .cb = ws_logs_info_handler,
     .user_data = NULL,
 };
 
@@ -551,8 +523,8 @@ HTTP_RESOURCE_DEFINE(logs_html_resource, httpd_service, "/logs.html",
                      &logs_page_detail);
 HTTP_RESOURCE_DEFINE(logs_view_resource, httpd_service, "/logs/view",
                      &logs_page_detail);
-HTTP_RESOURCE_DEFINE(ws_logs_info_resource, httpd_service, "/ws/logs",
-                     &ws_logs_info_detail);
+HTTP_RESOURCE_DEFINE(ws_logs_resource, httpd_service, "/ws/logs",
+                     &ws_logs_resource_detail);
 
 #ifdef CONFIG_CHIP
 HTTP_RESOURCE_DEFINE(matter_commission_resource, httpd_service,

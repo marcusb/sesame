@@ -3,16 +3,13 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#ifdef CONFIG_BOARD_NATIVE_SIM
-#define WS_LOGS_PORT 8081
-#else
-#define WS_LOGS_PORT 8080
-#endif
+#include <zephyr/net/http/server.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+extern struct http_resource_detail_websocket ws_logs_resource_detail;
 
 void ws_logs_init(void);
 void ws_logs_broadcast(const char* data, size_t len);
