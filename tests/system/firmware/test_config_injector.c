@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 #include <zephyr/arch/common/semihost.h>
 #include <zephyr/init.h>
@@ -82,6 +83,45 @@ static int inject_test_config(void) {
         semihost_close(fd);
     } else {
         printk(">>> Failed to open test_config.bin, fd=%ld\n", fd);
+    }
+#elif defined(CONFIG_ARCH_POSIX)
+    FILE* f = fopen("test_config.bin", "rb");
+    if (f) {
+        printk(">>> Opening test_config.bin via POSIX file I/O...\n");
+        fseek(f, 0, SEEK_END);
+        long len = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (len > 0 && len <= 1024) {
+            static uint8_t buf[1024];
+            size_t read_len = fread(buf, 1, len, f);
+            if (read_len == (size_t)len) {
+                static AppConfig app_config;
+                memset(&app_config, 0, sizeof(app_config));
+                pb_istream_t stream = pb_istream_from_buffer(buf, len);
+                if (pb_decode(&stream, AppConfig_fields, &app_config)) {
+                    printk(">>> Successfully decoded AppConfig\n");
+                    if (app_config.has_network_config) {
+                        inject_proto_config(
+                            "sesame/network", NetworkConfig_fields,
+                            &app_config.network_config, "NetworkConfig");
+                    }
+                    if (app_config.has_mqtt_config) {
+                        inject_proto_config("sesame/mqtt", MqttConfig_fields,
+                                            &app_config.mqtt_config,
+                                            "MqttConfig");
+                    }
+                    if (app_config.has_logging_config) {
+                        inject_proto_config(
+                            "sesame/logging", LoggingConfig_fields,
+                            &app_config.logging_config, "LoggingConfig");
+                    }
+                } else {
+                    printk(">>> Failed to decode AppConfig: %s\n",
+                           PB_GET_ERROR(&stream));
+                }
+            }
+        }
+        fclose(f);
     }
 #else
     printk(">>> CONFIG_SEMIHOST is not defined!\n");
