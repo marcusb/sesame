@@ -51,6 +51,7 @@ def test_http_logs_html(zephyr_app):
         body = response.read().decode("utf-8")
         assert "Sesame Logs" in body
         assert "ws/logs" in body
+        assert "Line wrap" in body
 
 
 def test_ws_logs_streaming(zephyr_app):

@@ -274,6 +274,9 @@ ZTEST(log_ring_buf, test_zephyr_log_backend_integration) {
     zassert_not_null(strstr(temp, "token=987654"),
                      "Expected log string with token in ring buffer, got: %s",
                      temp);
+    zassert_not_null(strchr(temp, '\n'),
+                     "Expected newline in ring buffer log entry, got: %s",
+                     temp);
 
     /* Also verify ws_logs_broadcast received the log line */
     zassert_true(s_broadcast_call_count > 0,

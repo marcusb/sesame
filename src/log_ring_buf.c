@@ -154,9 +154,11 @@ static void ringbuf_log_process(const struct log_backend* const backend,
                                 union log_msg_generic* msg) {
     ARG_UNUSED(backend);
     uint32_t flags = LOG_OUTPUT_FLAG_FORMAT_SYSLOG | LOG_OUTPUT_FLAG_TIMESTAMP |
-                     LOG_OUTPUT_FLAG_THREAD;
+                     LOG_OUTPUT_FLAG_THREAD | LOG_OUTPUT_FLAG_CRLF_NONE;
     log_format_func_t log_output_func = log_format_func_t_get(LOG_OUTPUT_TEXT);
     log_output_func(&log_output_ringbuf, &msg->log, flags);
+    log_output_flush(&log_output_ringbuf);
+    ring_buf_char_out((uint8_t*)"\n", 1, NULL);
 }
 
 static void ringbuf_log_panic(const struct log_backend* const backend) {
