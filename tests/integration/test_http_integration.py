@@ -21,14 +21,23 @@ def test_http_version(zephyr_app):
 
 def test_http_logs(zephyr_app):
     """
-    Verifies that the /logs HTTP endpoint returns text/plain log buffer snapshot.
+    Verifies that the /logs HTTP endpoint returns text/plain log buffer snapshot,
+    starting from system boot with the Zephyr hello banner and valid timestamped lines.
     """
     req = urllib.request.Request("http://127.0.0.1:8080/logs")
     with urllib.request.urlopen(req, timeout=5) as response:
         assert response.status == 200
         assert "text/plain" in response.headers.get("Content-Type", "")
         body = response.read().decode("utf-8", errors="replace")
-        assert len(body) > 0
+
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    assert len(lines) > 5, f"Expected multiple log lines in snapshot, got {len(lines)}"
+    assert lines[0].startswith(
+        "*** Booting Zephyr OS"
+    ), f"First line should be Zephyr boot banner: {lines[0]}"
+    assert any(
+        line.startswith("[1970-01-01") for line in lines
+    ), "Expected standard [YYYY-MM-DD timestamped log lines"
 
 
 def test_http_logs_html(zephyr_app):
@@ -46,42 +55,26 @@ def test_http_logs_html(zephyr_app):
 
 def test_ws_logs_streaming(zephyr_app):
     """
-    Verifies that the WebSocket server accepts connections on port 8080 (in native_sim),
-    completes the RFC 6455 handshake, and streams log frames.
+    Verifies that the WebSocket server accepts connections on /ws/logs,
+    completes the RFC 6455 handshake, and streams well-formed initial log backlog.
     """
-    import base64
-    import socket
+    import websocket
 
-    s = socket.create_connection(("127.0.0.1", 8080), timeout=5)
-    key = base64.b64encode(b"0123456789abcdef").decode()
-    handshake = (
-        "GET /ws/logs HTTP/1.1\r\n"
-        "Host: 127.0.0.1:8080\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        f"Sec-WebSocket-Key: {key}\r\n"
-        "Sec-WebSocket-Version: 13\r\n\r\n"
-    )
-    s.sendall(handshake.encode("utf-8"))
-
-    # Read handshake response until end of HTTP headers (\r\n\r\n)
-    resp_buf = bytearray()
-    while b"\r\n\r\n" not in resp_buf:
-        chunk = s.recv(1024)
-        assert len(chunk) > 0, "Connection closed before handshake completed"
-        resp_buf.extend(chunk)
-
-    hdr_end = resp_buf.find(b"\r\n\r\n") + 4
-    resp = resp_buf[:hdr_end].decode("utf-8", errors="ignore")
-    assert "101 Switching Protocols" in resp
-    assert "Sec-WebSocket-Accept:" in resp
-
-    # Read backlog frame streamed immediately upon connect
-    frame_data = resp_buf[hdr_end:]
-    if len(frame_data) == 0:
-        frame_data = s.recv(4096)
-    assert len(frame_data) > 0
-    # First byte should be WebSocket text frame opcode 0x81 (FIN + text)
-    assert frame_data[0] == 0x81
-    s.close()
-
+    ws = websocket.create_connection("ws://127.0.0.1:8080/ws/logs", timeout=5)
+    try:
+        backlog = ws.recv()
+        assert (
+            isinstance(backlog, str) and len(backlog) > 0
+        ), "Expected non-empty backlog text message"
+        lines = [line.strip() for line in backlog.splitlines() if line.strip()]
+        assert (
+            len(lines) > 5
+        ), f"Expected multiple log lines in backlog, got {len(lines)}"
+        assert lines[0].startswith(
+            "*** Booting Zephyr OS"
+        ), f"First backlog line should be Zephyr boot banner: {lines[0]}"
+        assert any(
+            line.startswith("[1970-01-01") for line in lines
+        ), "Expected standard [YYYY-MM-DD timestamped log lines"
+    finally:
+        ws.close()

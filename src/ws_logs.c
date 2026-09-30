@@ -33,6 +33,11 @@ static int ws_logs_setup(int ws_sock, struct http_request_ctx* request_ctx,
         return -EINVAL;
     }
 
+    LOG_INF("WS log client connecting on socket %d", ws_sock);
+
+    /* Replay initial backlog from the 16KB SRAM1 ring buffer */
+    log_ring_buf_read_chunks(backlog_chunk_cb, (void*)(intptr_t)ws_sock);
+
     k_mutex_lock(&s_client_lock, K_FOREVER);
     int slot = -1;
     for (int i = 0; i < MAX_WS_CLIENTS; i++) {
@@ -42,19 +47,12 @@ static int ws_logs_setup(int ws_sock, struct http_request_ctx* request_ctx,
         }
     }
     if (slot < 0) {
-        LOG_INF("Closing oldest WS client %d for incoming client %d",
-                s_client_fds[0], ws_sock);
         zsock_close(s_client_fds[0]);
         s_client_fds[0] = ws_sock;
     } else {
         s_client_fds[slot] = ws_sock;
     }
     k_mutex_unlock(&s_client_lock);
-
-    LOG_INF("WS log client accepted on socket %d", ws_sock);
-
-    /* Replay initial backlog from the 16KB SRAM1 ring buffer */
-    log_ring_buf_read_chunks(backlog_chunk_cb, (void*)(intptr_t)ws_sock);
 
     /* Wake up monitor thread */
     k_sem_give(&s_client_sem);
@@ -76,6 +74,9 @@ struct http_resource_detail_websocket ws_logs_resource_detail = {
     .user_data = NULL,
 };
 
+static char s_broadcast_buf[256];
+static size_t s_broadcast_len = 0;
+
 void ws_logs_broadcast(const char* data, size_t len) {
     if (!data || len == 0 || !s_initialized) {
         return;
@@ -89,15 +90,34 @@ void ws_logs_broadcast(const char* data, size_t len) {
         return;
     }
 
+    bool has_any = false;
     for (int i = 0; i < MAX_WS_CLIENTS; i++) {
-        int fd = s_client_fds[i];
-        if (fd >= 0) {
-            int ret = zsock_send(fd, data, len, ZSOCK_MSG_DONTWAIT);
-            if (ret < 0 && ret != -EAGAIN && ret != -EWOULDBLOCK) {
-                LOG_INF("WS client %d disconnected on send (%d)", fd, ret);
-                zsock_close(fd);
-                s_client_fds[i] = -1;
+        if (s_client_fds[i] >= 0) {
+            has_any = true;
+            break;
+        }
+    }
+    if (!has_any) {
+        s_broadcast_len = 0;
+        k_mutex_unlock(&s_client_lock);
+        return;
+    }
+
+    for (size_t i = 0; i < len; i++) {
+        s_broadcast_buf[s_broadcast_len++] = data[i];
+        if (data[i] == '\n' || s_broadcast_len >= sizeof(s_broadcast_buf)) {
+            for (int c = 0; c < MAX_WS_CLIENTS; c++) {
+                int fd = s_client_fds[c];
+                if (fd >= 0) {
+                    int ret = zsock_send(fd, s_broadcast_buf, s_broadcast_len,
+                                         ZSOCK_MSG_DONTWAIT);
+                    if (ret < 0 && ret != -EAGAIN && ret != -EWOULDBLOCK) {
+                        zsock_close(fd);
+                        s_client_fds[c] = -1;
+                    }
+                }
             }
+            s_broadcast_len = 0;
         }
     }
 
