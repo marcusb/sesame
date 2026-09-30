@@ -1,5 +1,6 @@
 #include "ws_logs.h"
 
+#include <psa/crypto.h>
 #include <stdio.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -19,110 +20,6 @@ LOG_MODULE_REGISTER(ws_logs, LOG_LEVEL_INF);
 static int s_client_fds[MAX_WS_CLIENTS] = {-1, -1};
 static struct k_mutex s_client_lock;
 static bool s_initialized;
-
-/* --- Self-contained RFC 3174 SHA-1 implementation --- */
-
-struct sha1_ctx {
-    uint32_t state[5];
-    uint32_t count[2];
-    uint8_t buffer[64];
-};
-
-#define SHA1_ROL(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))
-
-static void sha1_transform(uint32_t state[5], const uint8_t buffer[64]) {
-    uint32_t a = state[0], b = state[1], c = state[2], d = state[3],
-             e = state[4];
-    uint32_t w[80];
-
-    for (int i = 0; i < 16; i++) {
-        w[i] = ((uint32_t)buffer[i * 4] << 24) |
-               ((uint32_t)buffer[i * 4 + 1] << 16) |
-               ((uint32_t)buffer[i * 4 + 2] << 8) |
-               ((uint32_t)buffer[i * 4 + 3]);
-    }
-    for (int i = 16; i < 80; i++) {
-        w[i] = SHA1_ROL(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
-    }
-
-    for (int i = 0; i < 80; i++) {
-        uint32_t f, k;
-        if (i < 20) {
-            f = (b & c) | ((~b) & d);
-            k = 0x5A827999;
-        } else if (i < 40) {
-            f = b ^ c ^ d;
-            k = 0x6ED9EBA1;
-        } else if (i < 60) {
-            f = (b & c) | (b & d) | (c & d);
-            k = 0x8F1BBCDC;
-        } else {
-            f = b ^ c ^ d;
-            k = 0xCA62C1D6;
-        }
-        uint32_t temp = SHA1_ROL(a, 5) + f + e + k + w[i];
-        e = d;
-        d = c;
-        c = SHA1_ROL(b, 30);
-        b = a;
-        a = temp;
-    }
-
-    state[0] += a;
-    state[1] += b;
-    state[2] += c;
-    state[3] += d;
-    state[4] += e;
-}
-
-static void sha1_init(struct sha1_ctx* ctx) {
-    ctx->state[0] = 0x67452301;
-    ctx->state[1] = 0xEFCDAB89;
-    ctx->state[2] = 0x98BADCFE;
-    ctx->state[3] = 0x10325476;
-    ctx->state[4] = 0xC3D2E1F0;
-    ctx->count[0] = ctx->count[1] = 0;
-}
-
-static void sha1_update(struct sha1_ctx* ctx, const uint8_t* data, size_t len) {
-    size_t i = 0;
-    size_t j = (ctx->count[0] >> 3) & 63;
-    if ((ctx->count[0] += (uint32_t)(len << 3)) < (len << 3)) {
-        ctx->count[1]++;
-    }
-    ctx->count[1] += (uint32_t)(len >> 29);
-    if ((j + len) > 63) {
-        memcpy(&ctx->buffer[j], data, (i = 64 - j));
-        sha1_transform(ctx->state, ctx->buffer);
-        for (; i + 63 < len; i += 64) {
-            sha1_transform(ctx->state, &data[i]);
-        }
-        j = 0;
-    }
-    memcpy(&ctx->buffer[j], &data[i], len - i);
-}
-
-static void sha1_final(struct sha1_ctx* ctx, uint8_t digest[20]) {
-    uint8_t finalcount[8];
-    for (int i = 0; i < 8; i++) {
-        finalcount[i] =
-            (uint8_t)((ctx->count[(i >= 4 ? 0 : 1)] >> ((3 - (i & 3)) * 8)) &
-                      255);
-    }
-    uint8_t c = 0200;
-    sha1_update(ctx, &c, 1);
-    while ((ctx->count[0] & 504) != 448) {
-        c = 0000;
-        sha1_update(ctx, &c, 1);
-    }
-    sha1_update(ctx, finalcount, 8);
-    for (int i = 0; i < 20; i++) {
-        digest[i] =
-            (uint8_t)((ctx->state[i >> 2] >> ((3 - (i & 3)) * 8)) & 255);
-    }
-}
-
-/* --- WebSocket Framing & Sending --- */
 
 static int send_ws_frame(int fd, uint8_t opcode, const uint8_t* payload,
                          size_t len) {
@@ -220,28 +117,6 @@ bool ws_logs_has_clients(void) {
     return has_any;
 }
 
-static const char b64_table[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-static void base64_encode_sha1(const uint8_t in[20], char out[29]) {
-    size_t i = 0, j = 0;
-    while (i < 18) {
-        uint32_t triple =
-            ((uint32_t)in[i] << 16) | ((uint32_t)in[i + 1] << 8) | in[i + 2];
-        out[j++] = b64_table[(triple >> 18) & 0x3F];
-        out[j++] = b64_table[(triple >> 12) & 0x3F];
-        out[j++] = b64_table[(triple >> 6) & 0x3F];
-        out[j++] = b64_table[triple & 0x3F];
-        i += 3;
-    }
-    uint32_t triple = ((uint32_t)in[18] << 16) | ((uint32_t)in[19] << 8);
-    out[j++] = b64_table[(triple >> 18) & 0x3F];
-    out[j++] = b64_table[(triple >> 12) & 0x3F];
-    out[j++] = b64_table[(triple >> 6) & 0x3F];
-    out[j++] = '=';
-    out[j] = '\0';
-}
-
 /* --- WebSocket Handshake & Server Task --- */
 
 static int handle_handshake(int client_fd) {
@@ -277,16 +152,27 @@ static int handle_handshake(int client_fd) {
     char combined[128];
     snprintf(combined, sizeof(combined), "%s%s", key, WS_MAGIC);
 
-    /* Compute SHA-1 */
-    struct sha1_ctx ctx;
-    uint8_t digest[20];
-    sha1_init(&ctx);
-    sha1_update(&ctx, (const uint8_t*)combined, strlen(combined));
-    sha1_final(&ctx, digest);
+    /* Compute SHA-1 via PSA Crypto */
+    uint8_t digest[PSA_HASH_LENGTH(PSA_ALG_SHA_1)];
+    size_t digest_len = 0;
+    psa_status_t status =
+        psa_hash_compute(PSA_ALG_SHA_1, (const uint8_t*)combined,
+                         strlen(combined), digest, sizeof(digest), &digest_len);
+    if (status != PSA_SUCCESS) {
+        LOG_ERR("psa_hash_compute failed: %d", (int)status);
+        return -1;
+    }
 
-    /* Base64 encode */
+    /* Base64 encode accept key */
     char accept_key[32];
-    base64_encode_sha1(digest, accept_key);
+    size_t olen = 0;
+    int err = base64_encode((uint8_t*)accept_key, sizeof(accept_key) - 1, &olen,
+                            digest, digest_len);
+    if (err != 0) {
+        LOG_ERR("base64_encode failed: %d", err);
+        return -1;
+    }
+    accept_key[olen] = '\0';
 
     /* Send HTTP 101 Response */
     char resp[256];
