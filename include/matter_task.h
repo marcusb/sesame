@@ -1,5 +1,4 @@
-#ifndef MATTER_TASK_H
-#define MATTER_TASK_H
+#pragma once
 
 #include "controller.h"
 
@@ -13,7 +12,8 @@ extern "C" {
 void matter_init(void);
 
 /**
- * Notify the Matter task that the network is up (can be called safely from IP task).
+ * Notify the Matter task that the network is up (can be called safely from IP
+ * task).
  */
 void matter_schedule_network_up(void);
 
@@ -44,10 +44,8 @@ void matter_wipe_fabrics(void);
 /**
  * Get fabric info in JSON format.
  */
-void matter_get_fabric_info_json(char *buf, size_t max_len);
+void matter_get_fabric_info_json(char* buf, size_t max_len);
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* MATTER_TASK_H */

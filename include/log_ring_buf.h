@@ -1,5 +1,4 @@
-#ifndef LOG_RING_BUF_H_
-#define LOG_RING_BUF_H_
+#pragma once
 
 #include <stddef.h>
 #include <stdint.h>
@@ -29,5 +28,3 @@ void log_ring_buf_clear(void);
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* LOG_RING_BUF_H_ */

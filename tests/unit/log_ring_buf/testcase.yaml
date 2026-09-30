@@ -1,0 +1,4 @@
+tests:
+  log_ring_buf.logic:
+    tags: log_ring_buf
+    harness: ztest

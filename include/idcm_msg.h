@@ -1,7 +1,7 @@
 #pragma once
 
-#include <stdint.h>
 #include <assert.h>
+#include <stdint.h>
 
 #define DCM_HEADER_BYTE 0x55
 
@@ -90,8 +90,7 @@ typedef struct {
     uint16_t down_limit;
 } __attribute__((packed)) dcm_door_status_req_msg_t;
 static_assert(sizeof(dcm_door_status_req_msg_t) == 12, "msg size");
-static_assert(sizeof(dcm_door_status_req_msg_t) < MAX_DCM_MSG_SIZE,
-               "msg size");
+static_assert(sizeof(dcm_door_status_req_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint32_t time;
@@ -109,18 +108,18 @@ typedef struct {
 } __attribute__((packed)) dcm_door_status_update_msg_t;
 static_assert(sizeof(dcm_door_status_update_msg_t) == 14, "msg size");
 static_assert(sizeof(dcm_door_status_update_msg_t) < MAX_DCM_MSG_SIZE,
-               "msg size");
+              "msg size");
 
 typedef struct {
-    uint8_t reserved;            // always 0
+    uint8_t reserved;  // always 0
     door_open_state_t state;
     door_direction_t direction;
-    uint8_t model_code;          // always 0x04; identifies DCM hardware variant
-    uint8_t reserved2[2];        // always 0
+    uint8_t model_code;    // always 0x04; identifies DCM hardware variant
+    uint8_t reserved2[2];  // always 0
     uint16_t pos;
     uint32_t time;
-    uint8_t hw_caps;             // always 0x08; hardware capability bitfield
-    uint8_t reserved3;           // always 0
+    uint8_t hw_caps;    // always 0x08; hardware capability bitfield
+    uint8_t reserved3;  // always 0
     uint8_t sensor_restart_reason;
     uint8_t major;
     uint8_t minor;

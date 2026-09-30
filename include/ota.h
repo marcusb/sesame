@@ -1,14 +1,13 @@
+#pragma once
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#pragma once
-
 #include <stdint.h>
+#include <zephyr/dfu/flash_img.h>
 
 #include "controller.h"
-
-#include <zephyr/dfu/flash_img.h>
 
 typedef enum {
     OTA_CMD_UNKNOWN = 0,
@@ -46,4 +45,3 @@ bool my_boot_is_img_confirmed(void);
 #ifdef __cplusplus
 }
 #endif
-

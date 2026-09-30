@@ -28,21 +28,21 @@
 
 #include <stddef.h>
 #include <stdint.h>
-
 #include <zephyr/kernel.h>
+
 #include "logging_levels.h"
 
 typedef struct {
     unsigned long msg_id;
     uint8_t level;
-    const char *filename;
+    const char* filename;
     size_t line_num;
     uint32_t ticks;
-    char task_name[32 + 1]; // Zephyr thread name limit
-    char *msg;
+    char task_name[32 + 1];  // Zephyr thread name limit
+    char* msg;
 } log_msg_t;
 
-typedef void (*log_backend_func)(const log_msg_t *log);
+typedef void (*log_backend_func)(const log_msg_t* log);
 
 /**
  * @brief Initialization function for logging task.
@@ -72,7 +72,7 @@ int register_log_backend(log_backend_func f);
 extern "C" {
 #endif
 
-void vLoggingPrintf(const char *pcFormat, ...);
+void vLoggingPrintf(const char* pcFormat, ...);
 
 /**
  * @brief Same as vLoggingPrintf but additionally takes parameters
@@ -87,8 +87,8 @@ void vLoggingPrintf(const char *pcFormat, ...);
  * @param[in] ... The variadic list of parameters for the format
  * specifiers in the @p pcFormat.
  */
-void vLoggingPrintfWithFileAndLine(const char *pcFile, size_t fileLineNo,
-                                   const char *pcFormat, ...);
+void vLoggingPrintfWithFileAndLine(const char* pcFile, size_t fileLineNo,
+                                   const char* pcFormat, ...);
 
 /**
  * @brief Interface for logging message at Error level.
@@ -100,7 +100,7 @@ void vLoggingPrintfWithFileAndLine(const char *pcFile, size_t fileLineNo,
  * @param[in] ... The variadic list of parameters for the format
  * specifiers in the @p pcFormat.
  */
-void vLoggingPrintfError(const char *pcFormat, ...);
+void vLoggingPrintfError(const char* pcFormat, ...);
 
 /**
  * @brief Interface for logging message at Warn level.
@@ -112,7 +112,7 @@ void vLoggingPrintfError(const char *pcFormat, ...);
  * @param[in] ... The variadic list of parameters for the format
  * specifiers in the @p pcFormat.
  */
-void vLoggingPrintfWarn(const char *pcFormat, ...);
+void vLoggingPrintfWarn(const char* pcFormat, ...);
 
 /**
  * @brief Interface for logging message at Info level.
@@ -124,7 +124,7 @@ void vLoggingPrintfWarn(const char *pcFormat, ...);
  * @param[in] ... The variadic list of parameters for the format
  * specifiers in the @p pcFormat.
  */
-void vLoggingPrintfInfo(const char *pcFormat, ...);
+void vLoggingPrintfInfo(const char* pcFormat, ...);
 
 /**
  * @brief Interface for logging message at Debug level.
@@ -136,7 +136,7 @@ void vLoggingPrintfInfo(const char *pcFormat, ...);
  * @param[in] ... The variadic list of parameters for the format
  * specifiers in the @p pcFormat.
  */
-void vLoggingPrintfDebug(const char *pcFormat, ...);
+void vLoggingPrintfDebug(const char* pcFormat, ...);
 
 #ifdef __cplusplus
 } /* extern "C" */

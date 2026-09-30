@@ -1,6 +1,7 @@
 #pragma once
 
 #include <zephyr/kernel.h>
+
 #include "api.pb.h"
 #include "app_config.pb.h"
 #include "idcm_msg.h"
@@ -20,7 +21,12 @@ typedef enum {
     CTRL_MSG_RESTART,
 } ctrl_msg_type_t;
 
-typedef enum { DOOR_CMD_UNKNOWN, DOOR_CMD_OPEN, DOOR_CMD_CLOSE, DOOR_CMD_STOP } door_cmd_t;
+typedef enum {
+    DOOR_CMD_UNKNOWN,
+    DOOR_CMD_OPEN,
+    DOOR_CMD_CLOSE,
+    DOOR_CMD_STOP
+} door_cmd_t;
 
 typedef struct {
     door_cmd_t command;

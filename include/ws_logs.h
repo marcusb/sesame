@@ -1,5 +1,4 @@
-#ifndef WS_LOGS_H_
-#define WS_LOGS_H_
+#pragma once
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -22,5 +21,3 @@ bool ws_logs_has_clients(void);
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* WS_LOGS_H_ */

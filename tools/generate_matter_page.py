@@ -24,8 +24,7 @@ def main():
     c_lines.append(
         "/* Auto-generated from src/matter_page.html - DO NOT EDIT MANUALLY */\n"
     )
-    c_lines.append("#ifndef MATTER_PAGE_H_\n")
-    c_lines.append("#define MATTER_PAGE_H_\n\n")
+    c_lines.append("#pragma once\n\n")
     c_lines.append("static const char matter_html[] =\n")
 
     for line in lines:
@@ -37,8 +36,7 @@ def main():
         )
         c_lines.append(f'"{escaped}"\n')
 
-    c_lines.append(";\n\n")
-    c_lines.append("#endif /* MATTER_PAGE_H_ */\n")
+    c_lines.append(";\n")
 
     HEADER_OUT.write_text("".join(c_lines), encoding="utf-8")
     print(f"Generated {HEADER_OUT} ({len(html)} bytes HTML)")
