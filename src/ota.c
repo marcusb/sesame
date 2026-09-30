@@ -6,8 +6,6 @@
 #include <string.h>
 #include <zephyr/retention/blinfo.h>
 
-#include "app_logging.h"
-
 // application
 #include <bootutil/bootutil_public.h>
 #include <zephyr/dfu/flash_img.h>

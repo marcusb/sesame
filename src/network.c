@@ -7,8 +7,8 @@
 #include <zephyr/net/sntp.h>
 #include <zephyr/sys/clock.h>
 
-#include "app_logging.h"
 #include "mqtt.h"
+#include "sesame_syslog.h"
 // clang-format off
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_core.h>

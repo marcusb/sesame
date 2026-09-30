@@ -246,9 +246,9 @@ The `-l` flag is only needed for initial device provisioning (first-time install
 
 ### Logs & Debugging
 
-**Log output** – All operations logged via `LOG_*` macros (see `include/app_logging.h`):
-- `LOG_ERROR(msg)`, `LOG_WARN(msg)`, `LOG_INFO(msg)`, `LOG_DEBUG(msg)`
-- Sent to console, circular buffer, and optional syslog
+**Log output** – All operations logged via Zephyr RTOS `LOG_*` macros (`<zephyr/logging/log.h>`):
+- `LOG_ERR(msg)`, `LOG_WRN(msg)`, `LOG_INF(msg)`, `LOG_DBG(msg)`
+- Sent to console, circular ring buffer, WebSocket log stream, and optional syslog
 - Includes task name and timestamp
 
 **Stack traces and Core Dumps**
@@ -346,7 +346,7 @@ sesame/
 ## Coding Conventions
 
 - **C99 standard** – See `target_compile_options` in CMakeLists.txt
-- **Logging** – Use `LOG_ERROR`, `LOG_WARN`, `LOG_INFO`, `LOG_DEBUG` macros (defined in `app_logging.h`)
+- **Logging** – Use Zephyr `LOG_ERR`, `LOG_WRN`, `LOG_INF`, `LOG_DBG` macros
 - **Task communication** – Via Zephyr message queues (see `main.c` for queue definitions)
 - **Protobuf messages** – Use nanopb for encode/decode; see `proto/` for schemas and `.options` for size hints
 - **Error handling** – Check return codes from WiFi/MQTT/HTTP APIs; many return status enums
