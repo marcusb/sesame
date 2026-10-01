@@ -168,7 +168,7 @@ The script:
 
 Alternatively, you can perform the update manually. First serve the signed image (e.g. `zephyr.signed.bin`) on a local HTTP server, then send the fetch request:
 ```sh
-echo 'url: "http://172.16.1.211:8000/zephyr.signed.bin"' \
+echo 'url: "http://sesame/zephyr.signed.bin"' \
   | protoc --encode=FirmwareUpgradeFetchRequest proto/api.proto \
   | curl --data-binary @- -H content-type:application/protobuf -v \
   'http://sesame/fwupgrade'
