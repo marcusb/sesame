@@ -138,12 +138,15 @@ static void mqtt_evt_handler(struct mqtt_client* const client,
                     long val = strntoul(payload, len, &endptr);
                     if (endptr != payload) {
                         door_cmd_t cmd;
-                        if (val == 0)
+                        if (val == 0) {
                             cmd = DOOR_CMD_CLOSE;
-                        else if (val == 1)
+                        } else if (val == 1) {
                             cmd = DOOR_CMD_OPEN;
-                        else
+                        } else if (val == 2) {
+                            cmd = DOOR_CMD_STOP;
+                        } else {
                             break;
+                        }
                         ctrl_msg_t msg = {CTRL_MSG_DOOR_CONTROL,
                                           {.door_control = {cmd}}};
                         k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);

@@ -7,6 +7,7 @@ from typing import Callable, List, Optional
 
 from pic_protocol import (
     DcmAlertAck,
+    DcmAlertCmd,
     DcmAudioAck,
     DcmAudioCmd,
     DcmDoorAck,
@@ -109,7 +110,6 @@ class PicSimulator:
             direction=self.direction,
             pos=self.pos,
             time=0,
-            up_limit=self.up_limit if hasattr(DcmSensorVersion, "up_limit") else 0,
         )
         self.send_msg(DcmMsgType.SENSOR_VERSION, version, seq=seq)
 
@@ -320,6 +320,47 @@ class PicSimulator:
             predicate=lambda f: isinstance(f.payload, DcmDoorCmd)
             and f.payload.val == val,
         )
+
+    def clear_frames(self):
+        with self._cond:
+            self.received_frames.clear()
+
+    def has_door_cmd(self, val: Optional[int] = None) -> bool:
+        with self._cond:
+            for f in self.received_frames:
+                if f.msg_type == DcmMsgType.DOOR_CMD:
+                    if val is None or (
+                        isinstance(f.payload, DcmDoorCmd) and f.payload.val == val
+                    ):
+                        return True
+            return False
+
+    def count_door_cmds(self, val: Optional[int] = None) -> int:
+        with self._cond:
+            count = 0
+            for f in self.received_frames:
+                if f.msg_type == DcmMsgType.DOOR_CMD:
+                    if val is None or (
+                        isinstance(f.payload, DcmDoorCmd) and f.payload.val == val
+                    ):
+                        count += 1
+            return count
+
+    def has_alert_cmds(self) -> bool:
+        with self._cond:
+            has_audio = any(
+                f.msg_type == DcmMsgType.AUDIO_CMD
+                and isinstance(f.payload, DcmAudioCmd)
+                and f.payload.val == 2
+                for f in self.received_frames
+            )
+            has_alert = any(
+                f.msg_type == DcmMsgType.ALERT_CMD
+                and isinstance(f.payload, DcmAlertCmd)
+                and f.payload.val == 1
+                for f in self.received_frames
+            )
+            return has_audio and has_alert
 
     def close(self):
         self.running = False

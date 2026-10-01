@@ -6,6 +6,8 @@ from pic_protocol import (
     DcmAudioCmd,
     DcmDoorCmd,
     DcmMsgType,
+    DoorDirection,
+    DoorOpenState,
 )
 
 
@@ -168,3 +170,268 @@ def test_external_initiated_open_and_close(zephyr_app, config, paho_client):
     assert state_closed["contact"] == "CLOSED"
     assert state_closed["pos"] == 0
     assert state_closed["dir"] == "stopped"
+
+
+def test_redundant_commands_ignored(zephyr_app, config, paho_client):
+    """
+    Verifies redundant commands are ignored:
+    - When door is CLOSED, CLOSE (0) and STOP (2) commands are ignored.
+    - When door is OPEN (100%), OPEN (1) and STOP (2) commands are ignored.
+    """
+    pic_sim = zephyr_app["pic_sim"]
+    paho_client.subscribe("sesame/state")
+    time.sleep(0.5)
+
+    # 1. Door is initially CLOSED and STOPPED.
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "0")  # CLOSE
+    time.sleep(0.5)
+    assert not pic_sim.has_door_cmd(), "CLOSE when already CLOSED should be ignored"
+    assert not pic_sim.has_alert_cmds(), "Alerts should not trigger when already CLOSED"
+
+    paho_client.publish("sesame/cmd", "2")  # STOP
+    time.sleep(0.5)
+    assert not pic_sim.has_door_cmd(), "STOP when already stopped should be ignored"
+
+    # 2. Transition door to fully OPEN.
+    pic_sim.trigger_external_open()
+    _wait_for_mqtt_state(
+        zephyr_app["mqtt_server"],
+        lambda d: d.get("contact") == "OPEN"
+        and d.get("pos") == 100
+        and d.get("dir") == "stopped",
+        timeout=10.0,
+    )
+
+    # 3. Door is now OPEN and STOPPED.
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "1")  # OPEN
+    time.sleep(0.5)
+    assert not pic_sim.has_door_cmd(), "OPEN when already OPEN should be ignored"
+
+    paho_client.publish("sesame/cmd", "2")  # STOP
+    time.sleep(0.5)
+    assert not pic_sim.has_door_cmd(), "STOP when already stopped should be ignored"
+
+
+def test_in_flight_commands_and_reversals(zephyr_app, config, paho_client):
+    """
+    Verifies behavior when door is in motion or stopped partway:
+    - Moving UP:
+      - OPEN (1) is ignored.
+      - CLOSE (0) immediately sends door cmd 0 (stops door, no alert delay).
+      - STOP (2) sends door cmd 1 (toggle to stop).
+    - Moving DOWN:
+      - CLOSE (0) is ignored.
+      - OPEN (1) sends door cmd 1 (reverses door).
+      - STOP (2) sends door cmd 1 (toggle to stop).
+    - Stopped midway:
+      - OPEN (1) sends door cmd 1.
+    """
+    pic_sim = zephyr_app["pic_sim"]
+    mqtt_server = zephyr_app["mqtt_server"]
+    paho_client.subscribe("sesame/state")
+    time.sleep(0.5)
+
+    # A. Door moving UP
+    pic_sim.send_status_update(
+        state=DoorOpenState.OPEN,
+        direction=DoorDirection.UP,
+        pos=32800,
+    )
+    _wait_for_mqtt_state(mqtt_server, lambda d: d.get("dir") == "up", timeout=5.0)
+
+    # OPEN when moving UP is ignored
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "1")
+    time.sleep(0.5)
+    assert not pic_sim.has_door_cmd(), "OPEN when moving UP should be ignored"
+
+    # CLOSE when moving UP immediately sends door cmd 0 (stops door)
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "0")
+    close_cmd = pic_sim.wait_for_door_cmd(val=0, timeout=3.0)
+    assert (
+        close_cmd is not None
+    ), "CLOSE when moving UP should immediately send door cmd 0"
+    assert (
+        not pic_sim.has_alert_cmds()
+    ), "CLOSE when moving UP should not trigger alert sequence"
+
+    # STOP when moving UP sends door cmd 1 (toggle to stop)
+    pic_sim.send_status_update(
+        state=DoorOpenState.OPEN,
+        direction=DoorDirection.UP,
+        pos=32820,
+    )
+    _wait_for_mqtt_state(mqtt_server, lambda d: d.get("dir") == "up", timeout=5.0)
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "2")
+    stop_cmd = pic_sim.wait_for_door_cmd(val=1, timeout=3.0)
+    assert stop_cmd is not None, "STOP when moving UP should send door cmd 1"
+
+    # B. Door moving DOWN
+    pic_sim.send_status_update(
+        state=DoorOpenState.OPEN,
+        direction=DoorDirection.DOWN,
+        pos=32850,
+    )
+    _wait_for_mqtt_state(mqtt_server, lambda d: d.get("dir") == "down", timeout=5.0)
+
+    # CLOSE when moving DOWN is ignored
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "0")
+    time.sleep(0.5)
+    assert not pic_sim.has_door_cmd(), "CLOSE when moving DOWN should be ignored"
+
+    # OPEN when moving DOWN sends door cmd 1 (reverses door)
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "1")
+    open_cmd = pic_sim.wait_for_door_cmd(val=1, timeout=3.0)
+    assert open_cmd is not None, "OPEN when moving DOWN should send door cmd 1"
+
+    # STOP when moving DOWN sends door cmd 1 (toggle to stop)
+    pic_sim.send_status_update(
+        state=DoorOpenState.OPEN,
+        direction=DoorDirection.DOWN,
+        pos=32840,
+    )
+    _wait_for_mqtt_state(mqtt_server, lambda d: d.get("dir") == "down", timeout=5.0)
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "2")
+    stop_cmd2 = pic_sim.wait_for_door_cmd(val=1, timeout=3.0)
+    assert stop_cmd2 is not None, "STOP when moving DOWN should send door cmd 1"
+
+    # C. Stopped midway (e.g. 50%)
+    pic_sim.send_status_update(
+        state=DoorOpenState.OPEN,
+        direction=DoorDirection.STOPPED,
+        pos=32828,
+    )
+    _wait_for_mqtt_state(
+        mqtt_server,
+        lambda d: d.get("pos") == 50 and d.get("dir") == "stopped",
+        timeout=5.0,
+    )
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "1")
+    open_cmd2 = pic_sim.wait_for_door_cmd(val=1, timeout=3.0)
+    assert open_cmd2 is not None, "OPEN when stopped midway should send door cmd 1"
+
+
+def _wait_for_firmware_log(zephyr_app, text, start_index=0, timeout=5.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        logs = zephyr_app["logs"]
+        for i in range(start_index, len(logs)):
+            if text in logs[i]:
+                return i
+        time.sleep(0.05)
+    raise TimeoutError(
+        f"Timed out waiting for log containing '{text}' after index {start_index}"
+    )
+
+
+def test_scheduled_close_cancellation(zephyr_app, config, paho_client):
+    """
+    Verifies that a scheduled close (alert period) is cancelled by:
+    - An incoming OPEN command.
+    - An incoming STOP command.
+    - External door movement reported by PIC (direction change, position change, or CLOSED state).
+    And verifies that no CLOSE command is transmitted after cancellation.
+    """
+    pic_sim = zephyr_app["pic_sim"]
+    mqtt_server = zephyr_app["mqtt_server"]
+    paho_client.subscribe("sesame/state")
+    time.sleep(0.5)
+
+    def _ensure_open_stopped():
+        pic_sim.send_status_update(
+            state=DoorOpenState.OPEN,
+            direction=DoorDirection.STOPPED,
+            pos=pic_sim.up_limit,
+        )
+        time.sleep(0.1)
+
+    # 1. Cancel scheduled close on OPEN command
+    _ensure_open_stopped()
+    log_idx = len(zephyr_app["logs"])
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "0")  # CLOSE
+    assert pic_sim.wait_for_frame(DcmMsgType.ALERT_CMD, timeout=8.0) is not None
+
+    time.sleep(0.1)
+    paho_client.publish("sesame/cmd", "1")  # OPEN cancels close
+    _wait_for_firmware_log(
+        zephyr_app,
+        "Cancelling scheduled close: OPEN command received",
+        start_index=log_idx,
+    )
+
+    # 2. Cancel scheduled close on STOP command
+    _ensure_open_stopped()
+    log_idx = len(zephyr_app["logs"])
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "0")  # CLOSE
+    assert pic_sim.wait_for_frame(DcmMsgType.ALERT_CMD, timeout=8.0) is not None
+
+    time.sleep(0.1)
+    paho_client.publish("sesame/cmd", "2")  # STOP cancels close
+    _wait_for_firmware_log(
+        zephyr_app,
+        "Cancelling scheduled close: STOP command received",
+        start_index=log_idx,
+    )
+
+    # 3. Cancel scheduled close on direction change (external motion)
+    _ensure_open_stopped()
+    log_idx = len(zephyr_app["logs"])
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "0")  # CLOSE
+    assert pic_sim.wait_for_frame(DcmMsgType.ALERT_CMD, timeout=8.0) is not None
+
+    time.sleep(0.1)
+    pic_sim.send_status_update(direction=DoorDirection.DOWN)
+    _wait_for_firmware_log(
+        zephyr_app,
+        "Cancelling scheduled close: door direction not stopped",
+        start_index=log_idx,
+    )
+
+    # 4. Cancel scheduled close on position change
+    _ensure_open_stopped()
+    log_idx = len(zephyr_app["logs"])
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "0")  # CLOSE
+    assert pic_sim.wait_for_frame(DcmMsgType.ALERT_CMD, timeout=8.0) is not None
+
+    time.sleep(0.1)
+    pic_sim.send_status_update(pos=pic_sim.up_limit - 10)
+    _wait_for_firmware_log(
+        zephyr_app,
+        "Cancelling scheduled close: door position changed",
+        start_index=log_idx,
+    )
+
+    # 5. Cancel scheduled close on state becomes CLOSED
+    _ensure_open_stopped()
+    log_idx = len(zephyr_app["logs"])
+    pic_sim.clear_frames()
+    paho_client.publish("sesame/cmd", "0")  # CLOSE
+    assert pic_sim.wait_for_frame(DcmMsgType.ALERT_CMD, timeout=8.0) is not None
+
+    time.sleep(0.1)
+    pic_sim.send_status_update(state=DoorOpenState.CLOSED)
+    _wait_for_firmware_log(
+        zephyr_app,
+        "Cancelling scheduled close: door reached closed",
+        start_index=log_idx,
+    )
+
+    # Finally, wait past the 6s alert timer to verify that the timer was cancelled
+    # and no CLOSE command (0) was transmitted.
+    pic_sim.clear_frames()
+    time.sleep(6.5)
+    assert not pic_sim.has_door_cmd(
+        val=0
+    ), "No CLOSE command should fire after cancellation"

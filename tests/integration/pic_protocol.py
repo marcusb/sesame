@@ -199,7 +199,7 @@ class DcmSensorVersion:
 
     def pack(self) -> bytes:
         return struct.pack(
-            "<BBBB2sHIHBBBBBBc",
+            "<BBBB2sHIBBBBBBc",
             self.reserved,
             int(self.state),
             int(self.direction),
@@ -233,7 +233,7 @@ class DcmSensorVersion:
             min_,
             pat,
             suf,
-        ) = struct.unpack("<BBBB2sHIHBBBBBBc", data[:19])
+        ) = struct.unpack("<BBBB2sHIBBBBBBc", data[:19])
         return cls(
             reserved=res,
             state=DoorOpenState(st),
