@@ -58,7 +58,7 @@ This project uses a self-contained [West workspace topology](https://docs.zephyr
 ## Code Generation (ZAP / Matter IDL)
 
 Matter uses ZCL Advanced Platform (ZAP) to define clusters and endpoints. 
-The configuration is stored in `src/matter/window-app.zap` and its corresponding IDL format `src/matter/window-app.matter`.
+The configuration is stored in `src/matter/window-app.zap`.
 
 If you need to change cluster configurations (e.g. adding a new endpoint or feature):
 1. Modify `window-app.zap` using the ZAP UI:
@@ -67,12 +67,7 @@ If you need to change cluster configurations (e.g. adding a new endpoint or feat
      -z third_party/connectedhomeip/src/app/zap-templates/zcl/zcl.json \
      src/matter/window-app.zap
    ```
-2. Generate the updated `window-app.matter` file from your changes:
-   ```sh
-   ./third_party/connectedhomeip/scripts/tools/zap/generate.py \
-     src/matter/window-app.zap -o src/matter/
-   ```
-3. Rebuild the project. The build system will automatically invoke `codegen.py` to generate the updated C++ static cluster configurations from `window-app.matter`.
+2. Rebuild the project (`ninja -C build sesame`).
 
 ## Building
 

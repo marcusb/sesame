@@ -166,9 +166,30 @@ configure_file(src/matter/AppVersion.h.in ${CMAKE_CURRENT_SOURCE_DIR}/src/matter
 
 if(CONFIG_CHIP)
     get_filename_component(CHIP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip REALPATH)
+    set(ZAP_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/matter/window-app.zap)
+    set(MATTER_IDL_FILE ${CMAKE_CURRENT_BINARY_DIR}/gen/window-app.matter)
+
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${ZAP_FILE})
+
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    if(NOT EXISTS ${MATTER_IDL_FILE} OR ${ZAP_FILE} IS_NEWER_THAN ${MATTER_IDL_FILE})
+        file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gen)
+        execute_process(
+            COMMAND ${Python3_EXECUTABLE} ${CHIP_ROOT}/scripts/tools/zap/generate.py
+                    ${ZAP_FILE} -m ${MATTER_IDL_FILE}
+            RESULT_VARIABLE ZAP_GEN_RES
+            OUTPUT_VARIABLE ZAP_GEN_OUT
+            ERROR_VARIABLE ZAP_GEN_ERR
+        )
+        if(NOT ZAP_GEN_RES EQUAL 0)
+            message(FATAL_ERROR "Failed to generate ${MATTER_IDL_FILE}: ${ZAP_GEN_ERR}\n${ZAP_GEN_OUT}")
+        endif()
+    endif()
+
     include(${CHIP_ROOT}/src/app/chip_data_model.cmake)
     chip_configure_data_model(app
-        ZAP_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/matter/window-app.zap
+        ZAP_FILE ${ZAP_FILE}
+        IDL ${MATTER_IDL_FILE}
     )
 endif()
 
