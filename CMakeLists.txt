@@ -167,16 +167,36 @@ configure_file(src/matter/AppVersion.h.in ${CMAKE_CURRENT_SOURCE_DIR}/src/matter
 if(CONFIG_CHIP)
     get_filename_component(CHIP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip REALPATH)
     set(ZAP_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/matter/window-app.zap)
-    set(MATTER_IDL_FILE ${CMAKE_CURRENT_BINARY_DIR}/gen/window-app.matter)
+    if(DEFINED sysbuild_toplevel_BINARY_DIR)
+        set(COMMON_GEN_DIR "${sysbuild_toplevel_BINARY_DIR}/gen")
+    elseif(DEFINED APPLICATION_BINARY_DIR AND NOT "${APPLICATION_BINARY_DIR}" STREQUAL "${CMAKE_CURRENT_BINARY_DIR}")
+        set(COMMON_GEN_DIR "${APPLICATION_BINARY_DIR}/gen")
+    elseif(EXISTS "${CMAKE_BINARY_DIR}/../domains.yaml" OR EXISTS "${CMAKE_BINARY_DIR}/../_sysbuild")
+        get_filename_component(COMMON_GEN_DIR "${CMAKE_BINARY_DIR}/../gen" ABSOLUTE)
+    else()
+        set(COMMON_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/gen")
+    endif()
+
+    set(MATTER_IDL_FILE ${COMMON_GEN_DIR}/window-app.matter)
 
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${ZAP_FILE})
 
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
-    if(NOT EXISTS ${MATTER_IDL_FILE} OR ${ZAP_FILE} IS_NEWER_THAN ${MATTER_IDL_FILE})
-        file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gen)
+    set(ZAP_CLI "${CHIP_ROOT}/.environment/cipd/packages/zap/zap-cli")
+    set(NEEDS_ZAP_GEN FALSE)
+    if(NOT EXISTS ${MATTER_IDL_FILE})
+        set(NEEDS_ZAP_GEN TRUE)
+    elseif(${ZAP_FILE} IS_NEWER_THAN ${MATTER_IDL_FILE})
+        set(NEEDS_ZAP_GEN TRUE)
+    elseif(EXISTS "${ZAP_CLI}" AND "${ZAP_CLI}" IS_NEWER_THAN ${MATTER_IDL_FILE})
+        set(NEEDS_ZAP_GEN TRUE)
+    endif()
+
+    if(NEEDS_ZAP_GEN)
+        file(MAKE_DIRECTORY ${COMMON_GEN_DIR})
         execute_process(
             COMMAND ${Python3_EXECUTABLE} ${CHIP_ROOT}/scripts/tools/zap/generate.py
-                    ${ZAP_FILE} -m ${MATTER_IDL_FILE}
+                    ${ZAP_FILE} -m ${MATTER_IDL_FILE}.tmp
             RESULT_VARIABLE ZAP_GEN_RES
             OUTPUT_VARIABLE ZAP_GEN_OUT
             ERROR_VARIABLE ZAP_GEN_ERR
@@ -184,6 +204,7 @@ if(CONFIG_CHIP)
         if(NOT ZAP_GEN_RES EQUAL 0)
             message(FATAL_ERROR "Failed to generate ${MATTER_IDL_FILE}: ${ZAP_GEN_ERR}\n${ZAP_GEN_OUT}")
         endif()
+        file(RENAME ${MATTER_IDL_FILE}.tmp ${MATTER_IDL_FILE})
     endif()
 
     include(${CHIP_ROOT}/src/app/chip_data_model.cmake)
