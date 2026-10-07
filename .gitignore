@@ -43,5 +43,6 @@ tools/axf2firmware/axf2firmware
 /bootloader/
 /zephyr/
 src/matter/AppVersion.h
+src/pic/sensor.asm
 
 test_config.json

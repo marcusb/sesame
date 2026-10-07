@@ -6,18 +6,20 @@
 #define DCM_HEADER_BYTE 0x55
 
 // must be larger than any message payload, to accommodate checksum byte
-#define MAX_DCM_MSG_SIZE 20
+#define MAX_DCM_MSG_SIZE 36
 
 typedef enum {
     DCM_MSG_0x04 = 0x04,
     DCM_MSG_DOOR_CMD = 0x10,
     DCM_MSG_ALERT_CMD = 0x11,
     DCM_MSG_AUDIO_CMD = 0x12,
+    /** Custom overhead light switch command (0 = OFF, 1 = ON) */
+    DCM_MSG_LIGHT_CMD = 0x13,
     /** Periodic 14-byte door status report from PIC to MW300 */
-    DCM_MSG_STATUS_UPDATE_14 = 0x14,
+    DCM_MSG_STATUS_UPDATE = 0x14,
     DCM_MSG_DOOR_STATUS_REQUEST = 0x15,
     /** Extended 29-byte status update */
-    DCM_MSG_DOOR_STATUS_UPDATE = 0x16,
+    DCM_MSG_STATUS_UPDATE_EXT = 0x16,
     DCM_MSG_OPS_EVENT = 0x17,
     /** Factory diagnostic / self-test mode */
     DCM_MSG_FACTORY_TEST = 0x18,
@@ -28,6 +30,8 @@ typedef enum {
     DCM_MSG_DOOR_ACK = 0x90,
     DCM_MSG_ALERT_ACK = 0x91,
     DCM_MSG_AUDIO_ACK = 0x92,
+    /** Custom overhead light switch ACK */
+    DCM_MSG_LIGHT_ACK = 0x93,
     DCM_MSG_ACK_0x94 = 0x94,
     DCM_MSG_SENSOR_VERSION = 0x95,
     DCM_MSG_FACTORY_TEST_ACK = 0x98,
@@ -35,19 +39,29 @@ typedef enum {
     DCM_MSG_COMBINED_ALERT_ACK = 0x9B,
 } __attribute__((packed)) dcm_msg_type_t;
 
+/* Serial Bootloader (SBL) protocol packet types */
+#define DCM_SBL_MSG_DATA_BLOCK 0x01
+#define DCM_SBL_MSG_HANDSHAKE_REQ 0x04
+#define DCM_SBL_MSG_ERASE_START 0x06
+#define DCM_SBL_MSG_EOF 0x08
+#define DCM_SBL_RSP_DATA_ACK 0x81
+#define DCM_SBL_RSP_HANDSHAKE_ACK 0x84
+#define DCM_SBL_RSP_ERASE_ACK 0x86
+#define DCM_SBL_RSP_EOF_ACK 0x88
+
 typedef enum {
-    DCM_DOOR_STATE_CLOSED,
-    DCM_DOOR_STATE_OPEN,  // "NOT CLOSED"
-    DCM_DOOR_STATE_UNKNOWN,
+    DCM_DOOR_STATE_CLOSED = 0,
+    DCM_DOOR_STATE_OPEN = 1,
+    DCM_DOOR_STATE_UNKNOWN = 2,
     /** Factory test mode */
-    DCM_DOOR_STATE_FTM
+    DCM_DOOR_STATE_FTM = 4,
 } __attribute__((packed)) door_open_state_t;
 
 typedef enum {
-    DCM_DOOR_DIR_DOWN,
-    DCM_DOOR_DIR_UP,
-    DCM_DOOR_DIR_STOPPED,
-    DCM_DOOR_DIR_UNKNOWN
+    DCM_DOOR_DIR_STOPPED = 0,
+    DCM_DOOR_DIR_UP = 1,
+    DCM_DOOR_DIR_DOWN = 2,
+    DCM_DOOR_DIR_UNKNOWN = 3,
 } __attribute__((packed)) door_direction_t;
 
 typedef enum {
@@ -75,20 +89,33 @@ static_assert(sizeof(dcm_door_cmd_msg_t) == 2, "msg size");
 static_assert(sizeof(dcm_door_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
-    uint8_t val;
-    // Duration in seconds, 5 for normal operation.
-    uint8_t duration_s;
+    uint8_t val;       // 1 = on, 0 = off
     uint8_t reserved;  // always 0
+} __attribute__((packed)) dcm_light_cmd_msg_t;
+static_assert(sizeof(dcm_light_cmd_msg_t) == 2, "msg size");
+static_assert(sizeof(dcm_light_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+
+typedef struct {
+    uint8_t state;  // 1 = on, 0 = off
+    uint8_t reserved[2];
+} __attribute__((packed)) dcm_light_ack_msg_t;
+static_assert(sizeof(dcm_light_ack_msg_t) == 3, "msg size");
+static_assert(sizeof(dcm_light_ack_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+
+typedef struct {
+    uint8_t reserved;   // always 0 (ignored by PIC)
+    uint8_t val;        // 2 = alert flashing, 4 = on, 5 = off
+    uint8_t reserved2;  // always 0
 } __attribute__((packed)) dcm_alert_cmd_msg_t;
 static_assert(sizeof(dcm_alert_cmd_msg_t) == 3, "msg size");
 static_assert(sizeof(dcm_alert_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
+    uint8_t reserved;  // always 0 (ignored by PIC)
+    // Audio tone opcode: 1 = single beep, 2 = warning beeps (door close),
+    // 4 = continuous tone, 5 = stop / silence.
     uint8_t val;
-    // Duration of the tone in seconds. 0 during self-test (PIC ACKs without
-    // audible output), 5 for normal operation.
-    uint8_t duration_s;
-    uint8_t reserved;  // always 0
+    uint8_t reserved2;  // always 0
 } __attribute__((packed)) dcm_audio_cmd_msg_t;
 static_assert(sizeof(dcm_audio_cmd_msg_t) == 3, "msg size");
 static_assert(sizeof(dcm_audio_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
@@ -117,28 +144,25 @@ typedef struct {
     // the motor working against gravity when lifting. Zero on the first update
     // of each movement; settles by the second sample.
     uint16_t motor_current;
-} __attribute__((packed)) dcm_door_status_update_msg_t;
-static_assert(sizeof(dcm_door_status_update_msg_t) == 14, "msg size");
-static_assert(sizeof(dcm_door_status_update_msg_t) < MAX_DCM_MSG_SIZE,
-              "msg size");
+} __attribute__((packed)) dcm_status_update_msg_t;
+static_assert(sizeof(dcm_status_update_msg_t) == 14, "msg size");
+static_assert(sizeof(dcm_status_update_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
-    uint8_t reserved;  // always 0
+    uint32_t time;
     door_open_state_t state;
     door_direction_t direction;
-    uint8_t model_code;    // always 0x04; identifies DCM hardware variant
-    uint8_t reserved2[2];  // always 0
     uint16_t pos;
-    uint32_t time;
-    uint8_t hw_caps;    // always 0x08; hardware capability bitfield
-    uint8_t reserved3;  // always 0
-    uint8_t sensor_restart_reason;
+    uint16_t up_limit;
+    uint16_t down_limit;
+    uint8_t hw_caps;  // hardware capability bitfield (e.g. 0x08 or 0x0d)
     uint8_t major;
     uint8_t minor;
     uint8_t patch;
     char suffix;
+    uint8_t extra[4];  // trailing status / calibration bytes
 } __attribute__((packed)) dcm_sensor_version_msg_t;
-static_assert(sizeof(dcm_sensor_version_msg_t) == 19, "msg size");
+static_assert(sizeof(dcm_sensor_version_msg_t) == 21, "msg size");
 static_assert(sizeof(dcm_sensor_version_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
@@ -179,10 +203,12 @@ typedef struct {
     union {
         dcm_cmd_0x04_msg_t cmd_0x04;
         dcm_door_cmd_msg_t door_cmd;
+        dcm_light_cmd_msg_t light_cmd;
+        dcm_light_ack_msg_t light_ack;
         dcm_alert_cmd_msg_t alert_cmd;
         dcm_audio_cmd_msg_t audio_cmd;
         dcm_door_status_req_msg_t door_status_req;
-        dcm_door_status_update_msg_t door_status;
+        dcm_status_update_msg_t door_status;
         dcm_sensor_version_msg_t sensor_version;
         dcm_ops_event_msg_t ops_event;
         dcm_diag_output_cmd_msg_t diag_output_cmd;
@@ -214,7 +240,8 @@ typedef struct {
  *
  * 2. UART2 Binary Protocol (115200 baud, 8-N-1 on pins RB3 TX, RB4 RX):
  *    Fixed 9-byte packet framing:
- *      [0x01 (SOH), 0x06 (LEN), <cmd>, <param>, <d0>, <d1>, <d2>, <d3>, 0x04 (EOT)]
+ *      [0x01 (SOH), 0x06 (LEN), <cmd>, <param>, <d0>, <d1>, <d2>, <d3>, 0x04
+ * (EOT)]
  *
  *    Commands:
  *      - 0x08: Movement / status sync

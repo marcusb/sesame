@@ -45,7 +45,7 @@ static int entropy_mw320_get_entropy_isr(const struct device* dev,
     return entropy_mw320_get_entropy(dev, buffer, length);
 }
 
-static const struct entropy_driver_api entropy_mw320_api = {
+static DEVICE_API(entropy, entropy_mw320_api) = {
     .get_entropy = entropy_mw320_get_entropy,
     .get_entropy_isr = entropy_mw320_get_entropy_isr,
 };

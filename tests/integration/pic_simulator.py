@@ -109,6 +109,8 @@ class PicSimulator:
             state=self.state,
             direction=self.direction,
             pos=self.pos,
+            up_limit=self.up_limit,
+            down_limit=self.down_limit,
             time=0,
         )
         self.send_msg(DcmMsgType.SENSOR_VERSION, version, seq=seq)
@@ -357,7 +359,7 @@ class PicSimulator:
             has_alert = any(
                 f.msg_type == DcmMsgType.ALERT_CMD
                 and isinstance(f.payload, DcmAlertCmd)
-                and f.payload.val == 1
+                and f.payload.val == 2
                 for f in self.received_frames
             )
             return has_audio and has_alert

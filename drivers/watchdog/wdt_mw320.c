@@ -96,7 +96,7 @@ static int wdt_mw320_feed(const struct device* dev, int channel_id) {
     return 0;
 }
 
-static const struct wdt_driver_api wdt_mw320_api = {
+static DEVICE_API(wdt, wdt_mw320_api) = {
     .setup = wdt_mw320_setup,
     .disable = wdt_mw320_disable,
     .install_timeout = wdt_mw320_install_timeout,

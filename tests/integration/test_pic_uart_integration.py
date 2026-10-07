@@ -93,10 +93,10 @@ def test_sesame_initiated_open_and_close(zephyr_app, config, paho_client):
     alert_frame = pic_sim.wait_for_frame(
         DcmMsgType.ALERT_CMD,
         timeout=5.0,
-        predicate=lambda f: isinstance(f.payload, DcmAlertCmd) and f.payload.val == 1,
+        predicate=lambda f: isinstance(f.payload, DcmAlertCmd) and f.payload.val == 2,
     )
     assert alert_frame is not None
-    assert alert_frame.payload.val == 1, "Expected alert light command val=1"
+    assert alert_frame.payload.val == 2, "Expected alert light command val=2"
 
     # 7. Verify PIC simulator receives DcmDoorCmd(val=0, CLOSE) after the 6-second alert window
     print("Waiting for CLOSE command following 6-second alert period...")

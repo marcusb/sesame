@@ -10,6 +10,7 @@
 		pic-uart = &uart1;
 		pic-rst = &pic_rst;
 		pic-wake = &pic_wake;
+		pic-sbl = &pic_sbl;
 	};
 
 	leds {
@@ -61,12 +62,17 @@
 
 		pic_rst: pic_rst {
 			label = "PIC Reset";
-			gpios = <&gpio1 16 GPIO_ACTIVE_LOW>;
+			gpios = <&gpio0 1 GPIO_ACTIVE_HIGH>;
 		};
 
 		pic_wake: pic_wake {
 			label = "PIC Wake";
 			gpios = <&gpio1 17 GPIO_ACTIVE_HIGH>;
+		};
+
+		pic_sbl: pic_sbl {
+			label = "PIC SBL";
+			gpios = <&gpio1 14 GPIO_ACTIVE_HIGH>;
 		};
 	};
 };
@@ -109,15 +115,15 @@
 		gpios = <0 GPIO_ACTIVE_HIGH>;
 		output-low;
 	};
-
-	pic_pin1_hog {
-		gpio-hog;
-		gpios = <1 GPIO_ACTIVE_HIGH>;
-		output-low;
-	};
 };
 
 &gpio1 {
+	pic_pin48_hog {
+		gpio-hog;
+		gpios = <16 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+
 	ota_red_hog {
 		gpio-hog;
 		gpios = <8 GPIO_ACTIVE_LOW>;
@@ -139,12 +145,6 @@
 	wifi_red_hog {
 		gpio-hog;
 		gpios = <11 GPIO_ACTIVE_LOW>;
-		output-low;
-	};
-
-	pic_pin46_hog {
-		gpio-hog;
-		gpios = <14 GPIO_ACTIVE_HIGH>;
 		output-low;
 	};
 };

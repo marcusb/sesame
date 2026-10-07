@@ -2,8 +2,11 @@
 
 #include <zephyr/kernel.h>
 
+#if __has_include("api.pb.h")
 #include "api.pb.h"
 #include "app_config.pb.h"
+#define HAVE_PROTOBUF_MSGS 1
+#endif
 #include "idcm_msg.h"
 
 typedef enum {
@@ -13,6 +16,8 @@ typedef enum {
 
     CTRL_MSG_DOOR_CONTROL,
     CTRL_MSG_DOOR_STATE_UPDATE,
+    CTRL_MSG_LIGHT_CONTROL,
+    CTRL_MSG_LIGHT_STATE_UPDATE,
     CTRL_MSG_WIFI_BUTTON,
     CTRL_MSG_OTA_BUTTON,
     CTRL_MSG_WIFI_CONFIG,
@@ -33,6 +38,14 @@ typedef struct {
 } door_control_msg_t;
 
 typedef struct {
+    bool on;
+} light_control_msg_t;
+
+typedef struct {
+    bool on;
+} light_state_msg_t;
+
+typedef struct {
     door_open_state_t state;
     door_direction_t direction;
     int pos;
@@ -42,12 +55,18 @@ typedef struct {
     ctrl_msg_type_t type;
 
     union {
+#ifdef HAVE_PROTOBUF_MSGS
         FirmwareUpgradeFetchRequest ota_upgrade;
+#endif
         door_control_msg_t door_control;
         door_state_msg_t door_state;
+        light_control_msg_t light_control;
+        light_state_msg_t light_state;
+#ifdef HAVE_PROTOBUF_MSGS
         NetworkConfig network_cfg;
         MqttConfig mqtt_cfg;
         LoggingConfig logging_cfg;
+#endif
     } msg;
 } ctrl_msg_t;
 

@@ -1,0 +1,6 @@
+tests:
+  pic_test.hardware:
+    platform_allow:
+      - genie_idcm_ram/88mw320/cpu0
+    harness: ztest
+    tags: pic hardware

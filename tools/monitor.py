@@ -42,6 +42,11 @@ def main() -> int:
     try:
         while True:
             if deadline is not None and time.time() >= deadline:
+                if args.sentinel:
+                    sys.stderr.write(
+                        f"\nTimeout ({args.timeout}s) waiting for sentinel '{args.sentinel}'\n"
+                    )
+                    return 1
                 return 0
             n = ser.in_waiting
             if n:
@@ -51,6 +56,16 @@ def main() -> int:
                 if args.sentinel:
                     buf = (buf + data)[-4096:]
                     if args.sentinel in buf:
+                        # Allow trailing characters (e.g. newline / result code) to finish
+                        time.sleep(0.1)
+                        n_rest = ser.in_waiting
+                        if n_rest:
+                            rest = ser.read(n_rest).decode("utf-8", errors="replace")
+                            sys.stdout.write(rest)
+                            sys.stdout.flush()
+                            buf = (buf + rest)[-4096:]
+                        if args.sentinel == "TEST_RESULT:":
+                            return 0 if "TEST_RESULT:0" in buf else 1
                         return 0
             else:
                 time.sleep(0.02)

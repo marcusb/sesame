@@ -3,3 +3,7 @@ source "${ZEPHYR_BASE}/share/sysbuild/Kconfig"
 config BUILD_NATIVE_SIM
 	bool "Build native_sim domain for integration testing"
 	default y
+
+config BUILD_PIC_TEST
+	bool "Build pic_test domain for hardware PIC testing"
+	default y

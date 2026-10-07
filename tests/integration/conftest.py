@@ -171,6 +171,8 @@ def zephyr_app(request, mqtt_server):
         cleanup_flash()
         pytest.fail("Firmware failed to boot or output pairing code")
 
+    mqtt_server.clear_messages()
+
     yield {
         "process": process,
         "logs": firmware_logs,

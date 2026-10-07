@@ -12,7 +12,12 @@ This repository employs a 3-tiered testing strategy:
 - Uses the Matter Python Controller bindings to test Matter logic end-to-end.
 - Run with: `./run_tests.sh integration`
 
-## 3. System Tests (`tests/system`)
+## 3. PIC Hardware Tests (`tests/pic_test`)
+- Exercises all MW300-to-PIC communication scenarios on hardware.
+- RAM-loaded into MW320 for fast startup without touching flash partitions.
+- Run with: `./run_tests.sh pic /dev/ttyUSB0`
+
+## 4. System Tests (`tests/system`)
 - Black-box tests executed on real physical hardware.
 - Flashes MCUboot and the Firmware onto the board, connects to the WiFi AP, and provisions credentials.
 - Tests Matter OTA and Picard UART responses over the real WiFi network.

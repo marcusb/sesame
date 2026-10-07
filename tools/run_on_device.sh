@@ -12,11 +12,15 @@ if [[ "${3:-}" == "--no-load" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null && pwd)"
+PORT="${DEVICE_PORT:-/dev/ttyUSB0}"
 
-"$SCRIPT_DIR/monitor.py" --timeout "$TIMEOUT" --until "TEST_RESULT:" &
+"$SCRIPT_DIR/monitor.py" --port "$PORT" --timeout "$TIMEOUT" --until "TEST_RESULT:" &
 MON_PID=$!
 sleep 2
 if [[ $NO_LOAD -eq 0 ]]; then
-    "$SCRIPT_DIR/OpenOCD/ramload.py" "$AXF"
+    if ! "$SCRIPT_DIR/OpenOCD/ramload.py" "$AXF"; then
+        kill "$MON_PID" 2>/dev/null || true
+        exit 1
+    fi
 fi
 wait "$MON_PID"

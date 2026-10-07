@@ -178,47 +178,56 @@ def main():
             )
             sys.exit()
 
-    print("Using OpenOCD interface file", IFC_FILE)
-    sys.stdout.flush()
+    tcl_cmd = f"load {FILE} {entry_point} " if not SEMIHOST else f"sh_load {FILE} {entry_point}"
+    connected = False
+    try:
+        import socket
 
-    if SEMIHOST is False:
-        subprocess.call(
-            [
-                OPENOCD,
-                "-s",
-                SCRIPT_DIR + "/interface",
-                "-f",
-                IFC_FILE,
-                "-s",
-                SCRIPT_DIR,
-                "-f",
-                "openocd.cfg",
-                "-c",
-                "init",
-                "-c",
-                "load " + FILE + " " + str(entry_point) + " ",
-                "-c",
-                "shutdown",
-            ]
-        )
-    else:
-        subprocess.call(
-            [
-                OPENOCD,
-                "-s",
-                SCRIPT_DIR + "/interface",
-                "-f",
-                IFC_FILE,
-                "-s",
-                SCRIPT_DIR,
-                "-f",
-                "openocd.cfg",
-                "-c",
-                "init",
-                "-c",
-                "sh_load " + FILE + " " + str(entry_point),
-            ]
-        )
+        s = socket.create_connection(("127.0.0.1", 6666), timeout=0.5)
+        s.sendall(b"info commands load\x1a")
+        res = s.recv(1024)
+        if b"load" in res:
+            print("Connecting to running OpenOCD instance on port 6666...")
+            s.sendall((tcl_cmd + "\x1a").encode())
+            buf = b""
+            while True:
+                chunk = s.recv(1024)
+                if not chunk:
+                    break
+                buf += chunk
+                if b"\x1a" in buf:
+                    break
+            out = buf.replace(b"\x1a", b"").decode(errors="replace")
+            if out.strip():
+                print(out.strip())
+            connected = True
+        s.close()
+    except (socket.error, OSError):
+        pass
+
+    if not connected:
+        print("Using OpenOCD interface file", IFC_FILE)
+        sys.stdout.flush()
+        cmd = [
+            OPENOCD,
+            "-s",
+            SCRIPT_DIR + "/interface",
+            "-f",
+            IFC_FILE,
+            "-s",
+            SCRIPT_DIR,
+            "-f",
+            "openocd.cfg",
+            "-c",
+            "init",
+            "-c",
+            tcl_cmd,
+        ]
+        if not SEMIHOST:
+            cmd.extend(["-c", "shutdown"])
+        ret = subprocess.call(cmd)
+        if ret != 0:
+            sys.exit(ret)
     sys.stderr.flush()
 
 

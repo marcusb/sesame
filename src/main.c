@@ -170,6 +170,10 @@ int main(void) {
                     sys_reboot(SYS_REBOOT_COLD);
                     break;
                 case CTRL_MSG_DOOR_CONTROL: {
+                    if (pic_is_updating()) {
+                        LOG_WRN("Ignoring door command during PIC update");
+                        break;
+                    }
                     pic_cmd_t pcmd = PIC_CMD_UNKNOWN;
                     switch (msg.msg.door_control.command) {
                         case DOOR_CMD_OPEN:
@@ -208,6 +212,27 @@ int main(void) {
                     publish_state(&msg.msg.door_state);
 #ifdef CONFIG_CHIP
                     matter_update_door_state(&msg.msg.door_state);
+#endif
+                    break;
+                case CTRL_MSG_LIGHT_CONTROL: {
+                    if (pic_is_updating()) {
+                        LOG_WRN("Ignoring light command during PIC update");
+                        break;
+                    }
+                    pic_cmd_t pcmd = msg.msg.light_control.on
+                                         ? PIC_CMD_LIGHT_ON
+                                         : PIC_CMD_LIGHT_OFF;
+                    int ret = k_msgq_put(&pic_queue, &pcmd, K_MSEC(1000));
+                    if (ret != 0) {
+                        LOG_ERR("Failed to enqueue light cmd %d: %d", pcmd,
+                                ret);
+                    }
+                    break;
+                }
+                case CTRL_MSG_LIGHT_STATE_UPDATE:
+                    publish_light_state(msg.msg.light_state.on);
+#ifdef CONFIG_CHIP
+                    matter_update_light_state(msg.msg.light_state.on);
 #endif
                     break;
                 default:

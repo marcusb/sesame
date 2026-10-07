@@ -6,7 +6,7 @@ The firmware can be built on Linux.
 
 On Debian:
 ```sh
-apt install cmake ninja-build python3-protobuf openocd qemu-system-arm python3-venv
+apt install cmake ninja-build python3-protobuf openocd qemu-system-arm python3-venv gputils
 ```
 
 ## Bootstrapping the Project
@@ -87,6 +87,47 @@ This produces the following artefacts:
 * `build/native_sim/zephyr/zephyr.exe`: native_sim build for host tests
 * `build/sesame_test/sesame_test.bin`: on-device test firmware (confirmed)
  
+## Customizing the PIC firmware
+
+The Genie iDCM board uses a PIC16LF15355 MCU for low-level motor relay actuation, limit sensor polling, alert sounder, and status reporting. Sesame communicates with this PIC over UART.
+
+### Obtaining and disassembling the PIC Firmware
+
+The vendor PIC firmware image (v2.1.18P) is bundled inside the vendor Aladdin Connect OTA package `idcm01.uif`. You can unpack and disassemble it:
+
+1. **Unpack the vendor package:**
+   ```sh
+   python3 tools/unpack-ota-img.py idcm01.uif
+   ```
+   This produces `idcm01.uif.dsfw.bin` (which is in Intel HEX format).
+
+2. **Disassemble using `gpdasm` (from `gputils`):**
+   ```sh
+   gpdasm -p p16lf15355 -s -n -o -c idcm01.uif.dsfw.bin > src/pic/sensor.asm
+   ```
+   *Note: `gputils` can be installed on Debian/Ubuntu with `apt install gputils`.*
+
+### Building custom PIC firmware
+
+If `src/pic/sensor.asm` is present in the repository, the build system automatically configures a build target using `gpasm` to compile it into `build/pic/sensor.hex`. If `src/pic/sensor.asm` is absent, PIC compilation is skipped.
+
+1. **Customizing the assembly:**
+   You can customize behavior (e.g. tone durations, alert patterns, reporting intervals) directly in `src/pic/sensor.asm`. The build system automatically generates `build/pic/pic_version.inc` to expose Sesame version defines (`PIC_VER_MAJOR`, `PIC_VER_MINOR`, `PIC_VER_PATCH`, `PIC_VER_COMMIT`) if needed.
+
+2. **Building the PIC hex:**
+   ```sh
+   ninja -C build pic_firmware
+   ```
+   The compiled Intel HEX output is placed in `build/pic/sensor.hex`.
+
+3. **Flashing the custom firmware:**
+   Upload the built hex to the running device via HTTP:
+   ```sh
+   curl -X POST --data-binary @build/pic/sensor.hex \
+     -H "Content-Type: text/plain" \
+     http://sesame/picupdate
+   ```
+
 ## Building Matter Host Tools
 
 For integration testing, you will need the Matter Python bindings. The `run_tests.sh` script
@@ -118,7 +159,13 @@ Run native_sim tests via Pytest (e.g., testing the commissioning sequence using 
 ./run_tests.sh integration
 ```
 
-**3. On-Device System Tests**
+**3. PIC Hardware Tests**
+Run PIC communication tests on hardware via RAM-loaded `pic_test` binary (Ztest):
+```sh
+./run_tests.sh pic /dev/ttyUSB0
+```
+
+**4. On-Device System Tests**
 Run system tests on the actual hardware via Pytest. Builds and flashes the `sesame_test` binary:
 ```sh
 ./run_tests.sh system /dev/ttyUSB0

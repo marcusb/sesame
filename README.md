@@ -108,6 +108,32 @@ echo 'syslog_config: { enabled: true, syslog_host: "log.example.org", syslog_por
   'http://sesame/cfg/logging'
 ```
 
+### PIC Door Controller Firmware Update
+
+Sesame requires an updated firmware for the PIC MCU found on the board. Older firmwares use an incompatible protocol. To upgrade the on-board PIC16 microcontroller from factory firmware over HTTP:
+
+1. Download the Aladdin Connect vendor firmware package `idcm01.uif` from Dropbox:
+   ```sh
+   curl -X POST https://content.dropboxapi.com/2/files/download \
+     --header "Authorization: Bearer ALIWZEPFYJAAAAAAAADk0klpAXQ5iO2TQkZnIkkiSIMhhvlwl_b7lGnRuipmFJPW" \
+     --header "Dropbox-API-Arg: {\"path\":\"/pkg_00060/idcm01.uif\"}" \
+     -o idcm01.uif
+   ```
+
+2. Unpack `idcm01.uif` using `tools/unpack-ota-img.py`:
+   ```sh
+   python3 tools/unpack-ota-img.py idcm01.uif
+   ```
+   This generates `idcm01.uif.dsfw.bin`, which is the Intel HEX firmware image PIC16 door controller.
+
+3. Upload the firmware to Sesame's `/picupdate` endpoint:
+   ```sh
+   curl -X POST --data-binary @idcm01.uif.dsfw.bin \
+     -H "Content-Type: text/plain" \
+     http://sesame/picupdate
+   ```
+   Sesame will put the PIC into its serial bootloader, flash the updated firmware, and reset the PIC.
+
 ### Matter pairing
 
 Sesame supports Matter over Wi-Fi, allowing integration with Apple Home, Google Home, Home Assistant, and other Matter ecosystems.

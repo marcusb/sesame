@@ -43,7 +43,7 @@ The boot loader chain:
 **Debian/Ubuntu:**
 
 ```sh
-apt install cmake ninja-build protobuf-compiler python3-protobuf openocd qemu-system-arm python3-venv
+apt install cmake ninja-build protobuf-compiler python3-protobuf openocd qemu-system-arm python3-venv gputils
 ```
 
 Additionally, you will need the [Zephyr SDK](https://github.com/zephyrproject-rtos/sdk-ng/releases) installed (e.g. in `~/zephyr-sdk`).
@@ -230,6 +230,8 @@ Build and run the tests:
 ./run_tests.sh unit
 # integration tests (native_sim host)
 ./run_tests.sh integration
+# pic tests (RAM-loaded on-device pic_test binary)
+./run_tests.sh pic /dev/ttyUSB0
 # system tests (on-device sesame_test binary)
 ./run_tests.sh system /dev/ttyUSB0
 ```

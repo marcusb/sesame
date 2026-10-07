@@ -321,3 +321,12 @@ bool matter_commission_open(uint32_t timeout_s) {
                 chip::CommissioningWindowAdvertisement::kDnssdOnly);
     return err == CHIP_NO_ERROR;
 }
+
+extern "C" void matter_update_light_state(bool on) {
+    (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
+        [](intptr_t arg) {
+            bool val = static_cast<bool>(arg);
+            LOG_INF("Matter: light state updated to %s", val ? "ON" : "OFF");
+        },
+        static_cast<intptr_t>(on));
+}

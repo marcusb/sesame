@@ -69,7 +69,7 @@ static void flash_mw320_pages_layout(const struct device *dev,
 }
 #endif
 
-static const struct flash_driver_api flash_mw320_api = {
+static DEVICE_API(flash, flash_mw320_api) = {
     .read = flash_mw320_read,
     .write = flash_mw320_write,
     .erase = flash_mw320_erase,

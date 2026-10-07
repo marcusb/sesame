@@ -13,6 +13,13 @@ set(mcuboot_DTS_ROOT ${APP_DIR} CACHE PATH "mcuboot dts root")
 set(mcuboot_ZEPHYR_EXTRA_MODULES "${APP_DIR}/modules/mw320_sdk;${APP_DIR}/mcuboot_module" CACHE STRING "mcuboot modules" FORCE)
 set(mcuboot_MW320_SDK_DIR ${APP_DIR}/mw320_sdk CACHE PATH "mcuboot mw320 sdk")
 
+# Forward roots and modules to pic_test
+set(pic_test_BOARD_ROOT ${APP_DIR} CACHE PATH "pic_test board root")
+set(pic_test_SOC_ROOT ${APP_DIR} CACHE PATH "pic_test soc root")
+set(pic_test_DTS_ROOT ${APP_DIR} CACHE PATH "pic_test dts root")
+set(pic_test_ZEPHYR_EXTRA_MODULES "${APP_DIR}/modules/mw320_sdk" CACHE STRING "pic_test modules" FORCE)
+set(pic_test_MW320_SDK_DIR ${APP_DIR}/mw320_sdk CACHE PATH "pic_test mw320 sdk")
+
 find_package(Sysbuild REQUIRED HINTS $ENV{ZEPHYR_BASE})
 
 project(sysbuild LANGUAGES)

@@ -1,4 +1,3 @@
-#define _POSIX_C_SOURCE 200809L
 #include "httpd.h"
 
 #include <stdio.h>
@@ -21,6 +20,8 @@
 #include "ota.h"
 #endif
 #include "log_ring_buf.h"
+#include "pic_uart.h"
+#include "pic_updater.h"
 #include "ws_logs.h"
 
 LOG_MODULE_REGISTER(httpd, LOG_LEVEL_DBG);
@@ -203,12 +204,33 @@ static int promote_handler(struct http_client_ctx* client,
     return 0;
 }
 
+static const char s_pic_updating_err[] =
+    "{\"error\":\"PIC update in progress\"}\n";
+
+static bool check_pic_updating(struct http_response_ctx* res) {
+    if (pic_is_updating()) {
+        static const struct http_header headers[] = {
+            {.name = "Content-Type", .value = "application/json"}};
+        res->status = HTTP_503_SERVICE_UNAVAILABLE;
+        res->headers = headers;
+        res->header_count = 1;
+        res->body = (const uint8_t*)s_pic_updating_err;
+        res->body_len = sizeof(s_pic_updating_err) - 1;
+        res->final_chunk = true;
+        return true;
+    }
+    return false;
+}
+
 static int open_handler(struct http_client_ctx* client,
                         enum http_transaction_status status,
                         const struct http_request_ctx* req,
                         struct http_response_ctx* res, void* user_data) {
     if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
         LOG_INF("open_handler called!");
+        if (check_pic_updating(res)) {
+            return 0;
+        }
         ctrl_msg_t msg = {.type = CTRL_MSG_DOOR_CONTROL,
                           .msg.door_control = {DOOR_CMD_OPEN}};
         int ret = k_msgq_put(&ctrl_queue, &msg, K_MSEC(1000));
@@ -231,6 +253,9 @@ static int close_handler(struct http_client_ctx* client,
                          struct http_response_ctx* res, void* user_data) {
     if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
         LOG_INF("close_handler called!");
+        if (check_pic_updating(res)) {
+            return 0;
+        }
         ctrl_msg_t msg = {.type = CTRL_MSG_DOOR_CONTROL,
                           .msg.door_control = {DOOR_CMD_CLOSE}};
         int ret = k_msgq_put(&ctrl_queue, &msg, K_MSEC(1000));
@@ -242,6 +267,171 @@ static int close_handler(struct http_client_ctx* client,
         }
         res->body_len = 0;
         res->body = NULL;
+        res->final_chunk = true;
+    }
+    return 0;
+}
+
+static int light_handler(struct http_client_ctx* client,
+                         enum http_transaction_status status,
+                         const struct http_request_ctx* req,
+                         struct http_response_ctx* res, void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        if (check_pic_updating(res)) {
+            return 0;
+        }
+        if (client->method == HTTP_GET) {
+            bool on = pic_get_light();
+            static char buf[32];
+            int len = snprintf(buf, sizeof(buf), "{\"light\":%s}\n",
+                               on ? "true" : "false");
+            static const struct http_header headers[] = {
+                {.name = "Content-Type", .value = "application/json"}};
+            res->status = HTTP_200_OK;
+            res->headers = headers;
+            res->header_count = 1;
+            res->body = (const uint8_t*)buf;
+            res->body_len = len;
+            res->final_chunk = true;
+        } else if (client->method == HTTP_POST || client->method == HTTP_PUT) {
+            bool turn_on = false;
+            if (req->data && req->data_len > 0) {
+                char body[64] = {0};
+                size_t cpy_len = req->data_len < sizeof(body) - 1
+                                     ? req->data_len
+                                     : sizeof(body) - 1;
+                memcpy(body, req->data, cpy_len);
+                body[cpy_len] = '\0';
+                if (strstr(body, "true") || strstr(body, "1") ||
+                    strstr(body, "\"on\"") || strstr(body, "ON") ||
+                    strstr(body, ":true")) {
+                    turn_on = true;
+                }
+            }
+            LOG_INF("HTTP light control: %s", turn_on ? "ON" : "OFF");
+            ctrl_msg_t msg = {.type = CTRL_MSG_LIGHT_CONTROL,
+                              .msg.light_control = {.on = turn_on}};
+            int ret = k_msgq_put(&ctrl_queue, &msg, K_MSEC(1000));
+            static char buf[32];
+            int len = snprintf(buf, sizeof(buf), "{\"light\":%s}\n",
+                               turn_on ? "true" : "false");
+            static const struct http_header headers[] = {
+                {.name = "Content-Type", .value = "application/json"}};
+            res->status =
+                (ret == 0) ? HTTP_200_OK : HTTP_500_INTERNAL_SERVER_ERROR;
+            res->headers = headers;
+            res->header_count = 1;
+            res->body = (const uint8_t*)buf;
+            res->body_len = len;
+            res->final_chunk = true;
+        }
+    }
+    return 0;
+}
+
+static bool s_picupdate_in_progress;
+static bool s_picupdate_failed;
+static struct http_client_ctx* s_picupdate_client;
+static uint32_t s_picupdate_cooldown_until;
+
+static int picupdate_handler(struct http_client_ctx* client,
+                             enum http_transaction_status status,
+                             const struct http_request_ctx* req,
+                             struct http_response_ctx* res, void* user_data) {
+    if (status == HTTP_SERVER_TRANSACTION_ABORTED) {
+        if (s_picupdate_in_progress && client == s_picupdate_client) {
+            LOG_WRN("PIC update connection aborted by client");
+            pic_updater_abort();
+            s_picupdate_in_progress = false;
+            s_picupdate_client = NULL;
+            s_picupdate_cooldown_until = k_uptime_get_32() + 15000;
+        }
+        return 0;
+    }
+
+    if (status == HTTP_SERVER_TRANSACTION_COMPLETE) {
+        return 0;
+    }
+
+    uint32_t now = k_uptime_get_32();
+    if (now < s_picupdate_cooldown_until) {
+        if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+            static const struct http_header headers[] = {
+                {.name = "Content-Type", .value = "application/json"}};
+            static const char busy_body[] =
+                "{\"status\":\"error\",\"message\":\"PIC update cooldown in "
+                "progress\"}\n";
+            res->headers = headers;
+            res->header_count = 1;
+            res->status = HTTP_503_SERVICE_UNAVAILABLE;
+            res->body = (const uint8_t*)busy_body;
+            res->body_len = sizeof(busy_body) - 1;
+            res->final_chunk = true;
+        }
+        return 0;
+    }
+
+    if (s_picupdate_in_progress && client != s_picupdate_client) {
+        if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+            static const struct http_header headers[] = {
+                {.name = "Content-Type", .value = "application/json"}};
+            static const char busy_body[] =
+                "{\"status\":\"error\",\"message\":\"PIC update already in "
+                "progress\"}\n";
+            res->headers = headers;
+            res->header_count = 1;
+            res->status = HTTP_503_SERVICE_UNAVAILABLE;
+            res->body = (const uint8_t*)busy_body;
+            res->body_len = sizeof(busy_body) - 1;
+            res->final_chunk = true;
+        }
+        return 0;
+    }
+
+    if (!s_picupdate_in_progress) {
+        s_picupdate_in_progress = true;
+        s_picupdate_failed = false;
+        s_picupdate_client = client;
+        pic_updater_reset();
+    }
+
+    if (!s_picupdate_failed && req->data && req->data_len > 0) {
+        int ret = pic_updater_process_chunk(req->data, req->data_len);
+        if (ret != 0) {
+            LOG_ERR("pic_updater_process_chunk failed: %d", ret);
+            s_picupdate_failed = true;
+        }
+    }
+
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        int ret = 0;
+        if (!s_picupdate_failed) {
+            ret = pic_updater_complete();
+        } else {
+            pic_updater_abort();
+            ret = -1;
+        }
+        s_picupdate_in_progress = false;
+        s_picupdate_client = NULL;
+
+        static const struct http_header headers[] = {
+            {.name = "Content-Type", .value = "application/json"}};
+        res->headers = headers;
+        res->header_count = 1;
+
+        if (ret == 0 && !s_picupdate_failed) {
+            s_picupdate_cooldown_until = k_uptime_get_32() + 5000;
+            static const char ok_body[] = "{\"status\":\"success\"}\n";
+            res->status = HTTP_200_OK;
+            res->body = (const uint8_t*)ok_body;
+            res->body_len = sizeof(ok_body) - 1;
+        } else {
+            s_picupdate_cooldown_until = k_uptime_get_32() + 15000;
+            static const char err_body[] = "{\"status\":\"error\"}\n";
+            res->status = HTTP_500_INTERNAL_SERVER_ERROR;
+            res->body = (const uint8_t*)err_body;
+            res->body_len = sizeof(err_body) - 1;
+        }
         res->final_chunk = true;
     }
     return 0;
@@ -452,6 +642,21 @@ static struct http_resource_detail_dynamic logs_detail = {
     .user_data = NULL,
 };
 
+static struct http_resource_detail_dynamic light_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods =
+                   BIT(HTTP_GET) | BIT(HTTP_POST) | BIT(HTTP_PUT)},
+    .cb = light_handler,
+    .user_data = NULL,
+};
+
+static struct http_resource_detail_dynamic picupdate_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
+    .cb = picupdate_handler,
+    .user_data = NULL,
+};
+
 static struct http_resource_detail_static logs_page_detail = {
     .common =
         {
@@ -515,6 +720,9 @@ HTTP_RESOURCE_DEFINE(promote_resource, httpd_service, "/promote",
                      &promote_detail);
 HTTP_RESOURCE_DEFINE(open_resource, httpd_service, "/open", &open_detail);
 HTTP_RESOURCE_DEFINE(close_resource, httpd_service, "/close", &close_detail);
+HTTP_RESOURCE_DEFINE(light_resource, httpd_service, "/light", &light_detail);
+HTTP_RESOURCE_DEFINE(picupdate_resource, httpd_service, "/picupdate",
+                     &picupdate_detail);
 HTTP_RESOURCE_DEFINE(time_resource, httpd_service, "/time", &time_detail);
 HTTP_RESOURCE_DEFINE(version_resource, httpd_service, "/version",
                      &version_detail);

@@ -78,6 +78,22 @@ run_system() {
     python -m pytest tests/system/ --device-port="$port" -v -s "$@"
 }
 
+run_pic() {
+    local port="${1:-/dev/ttyUSB0}"
+    shift || true
+    echo "Building pic_test target..."
+    (
+        source third_party/connectedhomeip/scripts/activate.sh
+        if [ ! -f build/build.ninja ]; then
+            west build --sysbuild -d build .
+        else
+            ninja -C build pic_test
+        fi
+    )
+    echo "Running PIC Tests on hardware ($port)..."
+    DEVICE_PORT="$port" ./tools/run_on_device.sh build/pic_test/zephyr/zephyr.elf 30 "$@"
+}
+
 case "$COMMAND" in
     unit)
         run_unit
@@ -85,23 +101,29 @@ case "$COMMAND" in
     integration)
         run_integration
         ;;
+    pic)
+        PORT=${2:-"/dev/ttyUSB0"}
+        run_pic "$PORT" "${@:3}"
+        ;;
     system)
         PORT=${2:-"/dev/ttyUSB0"}
         run_system "$PORT" "${@:3}"
         ;;
     all)
-        echo "=== Running all test stages (unit -> integration -> system) ==="
+        echo "=== Running all test stages (unit -> integration -> pic -> system) ==="
         PORT=${2:-"/dev/ttyUSB0"}
         echo "--- Stage 1: Unit Tests ---"
         run_unit
         echo "--- Stage 2: Integration Tests ---"
         run_integration
-        echo "--- Stage 3: System Tests ---"
+        echo "--- Stage 3: PIC Tests ---"
+        run_pic "$PORT"
+        echo "--- Stage 4: System Tests ---"
         run_system "$PORT" "${@:3}"
         echo "=== All test stages passed! ==="
         ;;
     *)
-        echo "Usage: $0 {unit|integration|system|all} [port]"
+        echo "Usage: $0 {unit|integration|pic|system|all} [port]"
         exit 1
         ;;
 esac

@@ -12,8 +12,10 @@ class DcmMsgType(enum.IntEnum):
     DOOR_CMD = 0x10
     ALERT_CMD = 0x11
     AUDIO_CMD = 0x12
+    STATUS_UPDATE = 0x14
     DOOR_STATUS_REQUEST = 0x15
-    DOOR_STATUS_UPDATE = 0x16
+    STATUS_UPDATE_EXT = 0x16
+    DOOR_STATUS_UPDATE = 0x16  # backward-compatible alias
     OPS_EVENT = 0x17
     DOOR_ACK = 0x90
     ALERT_ACK = 0x91
@@ -25,13 +27,13 @@ class DoorOpenState(enum.IntEnum):
     CLOSED = 0
     OPEN = 1
     UNKNOWN = 2
-    FTM = 3
+    FTM = 4
 
 
 class DoorDirection(enum.IntEnum):
-    DOWN = 0
+    STOPPED = 0
     UP = 1
-    STOPPED = 2
+    DOWN = 2
     UNKNOWN = 3
 
 
@@ -46,12 +48,34 @@ class OpsEvent(enum.IntEnum):
     MOTOR_STOP = 9
 
 
-def calc_chk_sum(data: bytes) -> int:
-    """Calculates XOR checksum over bytes (excluding leading 0x55 header)."""
+def calc_chk_sum_crc8(data: bytes) -> int:
+    """Calculates PIC DCM CRC-8 checksum over bytes."""
+    crc = 0xFF
+    for b in data:
+        crc ^= b
+        for _ in range(8):
+            if crc & 1:
+                crc = (crc >> 1) ^ 0xB2
+            else:
+                crc = crc >> 1
+    return crc ^ 0xFF
+
+
+def calc_chk_sum_xor(data: bytes) -> int:
+    """Calculates PIC DCM XOR checksum over bytes (excluding header)."""
     res = 0
     for b in data:
         res ^= b
     return res
+
+
+def calc_chk_sum(data: bytes, use_crc8: bool = False) -> int:
+    """Calculates PIC DCM checksum over frame data (either CRC-8 or XOR)."""
+    if use_crc8:
+        return calc_chk_sum_crc8(data)
+    if data and data[0] == DCM_HEADER_BYTE:
+        return calc_chk_sum_xor(data[1:])
+    return calc_chk_sum_xor(data)
 
 
 @dataclass
@@ -83,32 +107,32 @@ class DcmDoorCmd:
 
 @dataclass
 class DcmAlertCmd:
-    val: int = 1
-    duration_s: int = 5
     reserved: int = 0
+    val: int = 2
+    reserved2: int = 0
 
     def pack(self) -> bytes:
-        return struct.pack("<BBB", self.val, self.duration_s, self.reserved)
+        return struct.pack("<BBB", self.reserved, self.val, self.reserved2)
 
     @classmethod
     def unpack(cls, data: bytes) -> "DcmAlertCmd":
-        val, dur, res = struct.unpack("<BBB", data[:3])
-        return cls(val=val, duration_s=dur, reserved=res)
+        res1, val, res2 = struct.unpack("<BBB", data[:3])
+        return cls(reserved=res1, val=val, reserved2=res2)
 
 
 @dataclass
 class DcmAudioCmd:
-    val: int = 2
-    duration_s: int = 5
     reserved: int = 0
+    val: int = 2
+    reserved2: int = 0
 
     def pack(self) -> bytes:
-        return struct.pack("<BBB", self.val, self.duration_s, self.reserved)
+        return struct.pack("<BBB", self.reserved, self.val, self.reserved2)
 
     @classmethod
     def unpack(cls, data: bytes) -> "DcmAudioCmd":
-        val, dur, res = struct.unpack("<BBB", data[:3])
-        return cls(val=val, duration_s=dur, reserved=res)
+        res1, val, res2 = struct.unpack("<BBB", data[:3])
+        return cls(reserved=res1, val=val, reserved2=res2)
 
 
 @dataclass
@@ -182,73 +206,65 @@ class DcmDoorStatusUpdate:
 
 @dataclass
 class DcmSensorVersion:
-    reserved: int = 0
+    time: int = 0
     state: DoorOpenState = DoorOpenState.CLOSED
     direction: DoorDirection = DoorDirection.STOPPED
-    model_code: int = 4
-    reserved2: bytes = b"\x00\x00"
     pos: int = 32768
-    time: int = 0
+    up_limit: int = 0
+    down_limit: int = 0
     hw_caps: int = 8
-    reserved3: int = 0
-    sensor_restart_reason: int = 9
     major: int = 1
     minor: int = 0
     patch: int = 7
     suffix: bytes = b"P"
+    extra: bytes = b"\x00" * 4
 
     def pack(self) -> bytes:
         return struct.pack(
-            "<BBBB2sHIBBBBBBc",
-            self.reserved,
+            "<IBBHHHBBBBc4s",
+            self.time,
             int(self.state),
             int(self.direction),
-            self.model_code,
-            self.reserved2[:2],
             self.pos,
-            self.time,
+            self.up_limit,
+            self.down_limit,
             self.hw_caps,
-            self.reserved3,
-            self.sensor_restart_reason,
             self.major,
             self.minor,
             self.patch,
             self.suffix[:1],
+            self.extra[:4],
         )
 
     @classmethod
     def unpack(cls, data: bytes) -> "DcmSensorVersion":
         (
-            res,
+            t,
             st,
             d,
-            model,
-            res2,
             pos,
-            t,
+            up,
+            down,
             caps,
-            res3,
-            reason,
             maj,
             min_,
             pat,
             suf,
-        ) = struct.unpack("<BBBB2sHIBBBBBBc", data[:19])
+            extra,
+        ) = struct.unpack("<IBBHHHBBBBc4s", data[:21])
         return cls(
-            reserved=res,
+            time=t,
             state=DoorOpenState(st),
             direction=DoorDirection(d),
-            model_code=model,
-            reserved2=res2,
             pos=pos,
-            time=t,
+            up_limit=up,
+            down_limit=down,
             hw_caps=caps,
-            reserved3=res3,
-            sensor_restart_reason=reason,
             major=maj,
             minor=min_,
             patch=pat,
             suffix=suf,
+            extra=extra,
         )
 
 
@@ -355,6 +371,8 @@ PAYLOAD_TYPE_MAP: dict[int, Any] = {
     DcmMsgType.ALERT_CMD: DcmAlertCmd,
     DcmMsgType.AUDIO_CMD: DcmAudioCmd,
     DcmMsgType.DOOR_STATUS_REQUEST: DcmDoorStatusReq,
+    DcmMsgType.STATUS_UPDATE: DcmDoorStatusUpdate,
+    DcmMsgType.STATUS_UPDATE_EXT: DcmDoorStatusUpdate,
     DcmMsgType.DOOR_STATUS_UPDATE: DcmDoorStatusUpdate,
     DcmMsgType.OPS_EVENT: DcmOpsEvent,
     DcmMsgType.DOOR_ACK: DcmDoorAck,
@@ -371,7 +389,7 @@ class DcmFrame:
     payload: PayloadType
     header: int = DCM_HEADER_BYTE
 
-    def to_bytes(self) -> bytes:
+    def to_bytes(self, use_crc8: bool = True) -> bytes:
         payload_bytes = (
             self.payload.pack()
             if hasattr(self.payload, "pack")
@@ -379,7 +397,7 @@ class DcmFrame:
         )
         length = len(payload_bytes)
         hdr = struct.pack("<BBBB", self.header, length, self.seq, int(self.msg_type))
-        chksum = calc_chk_sum(hdr[1:] + payload_bytes)
+        chksum = calc_chk_sum_crc8((hdr + payload_bytes)[: length + 3])
         return hdr + payload_bytes + bytes([chksum])
 
     @classmethod
@@ -389,16 +407,24 @@ class DcmFrame:
         header, length, seq, raw_type = struct.unpack("<BBBB", data[:4])
         if header != DCM_HEADER_BYTE:
             raise ValueError(f"Invalid header byte: {hex(header)}")
-        if len(data) < length + 5:
+
+        # Check hardware PIC RX format (len includes type, frame length is length + 4)
+        if len(data) == length + 4:
+            payload_data = data[4 : 3 + length]
+            expected_chk = data[3 + length]
+            crc_chk = calc_chk_sum_crc8(data[: length + 3])
+        elif len(data) >= length + 5:
+            payload_data = data[4 : 4 + length]
+            expected_chk = data[4 + length]
+            crc_chk = calc_chk_sum_crc8(data[: length + 3])
+        else:
             raise ValueError(
-                f"Incomplete frame: expected {length + 5}, got {len(data)}"
+                f"Incomplete frame: expected at least {length + 4}, got {len(data)}"
             )
-        payload_data = data[4 : 4 + length]
-        expected_chk = data[4 + length]
-        computed_chk = calc_chk_sum(data[1 : 4 + length])
-        if computed_chk != expected_chk:
+
+        if expected_chk != crc_chk:
             raise ValueError(
-                f"Checksum mismatch: computed {hex(computed_chk)} != expected {hex(expected_chk)}"
+                f"Checksum mismatch: expected {hex(expected_chk)}, CRC8: {hex(crc_chk)}"
             )
 
         try:
@@ -427,16 +453,26 @@ class DcmFrame:
             return None
 
         length = buf[1]
-        frame_len = length + 5
-        if len(buf) < frame_len:
+
+        # 1. Try hardware PIC format (len includes type byte, wire size = length + 4)
+        if len(buf) >= length + 4:
+            frame_data = bytes(buf[: length + 4])
+            crc_chk = calc_chk_sum_crc8(frame_data[: length + 3])
+            if frame_data[-1] == crc_chk:
+                del buf[: length + 4]
+                return cls.from_bytes(frame_data)
+
+        # 2. Try legacy/sim format (wire size = length + 5)
+        if len(buf) >= length + 5:
+            frame_data = bytes(buf[: length + 5])
+            crc_chk = calc_chk_sum_crc8(frame_data[: length + 3])
+            if frame_data[-1] == crc_chk:
+                del buf[: length + 5]
+                return cls.from_bytes(frame_data)
+
+        if len(buf) < length + 5:
             return None
 
-        frame_data = bytes(buf[:frame_len])
-        computed_chk = calc_chk_sum(frame_data[1:-1])
-        if computed_chk != frame_data[-1]:
-            # Corrupted frame, skip sync byte and continue searching
-            buf.pop(0)
-            return cls.parse_stream(buf)
-
-        del buf[:frame_len]
-        return cls.from_bytes(frame_data)
+        # Neither matched and buffer is long enough, skip sync byte
+        buf.pop(0)
+        return cls.parse_stream(buf)

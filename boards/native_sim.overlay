@@ -3,17 +3,22 @@
 		pic-uart = &uart1;
 		pic-rst = &pic_rst;
 		pic-wake = &pic_wake;
+		pic-sbl = &pic_sbl;
 	};
 
 	buttons {
 		compatible = "gpio-keys";
 		pic_rst: pic_rst {
-			gpios = <&gpio0 1 GPIO_ACTIVE_LOW>;
+			gpios = <&gpio0 1 GPIO_ACTIVE_HIGH>;
 			label = "PIC Reset";
 		};
 		pic_wake: pic_wake {
 			gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
 			label = "PIC Wake";
+		};
+		pic_sbl: pic_sbl {
+			gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+			label = "PIC SBL";
 		};
 	};
 };

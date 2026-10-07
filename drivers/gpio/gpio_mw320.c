@@ -127,7 +127,7 @@ static int gpio_mw320_manage_callback(const struct device *dev,
     return gpio_manage_callback(&data->callbacks, callback, set);
 }
 
-static const struct gpio_driver_api gpio_mw320_driver_api = {
+static DEVICE_API(gpio, gpio_mw320_driver_api) = {
     .pin_configure = gpio_mw320_configure,
     .port_get_raw = gpio_mw320_port_get_raw,
     .port_set_masked_raw = gpio_mw320_port_set_masked_raw,

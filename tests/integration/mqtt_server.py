@@ -198,6 +198,10 @@ class EmbeddedMqttServer:
     def add_message_callback(self, cb: Callable[[str, bytes], None]):
         self._message_callbacks.append(cb)
 
+    def clear_messages(self):
+        with self._new_msg_cond:
+            self.messages.clear()
+
     def wait_for_message(
         self,
         topic: str,

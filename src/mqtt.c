@@ -1,8 +1,8 @@
-#define _POSIX_C_SOURCE 200809L
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -20,6 +20,7 @@ LOG_MODULE_REGISTER(mqtt, LOG_LEVEL_DBG);
 #include "config_manager.h"
 #include "controller.h"
 #include "mqtt.h"
+#include "pic_uart.h"
 
 static atomic_t mqtt_stopped = ATOMIC_INIT(0);
 
@@ -44,6 +45,8 @@ static bool connected = false;
 static char state_topic[64];
 static char lwt_topic[64];
 static char cmd_topic[64];
+static char light_cmd_topic[64];
+static char light_state_topic[64];
 
 #define LWT_ONLINE "Online"
 #define LWT_OFFLINE "Offline"
@@ -152,6 +155,29 @@ static void mqtt_evt_handler(struct mqtt_client* const client,
                         k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
                     }
                 }
+            } else if (pub->message.topic.topic.size ==
+                           strlen(light_cmd_topic) &&
+                       strncmp(pub->message.topic.topic.utf8, light_cmd_topic,
+                               strlen(light_cmd_topic)) == 0) {
+                char payload[16] = {0};
+                size_t len = pub->message.payload.len;
+                if (len >= sizeof(payload)) {
+                    len = sizeof(payload) - 1;
+                }
+                if (mqtt_read_publish_payload(client, payload, len) >= 0) {
+                    payload[len] = '\0';
+                    bool turn_on = false;
+                    if (strcasecmp(payload, "1") == 0 ||
+                        strcasecmp(payload, "ON") == 0 ||
+                        strcasecmp(payload, "true") == 0) {
+                        turn_on = true;
+                    }
+                    LOG_INF("MQTT light command: %s -> %s", payload,
+                            turn_on ? "ON" : "OFF");
+                    ctrl_msg_t msg = {.type = CTRL_MSG_LIGHT_CONTROL,
+                                      .msg.light_control = {.on = turn_on}};
+                    k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+                }
             } else {
                 // Discard payload
                 mqtt_read_publish_payload(client, NULL,
@@ -166,11 +192,15 @@ static void mqtt_evt_handler(struct mqtt_client* const client,
 }
 
 static int subscribe(void) {
-    struct mqtt_topic topic = {
-        .topic = {.utf8 = (uint8_t*)cmd_topic, .size = strlen(cmd_topic)},
-        .qos = MQTT_QOS_0_AT_MOST_ONCE};
+    struct mqtt_topic topics[2] = {
+        {.topic = {.utf8 = (uint8_t*)cmd_topic, .size = strlen(cmd_topic)},
+         .qos = MQTT_QOS_0_AT_MOST_ONCE},
+        {.topic = {.utf8 = (uint8_t*)light_cmd_topic,
+                   .size = strlen(light_cmd_topic)},
+         .qos = MQTT_QOS_0_AT_MOST_ONCE},
+    };
     const struct mqtt_subscription_list sub = {
-        .list = &topic, .list_count = 1, .message_id = sys_rand32_get()};
+        .list = topics, .list_count = 2, .message_id = sys_rand32_get()};
     return mqtt_subscribe(&client_ctx, &sub);
 }
 
@@ -284,6 +314,10 @@ void mqtt_task(void* p1, void* p2, void* p3) {
         snprintf(state_topic, sizeof(state_topic), "%s/state", prefix);
         snprintf(lwt_topic, sizeof(lwt_topic), "%s/availability", prefix);
         snprintf(cmd_topic, sizeof(cmd_topic), "%s/cmd", prefix);
+        snprintf(light_cmd_topic, sizeof(light_cmd_topic), "%s/light/cmd",
+                 prefix);
+        snprintf(light_state_topic, sizeof(light_state_topic), "%s/light/state",
+                 prefix);
 
         network_wait_for_up();
 
@@ -343,6 +377,12 @@ void mqtt_task(void* p1, void* p2, void* p3) {
     }
 }
 
+void publish_light_state(bool on) {
+    const char* state_str = on ? "ON" : "OFF";
+    LOG_INF("Publishing to %s: %s", light_state_topic, state_str);
+    publish(light_state_topic, state_str, true);
+}
+
 void publish_state(const door_state_msg_t* msg) {
     char* state;
     switch (msg->state) {
@@ -370,8 +410,10 @@ void publish_state(const door_state_msg_t* msg) {
             dir = "UNDEF";
     }
 
+    bool light_on = pic_get_light();
     static const char fmt[] =
         "{\"ver\":\"%s\",\"contact\":\"%s\",\"dir\":\"%s\",\"pos\":%d,"
+        "\"light\":%s,"
         "\"uptime\":\"%uT%s\","
         "\"uptime_sec\":%u,\"heap_free_bytes\":%u}";
     unsigned uptime_s = k_uptime_get_32() / 1000;
@@ -391,7 +433,8 @@ void publish_state(const door_state_msg_t* msg) {
     }
 
     snprintf(payload, sizeof(payload), fmt, SESAME_VERSION_STR, state, dir,
-             msg->pos, days, tm_hms, uptime_s, (unsigned int)free_heap);
+             msg->pos, light_on ? "true" : "false", days, tm_hms, uptime_s,
+             (unsigned int)free_heap);
     LOG_INF("Publishing to %s: %s", state_topic, payload);
     publish(state_topic, payload, false);
 }
