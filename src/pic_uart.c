@@ -247,6 +247,18 @@ static void start_uart_read() {
     gpio_pin_set_dt(&pic_wake, 1);
 }
 
+static void log_packet(const char* prefix, const uint8_t* data, size_t len) {
+    char buf[128];
+    size_t off = 0;
+    for (size_t i = 0; i < len && off + 3 < sizeof(buf); i++) {
+        off += snprintf(buf + off, sizeof(buf) - off, "%02x ", data[i]);
+    }
+    if (off > 0 && buf[off - 1] == ' ') {
+        buf[off - 1] = '\0';
+    }
+    LOG_DBG("%s: %s", prefix, buf);
+}
+
 static void process_serial_data() {
     uint8_t c;
     while (k_msgq_get(&uart_rx_q, &c, K_NO_WAIT) == 0) {
@@ -275,7 +287,7 @@ static void process_serial_data() {
         } else if (read_state == READ_BODY) {
             if (rx_idx == expected_len) {
                 const dcm_msg_t* msg = (const dcm_msg_t*)rx_buf;
-                LOG_HEXDUMP_DBG(rx_buf, expected_len, "RX:");
+                log_packet("RX", rx_buf, expected_len);
                 uint8_t rx_chksum = rx_buf[msg->len + 4];
                 uint8_t crc = dcm_calc_crc8(rx_buf, msg->len + 3);
 
@@ -284,8 +296,7 @@ static void process_serial_data() {
                 } else {
                     LOG_WRN("CRC8 mismatch (got 0x%02x, expected 0x%02x)",
                             rx_chksum, crc);
-                    LOG_HEXDUMP_DBG(rx_buf, expected_len,
-                                    "invalid chksum packet:");
+                    log_packet("invalid chksum packet", rx_buf, expected_len);
                 }
                 start_uart_read();
             }
@@ -313,7 +324,12 @@ static void uart_cb(const struct device* dev, void* user_data) {
     }
 }
 
+static bool s_uart_initialized = false;
+
 static int init_uart(void) {
+    if (s_uart_initialized) {
+        return 0;
+    }
     if (!device_is_ready(uart_dev)) {
         LOG_ERR("UART device not ready");
         return -1;
@@ -353,15 +369,18 @@ static int init_uart(void) {
     k_msleep(5);
 
     uart_irq_rx_enable(uart_dev);
+    s_uart_initialized = true;
 
     return 0;
 }
+
+void pic_uart_init(void) { init_uart(); }
 
 static void send_msg(dcm_msg_t* msg) {
     int frame_len = msg->len + 4;
     uint8_t* p = (uint8_t*)msg;
     p[msg->len + 3] = dcm_calc_crc8(p, msg->len + 3);
-    LOG_HEXDUMP_DBG(p, frame_len, "TX:");
+    log_packet("TX", p, frame_len);
     for (int i = 0; i < frame_len; i++) {
         uart_poll_out(uart_dev, p[i]);
     }
@@ -534,7 +553,9 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
     pic_cmd_t cmd;
 
     self_test_done = true;
-    send_door_status_req();
+    if (!sbl_active) {
+        send_door_status_req();
+    }
 
     uint32_t door_poll_tstamp = k_uptime_get_32() - DOOR_POLL_TICKS + 500;
     for (;;) {
@@ -652,6 +673,7 @@ bool pic_is_updating(void) { return sbl_active; }
 
 int pic_enter_sbl_mode(void) {
     LOG_INF("Entering PIC SBL mode");
+    init_uart();
     sbl_active = true;
     cancel_scheduled_close("PIC update started");
     k_msgq_purge(&pic_queue);
@@ -659,13 +681,20 @@ int pic_enter_sbl_mode(void) {
 
 #if DT_NODE_EXISTS(DT_NODELABEL(pic_sbl))
     if (device_is_ready(pic_sbl.port)) {
+        gpio_pin_configure_dt(&pic_sbl, GPIO_OUTPUT_ACTIVE);
         gpio_pin_set_dt(&pic_sbl, 1);
     }
 #endif
-    // Pulse MCLR (pic_rst) LOW for 1000 ms, then HIGH for 1000 ms
-    gpio_pin_set_dt(&pic_rst, 1);  // active = LOW
+    // In vendor firmware: set_PIC16LF15_SIGNAL_HIGH() (GPIO46=1),
+    // then reset_PIC16LF15():
+    // set_PIC16LF15_RESET_HOLD() -> GPIO1 = HIGH for 1000ms
+    // set_PIC16LF15_RESET_RELEASE() -> GPIO1 = LOW for 1000ms
+    // Zephyr pic_rst is GPIO_ACTIVE_HIGH on GPIO1.
+    // So 1 = HIGH (RESET), 0 = LOW (RUN).
+    gpio_pin_configure_dt(&pic_rst, GPIO_OUTPUT_ACTIVE);
+    gpio_pin_set_dt(&pic_rst, 1);  // Reset hold
     k_msleep(1000);
-    gpio_pin_set_dt(&pic_rst, 0);  // inactive = HIGH
+    gpio_pin_set_dt(&pic_rst, 0);  // Reset release (run)
     k_msleep(1000);
 
     k_msgq_purge(&sbl_rx_q);
@@ -674,22 +703,27 @@ int pic_enter_sbl_mode(void) {
     uint8_t hs[14] = {
         0x55, 9, 0, DCM_SBL_MSG_HANDSHAKE_REQ, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     hs[13] = sbl_calc_chk_sum(hs, 13);
+    log_packet("SBL TX", hs, 14);
     for (int i = 0; i < 14; i++) {
         uart_poll_out(uart_dev, hs[i]);
     }
 
-    // Wait for 0x84 ACK (29 bytes)
+    // Wait for 0x84 ACK (30 bytes: header 0x55, len 25, seq, type 0x84, 25
+    // payload, checksum)
     uint8_t rx_buf[32];
     int rx_cnt = 0;
     uint32_t start = k_uptime_get_32();
-    while (rx_cnt < 29 && k_uptime_get_32() - start < 2000) {
+    while (rx_cnt < 30 && k_uptime_get_32() - start < 3000) {
         uint8_t b;
         if (k_msgq_get(&sbl_rx_q, &b, K_MSEC(100)) == 0) {
             if (rx_cnt == 0 && b != 0x55) continue;
             rx_buf[rx_cnt++] = b;
         }
     }
-    if (rx_cnt < 29 || rx_buf[3] != DCM_SBL_RSP_HANDSHAKE_ACK) {
+    if (rx_cnt > 0) {
+        log_packet("SBL RX", rx_buf, rx_cnt);
+    }
+    if (rx_cnt < 30 || rx_buf[3] != DCM_SBL_RSP_HANDSHAKE_ACK) {
         LOG_ERR("SBL Handshake failed (got %d bytes, type 0x%02x)", rx_cnt,
                 rx_cnt >= 4 ? rx_buf[3] : 0);
         pic_exit_sbl_mode();
@@ -793,6 +827,7 @@ int pic_sbl_finish(void) {
         0x55, 9, 0, DCM_SBL_MSG_EOF, 0x08, 0x00, 0x38, 0x00, 0x00, 0x00, 0x04,
         0x00, 0, 0};
     eof[13] = sbl_calc_chk_sum(eof, 13);
+    log_packet("SBL EOF TX", eof, 14);
     for (int i = 0; i < 14; i++) {
         uart_poll_out(uart_dev, eof[i]);
     }
@@ -808,13 +843,18 @@ int pic_sbl_finish(void) {
             rx_buf[rx_cnt++] = b;
         }
     }
-    if (rx_cnt < 16 || rx_buf[3] != DCM_SBL_RSP_EOF_ACK) {
-        LOG_WRN(
-            "SBL EOF ACK mismatch/timeout (got %d bytes), proceeding to reset",
-            rx_cnt);
-    } else {
-        LOG_INF("SBL EOF acknowledged successfully");
+    if (rx_cnt > 0) {
+        log_packet("SBL EOF RX", rx_buf, rx_cnt);
     }
+    if (rx_cnt < 16 || rx_buf[3] != DCM_SBL_RSP_EOF_ACK) {
+        LOG_ERR(
+            "SBL EOF ACK mismatch/timeout (got %d bytes, type 0x%02x), update "
+            "failed",
+            rx_cnt, rx_cnt >= 4 ? rx_buf[3] : 0);
+        pic_exit_sbl_mode();
+        return -1;
+    }
+    LOG_INF("SBL EOF acknowledged successfully");
 
     pic_exit_sbl_mode();
     return 0;
@@ -824,9 +864,11 @@ int pic_exit_sbl_mode(void) {
     LOG_INF("Exiting SBL mode, rebooting PIC");
 #if DT_NODE_EXISTS(DT_NODELABEL(pic_sbl))
     if (device_is_ready(pic_sbl.port)) {
+        gpio_pin_configure_dt(&pic_sbl, GPIO_OUTPUT_INACTIVE);
         gpio_pin_set_dt(&pic_sbl, 0);
     }
 #endif
+    gpio_pin_configure_dt(&pic_rst, GPIO_OUTPUT_ACTIVE);
     gpio_pin_set_dt(&pic_rst, 1);
     k_msleep(1000);
     gpio_pin_set_dt(&pic_rst, 0);

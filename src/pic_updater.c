@@ -17,6 +17,7 @@ static size_t line_len;
 static uint32_t ext_addr;
 static bool sbl_started;
 static bool eof_received;
+static size_t data_records_written;
 
 static int hex_char_to_val(char c) {
     if (c >= '0' && c <= '9') {
@@ -122,16 +123,28 @@ static int parse_and_process_hex_line(const char* line) {
                     word_addr, ret);
             return ret;
         }
+        data_records_written++;
     } else if (rectype == 0x04) {  // Extended Linear Address Record
         int ext_hi = hex_byte(line + 9);
         int ext_lo = hex_byte(line + 11);
         ext_addr = (uint32_t)((ext_hi << 8) | ext_lo);
         LOG_DBG("SBL Extended Linear Address: 0x%04x", ext_addr);
     } else if (rectype == 0x01) {  // End Of File Record
-        LOG_INF("Intel HEX EOF record received");
+        if (data_records_written == 0) {
+            LOG_ERR("Intel HEX EOF record received but 0 data records written");
+            pic_exit_sbl_mode();
+            return -1;
+        }
+        LOG_INF("Intel HEX EOF record received (%zu data records written)",
+                data_records_written);
+        int ret = pic_sbl_finish();
+        if (ret != 0) {
+            LOG_ERR("SBL finish/EOF failed: %d", ret);
+            return ret;
+        }
         eof_received = true;
         sbl_started = false;
-        return pic_sbl_finish();
+        return 0;
     }
 
     return 0;
@@ -142,6 +155,7 @@ void pic_updater_reset(void) {
     ext_addr = 0;
     sbl_started = false;
     eof_received = false;
+    data_records_written = 0;
 }
 
 int pic_updater_process_chunk(const uint8_t* data, size_t len) {
@@ -219,12 +233,18 @@ int pic_updater_complete(void) {
     }
 
     sbl_started = false;
-    if (!eof_received) {
-        LOG_WRN("No EOF record seen, finishing SBL mode");
-        return pic_sbl_finish();
+    if (!eof_received || data_records_written == 0) {
+        LOG_ERR(
+            "PIC update failed: EOF record not received/acknowledged or no "
+            "data "
+            "written (eof=%d, records=%zu)",
+            eof_received, data_records_written);
+        pic_exit_sbl_mode();
+        return -1;
     }
 
-    LOG_INF("PIC firmware update completed successfully");
+    LOG_INF("PIC firmware update completed successfully (%zu data blocks)",
+            data_records_written);
     return 0;
 }
 

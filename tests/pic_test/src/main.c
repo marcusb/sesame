@@ -4,7 +4,9 @@
 
 #include "config_manager.h"
 #include "controller.h"
+#include "pic_firmware_hex.h"
 #include "pic_uart.h"
+#include "pic_updater.h"
 
 LOG_MODULE_REGISTER(pic_test, LOG_LEVEL_INF);
 
@@ -41,9 +43,7 @@ static uint32_t get_light_ack_count(const pic_stats_t* s) {
     return s->light_ack_count;
 }
 
-static void* suite_setup(void) {
-    return NULL;
-}
+static void* suite_setup(void) { return NULL; }
 
 static void suite_teardown(void* fixture) {
     ARG_UNUSED(fixture);
@@ -52,19 +52,59 @@ static void suite_teardown(void* fixture) {
 
 ZTEST_SUITE(pic_test_suite, NULL, suite_setup, NULL, NULL, suite_teardown);
 
+ZTEST(pic_test_suite, test_00_sbl_firmware_upload) {
+    zassert_true(pic_firmware_hex_len > 0, "No linked PIC firmware available");
+    LOG_INF(
+        "Performing PIC SBL upload using linked firmware binary (%zu bytes)...",
+        pic_firmware_hex_len);
+
+    pic_updater_reset();
+    int ret = pic_updater_process_chunk(pic_firmware_hex, pic_firmware_hex_len);
+    zassert_equal(ret, 0, "pic_updater_process_chunk failed: %d", ret);
+
+    ret = pic_updater_complete();
+    zassert_equal(ret, 0, "pic_updater_complete failed: %d", ret);
+
+    LOG_INF("PIC firmware upload and EOF ACK completed from PIC");
+
+    /* Wait for the newly flashed PIC to reboot into application mode and
+     * respond */
+    bool online = wait_for_stat_increment(get_version_count, 0, 5000);
+    if (!online) {
+        pic_send_status_req();
+        online = wait_for_stat_increment(get_version_count, 0, 3000);
+    }
+    zassert_true(online,
+                 "PIC failed to reboot and respond after firmware upload");
+
+    uint8_t major = 0, minor = 0, patch = 0;
+    char suffix = 0;
+    bool ok = pic_get_version(&major, &minor, &patch, &suffix);
+    zassert_true(ok, "Failed to retrieve PIC version after upload");
+    LOG_INF(
+        "PIC rebooted with firmware version: %u.%u.%u+%u (expected "
+        "%u.%u.%u+%u)",
+        major, minor, patch, (uint8_t)suffix, PIC_EXPECTED_VER_MAJOR,
+        PIC_EXPECTED_VER_MINOR, PIC_EXPECTED_VER_PATCH,
+        PIC_EXPECTED_VER_COMMIT);
+    zassert_equal(major, PIC_EXPECTED_VER_MAJOR, "PIC major version mismatch");
+    zassert_equal(minor, PIC_EXPECTED_VER_MINOR, "PIC minor version mismatch");
+    zassert_equal(patch, PIC_EXPECTED_VER_PATCH, "PIC patch version mismatch");
+    zassert_equal((uint8_t)suffix, PIC_EXPECTED_VER_COMMIT,
+                  "PIC commit version mismatch");
+}
+
 ZTEST(pic_test_suite, test_01_version_query) {
     uint8_t major = 0, minor = 0, patch = 0;
     char suffix = 0;
 
-    /* Wait up to 3s for the initial boot status / version packet, or send a
-     * status request */
     pic_stats_t stats;
     pic_get_stats(&stats);
-    if (stats.version_count == 0) {
-        pic_send_status_req();
-    }
+    uint32_t prev_version = stats.version_count;
+    pic_send_status_req();
 
-    bool received = wait_for_stat_increment(get_version_count, 0, 5000);
+    bool received =
+        wait_for_stat_increment(get_version_count, prev_version, 3000);
     zassert_true(received, "Timed out waiting for PIC version response (0x95)");
 
     bool ok = pic_get_version(&major, &minor, &patch, &suffix);

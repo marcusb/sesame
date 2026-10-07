@@ -53,3 +53,38 @@ ${GPASM} ${INC_DIR} -I "${BUILD_DIR}" -I "${REPO_ROOT}/src/pic" \
 
 echo "Successfully built PIC firmware: ${HEX_OUT}"
 ls -lh "${HEX_OUT}"
+
+# Generate C source and header embedding the hex file
+HEX_C="${BUILD_DIR}/pic_firmware_hex.c"
+HEX_H="${BUILD_DIR}/pic_firmware_hex.h"
+
+cat <<EOF > "${HEX_H}"
+/* Auto-generated from sensor.hex by build_pic.sh. Do not edit. */
+#pragma once
+#include <stddef.h>
+#include <stdint.h>
+
+#define PIC_EXPECTED_VER_MAJOR ${APP_MAJOR}
+#define PIC_EXPECTED_VER_MINOR ${APP_MINOR}
+#define PIC_EXPECTED_VER_PATCH ${APP_PATCH}
+#define PIC_EXPECTED_VER_COMMIT ${COMMIT_COUNT}
+
+extern const uint8_t pic_firmware_hex[];
+extern const size_t pic_firmware_hex_len;
+EOF
+
+python3 -c "
+with open('${HEX_OUT}', 'rb') as f:
+    data = f.read()
+with open('${HEX_C}', 'w') as f:
+    f.write('/* Auto-generated from sensor.hex by build_pic.sh. Do not edit. */\n')
+    f.write('#include \"pic_firmware_hex.h\"\n\n')
+    f.write(f'const uint8_t pic_firmware_hex[{len(data)}] = {{\n')
+    for i in range(0, len(data), 16):
+        chunk = data[i:i+16]
+        f.write('    ' + ', '.join(f'0x{b:02x}' for b in chunk) + ',\n')
+    f.write('};\n')
+    f.write(f'const size_t pic_firmware_hex_len = {len(data)};\n')
+"
+
+echo "Generated ${HEX_C} and ${HEX_H}"

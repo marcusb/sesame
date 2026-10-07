@@ -81,6 +81,8 @@ run_system() {
 run_pic() {
     local port="${1:-/dev/ttyUSB0}"
     shift || true
+    echo "Compiling PIC firmware..."
+    ./tools/pic/build_pic.sh
     echo "Building pic_test target..."
     (
         source third_party/connectedhomeip/scripts/activate.sh
@@ -91,7 +93,7 @@ run_pic() {
         fi
     )
     echo "Running PIC Tests on hardware ($port)..."
-    DEVICE_PORT="$port" ./tools/run_on_device.sh build/pic_test/zephyr/zephyr.elf 30 "$@"
+    DEVICE_PORT="$port" ./tools/run_on_device.sh build/pic_test/zephyr/zephyr.elf 60 "$@"
 }
 
 case "$COMMAND" in
