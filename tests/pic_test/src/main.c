@@ -231,25 +231,24 @@ ZTEST(pic_test_suite, test_09_restore_limits) {
     /* Generate test limits: random down_limit, and up_limit = down_limit + 100 */
     uint16_t down_limit = 32000 + (sys_rand32_get() % 500);
     uint16_t up_limit = down_limit + 100;
+    uint16_t test_pos = down_limit + 50;
 
-    pic_stats_t stats;
-    pic_get_stats(&stats);
-    uint32_t prev_versions = stats.version_count;
+    LOG_INF("Testing limit restoration: setting up_limit=%u, down_limit=%u, pos=%u",
+            up_limit, down_limit, test_pos);
 
-    LOG_INF("Testing limit restoration: setting up_limit=%u, down_limit=%u",
-            up_limit, down_limit);
-
-    int ret = pic_send_limits(up_limit, down_limit);
+    int ret = pic_send_limits(up_limit, down_limit, test_pos);
     zassert_equal(ret, 0, "Failed to enqueue restore limits command");
 
-    /* Wait for PIC to accept limits and report them via status update */
+    /* Wait for PIC to accept limits and position and report them via status update */
     uint32_t start = k_uptime_get_32();
     uint16_t reported_up = 0;
     uint16_t reported_down = 0;
+    uint16_t reported_pos = 0;
     bool ok = false;
     while (k_uptime_get_32() - start < 3000) {
-        if (pic_get_limits(&reported_up, &reported_down) &&
-            reported_up == up_limit && reported_down == down_limit) {
+        if (pic_get_limits(&reported_up, &reported_down, &reported_pos) &&
+            reported_up == up_limit && reported_down == down_limit &&
+            reported_pos == test_pos) {
             ok = true;
             break;
         }
@@ -258,11 +257,13 @@ ZTEST(pic_test_suite, test_09_restore_limits) {
     }
     zassert_true(ok,
                  "Timed out waiting for PIC to report updated limits: got "
-                 "up=%u, down=%u (expected up=%u, down=%u)",
-                 reported_up, reported_down, up_limit, down_limit);
+                 "up=%u, down=%u, pos=%u (expected up=%u, down=%u, pos=%u)",
+                 reported_up, reported_down, reported_pos, up_limit, down_limit,
+                 test_pos);
 
-    LOG_INF("PIC reported updated limits: up=%u, down=%u", reported_up,
-            reported_down);
+    LOG_INF("PIC reported updated limits: up=%u, down=%u, pos=%u", reported_up,
+            reported_down, reported_pos);
     zassert_equal(reported_up, up_limit, "PIC up_limit mismatch");
     zassert_equal(reported_down, down_limit, "PIC down_limit mismatch");
+    zassert_equal(reported_pos, test_pos, "PIC pos mismatch");
 }

@@ -198,7 +198,7 @@ These are the types the MW300 sends and the PIC accepts:
 | 0x10 | `DCM_MSG_DOOR_CMD`            | `{val, 0}` — val=1 open, val=0 close     | Forwarded to main board                                   |
 | 0x11 | `DCM_MSG_ALERT_CMD`           | `{val, 5, 0}`                            | Visual alert; val=1 activate                              |
 | 0x12 | `DCM_MSG_AUDIO_CMD`           | `{val, unk1, 0}`                         | Buzzer; val=1 beep, val=2 alert tone, val=5 self-test     |
-| 0x15 | `DCM_MSG_DOOR_STATUS_REQUEST` | 22 bytes incl. update flag & limits      | Triggers 0x16 response; restores limits if flag is set    |
+| 0x15 | `DCM_MSG_DOOR_STATUS_REQUEST` | 22 bytes incl. restore pos & limits      | Triggers 0x16 response; restores pos and limits if non-zero |
 
 ## Known Message Types (PIC → MW300)
 

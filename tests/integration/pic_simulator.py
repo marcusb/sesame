@@ -192,8 +192,9 @@ class PicSimulator:
         elif frame.msg_type == DcmMsgType.DOOR_STATUS_REQUEST:
             if (
                 isinstance(frame.payload, DcmDoorStatusReq)
-                and frame.payload.update_limits != 0
+                and frame.payload.restore_pos != 0
             ):
+                self.pos = frame.payload.restore_pos
                 if frame.payload.up_limit != 0 and frame.payload.up_limit != 0xFFFF:
                     self.up_limit = frame.payload.up_limit
                 if frame.payload.down_limit != 0 and frame.payload.down_limit != 0xFFFF:

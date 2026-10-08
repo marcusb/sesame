@@ -144,10 +144,14 @@ class DcmDoorStatusReq:
     pos: int = 32768
     reserved1: int = 0
     reserved2: int = 0
-    update_limits: int = 0
+    restore_pos: int = 0
     up_limit: int = 32888
     reserved3: int = 0
     down_limit: int = 32768
+
+    @property
+    def update_limits(self) -> int:
+        return self.restore_pos
 
     def pack(self) -> bytes:
         return struct.pack(
@@ -159,7 +163,7 @@ class DcmDoorStatusReq:
             self.pos,
             self.reserved1,
             self.reserved2,
-            self.update_limits,
+            self.restore_pos,
             self.up_limit,
             self.reserved3,
             self.down_limit,
@@ -178,7 +182,7 @@ class DcmDoorStatusReq:
             pos=pos,
             reserved1=r1,
             reserved2=r2,
-            update_limits=upd,
+            restore_pos=upd,
             up_limit=up,
             reserved3=r3,
             down_limit=down,

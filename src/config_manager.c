@@ -128,14 +128,16 @@ int save_limits_config(void) {
                              &app_config.door_limits, "limits");
 }
 
-int save_door_limits(uint16_t up_limit, uint16_t down_limit) {
+int save_door_limits(uint16_t up_limit, uint16_t down_limit, uint16_t raw_pos) {
     app_config.has_door_limits = true;
     app_config.door_limits.up_limit = up_limit;
     app_config.door_limits.down_limit = down_limit;
+    app_config.door_limits.last_raw_pos = raw_pos;
     return save_limits_config();
 }
 
-int get_door_limits(uint16_t* up_limit, uint16_t* down_limit) {
+int get_door_limits(uint16_t* up_limit, uint16_t* down_limit,
+                    uint16_t* raw_pos) {
     if (!app_config.has_door_limits ||
         (app_config.door_limits.up_limit == 0 &&
          app_config.door_limits.down_limit == 0)) {
@@ -146,6 +148,9 @@ int get_door_limits(uint16_t* up_limit, uint16_t* down_limit) {
     }
     if (down_limit != NULL) {
         *down_limit = (uint16_t)app_config.door_limits.down_limit;
+    }
+    if (raw_pos != NULL) {
+        *raw_pos = (uint16_t)app_config.door_limits.last_raw_pos;
     }
     return 0;
 }

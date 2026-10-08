@@ -91,7 +91,7 @@ ZTEST(config_manager, test_save_and_load_logging_config) {
 ZTEST(config_manager, test_save_and_load_door_limits) {
     memset(&app_config, 0, sizeof(app_config));
 
-    int ret = save_door_limits(32888, 32768);
+    int ret = save_door_limits(32888, 32768, 32800);
     zassert_equal(ret, 0, "save_door_limits failed: %d", ret);
 
     memset(&app_config, 0, sizeof(app_config));
@@ -103,10 +103,13 @@ ZTEST(config_manager, test_save_and_load_door_limits) {
     zassert_equal(app_config.door_limits.up_limit, 32888, "up_limit mismatch");
     zassert_equal(app_config.door_limits.down_limit, 32768,
                   "down_limit mismatch");
+    zassert_equal(app_config.door_limits.last_raw_pos, 32800,
+                  "last_raw_pos mismatch");
 
-    uint16_t up = 0, down = 0;
-    ret = get_door_limits(&up, &down);
+    uint16_t up = 0, down = 0, raw_pos = 0;
+    ret = get_door_limits(&up, &down, &raw_pos);
     zassert_equal(ret, 0, "get_door_limits failed: %d", ret);
     zassert_equal(up, 32888, "get_door_limits up mismatch");
     zassert_equal(down, 32768, "get_door_limits down mismatch");
+    zassert_equal(raw_pos, 32800, "get_door_limits raw_pos mismatch");
 }

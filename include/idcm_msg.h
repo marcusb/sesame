@@ -125,10 +125,12 @@ typedef struct {
     uint16_t reserved;
     door_open_state_t state;
     door_direction_t direction;
-    uint16_t pos;
+    uint16_t reserved_pos;  // Unused in PIC 0x15 handler
     uint16_t reserved1;
     uint16_t reserved2;
-    uint16_t update_limits;
+    // When non-zero, the PIC copies this value into its raw door position
+    // register (reg 0x20/0x21), and proceeds to update up_limit and down_limit.
+    uint16_t restore_pos;
     uint16_t up_limit;
     uint16_t reserved3;
     uint16_t down_limit;

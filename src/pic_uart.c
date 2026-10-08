@@ -13,16 +13,20 @@
 LOG_MODULE_REGISTER(pic_uart, LOG_LEVEL_DBG);
 
 int __attribute__((weak)) save_door_limits(uint16_t up_limit,
-                                           uint16_t down_limit) {
+                                           uint16_t down_limit,
+                                           uint16_t raw_pos) {
     ARG_UNUSED(up_limit);
     ARG_UNUSED(down_limit);
+    ARG_UNUSED(raw_pos);
     return 0;
 }
 
 int __attribute__((weak)) get_door_limits(uint16_t* up_limit,
-                                          uint16_t* down_limit) {
+                                          uint16_t* down_limit,
+                                          uint16_t* raw_pos) {
     ARG_UNUSED(up_limit);
     ARG_UNUSED(down_limit);
+    ARG_UNUSED(raw_pos);
     return -ENOENT;
 }
 
@@ -43,8 +47,10 @@ static uint16_t down_limit;
 static uint16_t up_limit;
 static uint16_t saved_up_limit;
 static uint16_t saved_down_limit;
+static uint16_t saved_raw_pos;
 static uint16_t target_up_limit;
 static uint16_t target_down_limit;
+static uint16_t target_raw_pos;
 static uint32_t last_limit_restore_time;
 static uint32_t last_state_pub_time;
 
@@ -108,7 +114,8 @@ static uint8_t next_token() {
 }
 
 static void send_door_status_req(void);
-static void send_door_status_req_with_limits(uint16_t up, uint16_t down);
+static void send_door_status_req_with_limits(uint16_t up, uint16_t down,
+                                             uint16_t restore_p);
 
 static uint8_t dcm_calc_crc8(const uint8_t* data, size_t len) {
     uint8_t crc = 0xFF;
@@ -188,36 +195,59 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
     }
 }
 
-static void update_limits_from_pic(uint16_t new_up, uint16_t new_down) {
+static void update_limits_from_pic(uint16_t new_up, uint16_t new_down,
+                                   uint16_t new_raw_pos) {
     if (new_up > 0 && new_down > 0) {
         up_limit = new_up;
         down_limit = new_down;
         if (saved_up_limit == 0 && saved_down_limit == 0) {
-            get_door_limits(&saved_up_limit, &saved_down_limit);
+            get_door_limits(&saved_up_limit, &saved_down_limit, &saved_raw_pos);
         }
-        if (new_up != saved_up_limit || new_down != saved_down_limit) {
+        /* Only accept raw_pos if it falls within the valid calibrated travel
+         * range */
+        bool pos_valid = (new_up >= new_down) &&
+                         (new_raw_pos + 4 >= new_down) &&
+                         (new_raw_pos <= new_up + 4);
+        bool limits_changed =
+            (new_up != saved_up_limit || new_down != saved_down_limit);
+        bool pos_changed = pos_valid && (new_raw_pos != saved_raw_pos);
+
+        if (limits_changed || pos_changed) {
+            if (pos_valid) {
+                saved_raw_pos = new_raw_pos;
+            }
             LOG_INF(
-                "Tracking new limits from PIC: up=%u, down=%u (saved: up=%u, "
-                "down=%u)",
-                new_up, new_down, saved_up_limit, saved_down_limit);
+                "Tracking new limits from PIC: up=%u, down=%u, pos=%u (saved: "
+                "up=%u, down=%u, pos=%u)",
+                new_up, new_down, new_raw_pos, saved_up_limit, saved_down_limit,
+                saved_raw_pos);
             saved_up_limit = new_up;
             saved_down_limit = new_down;
-            save_door_limits(saved_up_limit, saved_down_limit);
+            save_door_limits(saved_up_limit, saved_down_limit, saved_raw_pos);
         }
     } else if (new_up == 0 && new_down == 0) {
         if (saved_up_limit == 0 && saved_down_limit == 0) {
-            get_door_limits(&saved_up_limit, &saved_down_limit);
+            get_door_limits(&saved_up_limit, &saved_down_limit, &saved_raw_pos);
         }
         if (saved_up_limit > 0 && saved_down_limit > 0) {
             uint32_t now = k_uptime_get_32();
             if (now - last_limit_restore_time > 3000) {
                 last_limit_restore_time = now;
+                uint16_t restore_p = saved_raw_pos;
+                /* If saved_raw_pos is not within valid travel range, fall back
+                 * to limits */
+                if (restore_p < saved_down_limit ||
+                    restore_p > saved_up_limit + 4) {
+                    restore_p = (state == DCM_DOOR_STATE_OPEN)
+                                    ? saved_up_limit
+                                    : saved_down_limit;
+                }
                 LOG_INF(
                     "PIC reported zero limits; restoring saved limits: up=%u, "
-                    "down=%u",
-                    saved_up_limit, saved_down_limit);
+                    "down=%u, pos=%u",
+                    saved_up_limit, saved_down_limit, restore_p);
                 send_door_status_req_with_limits(saved_up_limit,
-                                                 saved_down_limit);
+                                                 saved_down_limit, restore_p);
             }
         }
     }
@@ -230,7 +260,7 @@ static void handle_msg(const dcm_msg_t* msg) {
                 break;
             }
             const dcm_status_update_msg_t* p = &msg->payload.door_status;
-            update_limits_from_pic(p->up_limit, p->down_limit);
+            update_limits_from_pic(p->up_limit, p->down_limit, p->pos);
             door_state_update(p->state, p->direction, p->pos);
             s_stats.status_count++;
             break;
@@ -242,7 +272,7 @@ static void handle_msg(const dcm_msg_t* msg) {
             }
             const dcm_status_update_ext_msg_t* p =
                 &msg->payload.door_status_ext;
-            update_limits_from_pic(p->up_limit, p->down_limit);
+            update_limits_from_pic(p->up_limit, p->down_limit, p->pos);
             door_state_update(p->state, p->direction, p->pos);
             s_stats.status_count++;
             break;
@@ -510,10 +540,10 @@ static void send_door_status_req(void) {
                 .reserved = 0,
                 .state = 0,
                 .direction = 0,
-                .pos = pos,
+                .reserved_pos = 0,
                 .reserved1 = 0,
                 .reserved2 = 0,
-                .update_limits = 0,
+                .restore_pos = 0,
                 .up_limit = 0,
                 .reserved3 = 0,
                 .down_limit = 0,
@@ -522,8 +552,10 @@ static void send_door_status_req(void) {
     send_msg(&msg);
 }
 
-static void send_door_status_req_with_limits(uint16_t up, uint16_t down) {
-    LOG_INF("Sending door limits to PIC: up=%u, down=%u", up, down);
+static void send_door_status_req_with_limits(uint16_t up, uint16_t down,
+                                             uint16_t restore_p) {
+    LOG_INF("Sending door limits to PIC: up=%u, down=%u, pos=%u", up, down,
+            restore_p);
     dcm_msg_t msg = {
         DCM_HEADER_BYTE,
         1 + sizeof(dcm_door_status_req_msg_t),
@@ -535,10 +567,10 @@ static void send_door_status_req_with_limits(uint16_t up, uint16_t down) {
                 .reserved = 0,
                 .state = 0,
                 .direction = 0,
-                .pos = pos,
+                .reserved_pos = 0,
                 .reserved1 = 0,
                 .reserved2 = 0,
-                .update_limits = 1,
+                .restore_pos = restore_p,
                 .up_limit = up,
                 .reserved3 = 0,
                 .down_limit = down,
@@ -645,8 +677,8 @@ static void pic_process_cmd(pic_cmd_t cmd) {
             break;
 
         case PIC_CMD_SET_LIMITS:
-            send_door_status_req_with_limits(target_up_limit,
-                                             target_down_limit);
+            send_door_status_req_with_limits(target_up_limit, target_down_limit,
+                                             target_raw_pos);
             break;
 
         case PIC_CMD_0x04:
@@ -682,10 +714,11 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
     pic_cmd_t cmd;
 
     self_test_done = true;
-    if (get_door_limits(&saved_up_limit, &saved_down_limit) == 0 &&
+    if (get_door_limits(&saved_up_limit, &saved_down_limit, &saved_raw_pos) ==
+            0 &&
         saved_up_limit > 0 && saved_down_limit > 0) {
-        LOG_INF("Loaded saved door limits: up=%u, down=%u", saved_up_limit,
-                saved_down_limit);
+        LOG_INF("Loaded saved door limits: up=%u, down=%u, pos=%u",
+                saved_up_limit, saved_down_limit, saved_raw_pos);
     }
     if (!sbl_active) {
         send_door_status_req();
@@ -793,19 +826,23 @@ int pic_send_status_req(void) {
     return k_msgq_put(&pic_queue, &cmd, K_MSEC(1000));
 }
 
-int pic_send_limits(uint16_t up, uint16_t down) {
+int pic_send_limits(uint16_t up, uint16_t down, uint16_t raw_pos) {
     target_up_limit = up;
     target_down_limit = down;
+    target_raw_pos = raw_pos;
     pic_cmd_t cmd = PIC_CMD_SET_LIMITS;
     return k_msgq_put(&pic_queue, &cmd, K_MSEC(1000));
 }
 
-bool pic_get_limits(uint16_t* up, uint16_t* down) {
+bool pic_get_limits(uint16_t* up, uint16_t* down, uint16_t* raw_pos) {
     if (up != NULL) {
         *up = up_limit;
     }
     if (down != NULL) {
         *down = down_limit;
+    }
+    if (raw_pos != NULL) {
+        *raw_pos = last_raw_pos;
     }
     return (up_limit != 0 || down_limit != 0);
 }
@@ -1090,18 +1127,22 @@ int pic_send_alert(uint8_t val) {
 
 int pic_send_status_req(void) { return -ENOTSUP; }
 
-int pic_send_limits(uint16_t up, uint16_t down) {
+int pic_send_limits(uint16_t up, uint16_t down, uint16_t raw_pos) {
     ARG_UNUSED(up);
     ARG_UNUSED(down);
+    ARG_UNUSED(raw_pos);
     return -ENOTSUP;
 }
 
-bool pic_get_limits(uint16_t* up, uint16_t* down) {
+bool pic_get_limits(uint16_t* up, uint16_t* down, uint16_t* raw_pos) {
     if (up != NULL) {
         *up = 0;
     }
     if (down != NULL) {
         *down = 0;
+    }
+    if (raw_pos != NULL) {
+        *raw_pos = 0;
     }
     return false;
 }
