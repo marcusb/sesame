@@ -58,9 +58,9 @@ typedef enum {
 } __attribute__((packed)) door_open_state_t;
 
 typedef enum {
-    DCM_DOOR_DIR_STOPPED = 0,
+    DCM_DOOR_DIR_DOWN = 0,
     DCM_DOOR_DIR_UP = 1,
-    DCM_DOOR_DIR_DOWN = 2,
+    DCM_DOOR_DIR_STOPPED = 2,
     DCM_DOOR_DIR_UNKNOWN = 3,
 } __attribute__((packed)) door_direction_t;
 

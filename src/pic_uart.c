@@ -136,15 +136,21 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
     LOG_INF("door status: state=%d, dir=%d, pos=%u, down_lim=%u, up_lim=%u",
             state, dir, raw_pos, down_limit, up_limit);
     if (up_limit != down_limit) {
-        int32_t val = 100 * (int32_t)(raw_pos - down_limit) /
-                      (int32_t)(up_limit - down_limit);
-        if (val < 0) {
-            val = 0;
+        if (up_limit > down_limit && raw_pos + 4 >= up_limit) {
+            pos = 100;
+        } else if (raw_pos <= down_limit + 4) {
+            pos = 0;
+        } else {
+            int32_t val = 100 * (int32_t)(raw_pos - down_limit) /
+                          (int32_t)(up_limit - down_limit);
+            if (val < 0) {
+                val = 0;
+            }
+            if (val > 100) {
+                val = 100;
+            }
+            pos = val;
         }
-        if (val > 100) {
-            val = 100;
-        }
-        pos = val;
     }
     uint32_t now = k_uptime_get_32();
     if (update || dir != DCM_DOOR_DIR_STOPPED ||
@@ -453,7 +459,7 @@ static void pic_process_cmd(pic_cmd_t cmd) {
                 send_door_cmd(1);
             } else if (direction != DCM_DOOR_DIR_UP) {
                 bool is_fully_open = (state == DCM_DOOR_STATE_OPEN) &&
-                                     (up_limit == down_limit || pos >= 100);
+                                     (up_limit == down_limit || pos >= 95);
                 if (!is_fully_open) {
                     send_door_cmd(1);
                 }

@@ -230,7 +230,7 @@ The 28-byte payload of `DCM_MSG_STATUS_UPDATE_EXT` (0x16) is structured as follo
 | Field        | Type                | Values                             |
 | ------------ | ------------------- | ---------------------------------- |
 | `state`      | `door_open_state_t` | 0=CLOSED, 1=OPEN, 2=UNKNOWN, 4=FTM |
-| `direction`  | `door_direction_t`  | 0=STOPPED, 1=UP, 2=DOWN, 3=UNKNOWN |
+| `direction`  | `door_direction_t`  | 0=DOWN, 1=UP, 2=STOPPED, 3=UNKNOWN |
 | `pos`        | uint16_t            | Raw encoder count                  |
 | `up_limit`   | uint16_t            | Encoder count at fully open        |
 | `down_limit` | uint16_t            | Encoder count at fully closed      |

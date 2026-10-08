@@ -31,9 +31,9 @@ class DoorOpenState(enum.IntEnum):
 
 
 class DoorDirection(enum.IntEnum):
-    STOPPED = 0
+    DOWN = 0
     UP = 1
-    DOWN = 2
+    STOPPED = 2
     UNKNOWN = 3
 
 
