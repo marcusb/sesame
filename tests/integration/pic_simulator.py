@@ -13,6 +13,7 @@ from pic_protocol import (
     DcmDoorAck,
     DcmDoorCmd,
     DcmDoorStatusUpdate,
+    DcmDoorStatusUpdateExt,
     DcmFrame,
     DcmMsgType,
     DcmOpsEvent,
@@ -93,7 +94,7 @@ class PicSimulator:
         if motor_current is not None:
             self.motor_current = motor_current
 
-        update = DcmDoorStatusUpdate(
+        update = DcmDoorStatusUpdateExt(
             time=int(time.time()) & 0xFFFFFFFF,
             state=self.state,
             direction=self.direction,

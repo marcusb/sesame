@@ -16,7 +16,7 @@ else
     exit 1
 fi
 
-BUILD_DIR="${REPO_ROOT}/build/pic"
+BUILD_DIR="${1:-${REPO_ROOT}/build/pic}"
 mkdir -p "${BUILD_DIR}"
 
 SRC="${REPO_ROOT}/src/pic/sensor.asm"

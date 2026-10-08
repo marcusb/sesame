@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Optional, Union
 
 DCM_HEADER_BYTE = 0x55
-MAX_DCM_MSG_SIZE = 20
+MAX_DCM_MSG_SIZE = 36
 
 
 class DcmMsgType(enum.IntEnum):
@@ -205,6 +205,50 @@ class DcmDoorStatusUpdate:
 
 
 @dataclass
+class DcmDoorStatusUpdateExt:
+    time: int = 0
+    reserved: int = 0
+    state: DoorOpenState = DoorOpenState.CLOSED
+    direction: DoorDirection = DoorDirection.STOPPED
+    pos: int = 32768
+    up_limit: int = 32888
+    motor_current: int = 0
+    down_limit: int = 32768
+    extra: bytes = b"\x00" * 12
+
+    def pack(self) -> bytes:
+        return struct.pack(
+            "<IHBBHHHH12s",
+            self.time,
+            self.reserved,
+            int(self.state),
+            int(self.direction),
+            self.pos,
+            self.up_limit,
+            self.motor_current,
+            self.down_limit,
+            self.extra[:12].ljust(12, b"\x00"),
+        )
+
+    @classmethod
+    def unpack(cls, data: bytes) -> "DcmDoorStatusUpdateExt":
+        t, res, st, d, pos, up, mc, down, extra = struct.unpack(
+            "<IHBBHHHH12s", data[:28]
+        )
+        return cls(
+            time=t,
+            reserved=res,
+            state=DoorOpenState(st),
+            direction=DoorDirection(d),
+            pos=pos,
+            up_limit=up,
+            motor_current=mc,
+            down_limit=down,
+            extra=extra,
+        )
+
+
+@dataclass
 class DcmSensorVersion:
     time: int = 0
     state: DoorOpenState = DoorOpenState.CLOSED
@@ -357,6 +401,7 @@ PayloadType = Union[
     DcmAudioCmd,
     DcmDoorStatusReq,
     DcmDoorStatusUpdate,
+    DcmDoorStatusUpdateExt,
     DcmSensorVersion,
     DcmOpsEvent,
     DcmDoorAck,
@@ -372,8 +417,8 @@ PAYLOAD_TYPE_MAP: dict[int, Any] = {
     DcmMsgType.AUDIO_CMD: DcmAudioCmd,
     DcmMsgType.DOOR_STATUS_REQUEST: DcmDoorStatusReq,
     DcmMsgType.STATUS_UPDATE: DcmDoorStatusUpdate,
-    DcmMsgType.STATUS_UPDATE_EXT: DcmDoorStatusUpdate,
-    DcmMsgType.DOOR_STATUS_UPDATE: DcmDoorStatusUpdate,
+    DcmMsgType.STATUS_UPDATE_EXT: DcmDoorStatusUpdateExt,
+    DcmMsgType.DOOR_STATUS_UPDATE: DcmDoorStatusUpdateExt,
     DcmMsgType.OPS_EVENT: DcmOpsEvent,
     DcmMsgType.DOOR_ACK: DcmDoorAck,
     DcmMsgType.ALERT_ACK: DcmAlertAck,

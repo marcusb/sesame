@@ -158,12 +158,24 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
 
 static void handle_msg(const dcm_msg_t* msg) {
     switch (msg->type) {
-        case DCM_MSG_STATUS_UPDATE:
-        case DCM_MSG_STATUS_UPDATE_EXT: {
+        case DCM_MSG_STATUS_UPDATE: {
             if (msg->len < sizeof(dcm_status_update_msg_t)) {
                 break;
             }
             const dcm_status_update_msg_t* p = &msg->payload.door_status;
+            down_limit = p->down_limit;
+            up_limit = p->up_limit;
+            door_state_update(p->state, p->direction, p->pos);
+            s_stats.status_count++;
+            break;
+        }
+
+        case DCM_MSG_STATUS_UPDATE_EXT: {
+            if (msg->len < sizeof(dcm_status_update_ext_msg_t)) {
+                break;
+            }
+            const dcm_status_update_ext_msg_t* p =
+                &msg->payload.door_status_ext;
             down_limit = p->down_limit;
             up_limit = p->up_limit;
             door_state_update(p->state, p->direction, p->pos);

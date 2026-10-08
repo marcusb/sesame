@@ -14,4 +14,7 @@ if(SB_CONFIG_BUILD_PIC_TEST AND NOT TARGET pic_test)
     BOARD       genie_idcm_ram/88mw320/cpu0
     BUILD_ONLY  TRUE
   )
+  if(TARGET sesame)
+    add_dependencies(pic_test sesame)
+  endif()
 endif()

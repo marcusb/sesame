@@ -15,10 +15,10 @@ typedef enum {
     DCM_MSG_AUDIO_CMD = 0x12,
     /** Custom overhead light switch command (0 = OFF, 1 = ON) */
     DCM_MSG_LIGHT_CMD = 0x13,
-    /** Periodic 14-byte door status report from PIC to MW300 */
+    /** Periodic door status report in factory test mode (14 bytes) */
     DCM_MSG_STATUS_UPDATE = 0x14,
     DCM_MSG_DOOR_STATUS_REQUEST = 0x15,
-    /** Extended 29-byte status update */
+    /** Periodic door status report from PIC to MW300 (28 bytes) */
     DCM_MSG_STATUS_UPDATE_EXT = 0x16,
     DCM_MSG_OPS_EVENT = 0x17,
     /** Factory diagnostic / self-test mode */
@@ -138,15 +138,29 @@ typedef struct {
     uint16_t pos;
     uint16_t up_limit;
     uint16_t down_limit;
-    // Motor load reading, likely an ADC value from the motor driver.
-    // Zero when the motor is stopped; non-zero while moving. Consistently
-    // higher when going UP (~36000–38000) than DOWN (~25000–33000), reflecting
-    // the motor working against gravity when lifting. Zero on the first update
-    // of each movement; settles by the second sample.
     uint16_t motor_current;
 } __attribute__((packed)) dcm_status_update_msg_t;
 static_assert(sizeof(dcm_status_update_msg_t) == 14, "msg size");
 static_assert(sizeof(dcm_status_update_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
+
+typedef struct {
+    uint32_t time;
+    uint16_t reserved;  // always 0 in wire frames
+    door_open_state_t state;
+    door_direction_t direction;
+    uint16_t pos;
+    uint16_t up_limit;
+    // Motor load reading, likely an ADC value from the motor driver.
+    // Zero when the motor is stopped; non-zero while moving. Consistently
+    // higher when going UP (~36000–38000) than DOWN (~25000–33000), reflecting
+    // the motor working against gravity when lifting. Zero on the first update
+    // of each movement; settles by the second sample. Set to 0xFFFF in factory status updates.
+    uint16_t motor_current;
+    uint16_t down_limit;
+    uint8_t extra[12];  // trailing status flags / zero padding
+} __attribute__((packed)) dcm_status_update_ext_msg_t;
+static_assert(sizeof(dcm_status_update_ext_msg_t) == 28, "msg size");
+static_assert(sizeof(dcm_status_update_ext_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint32_t time;
@@ -209,6 +223,7 @@ typedef struct {
         dcm_audio_cmd_msg_t audio_cmd;
         dcm_door_status_req_msg_t door_status_req;
         dcm_status_update_msg_t door_status;
+        dcm_status_update_ext_msg_t door_status_ext;
         dcm_sensor_version_msg_t sensor_version;
         dcm_ops_event_msg_t ops_event;
         dcm_diag_output_cmd_msg_t diag_output_cmd;
