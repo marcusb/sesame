@@ -27,6 +27,8 @@ static const struct proto_config_entry config_entries[] = {
      &app_config.has_mqtt_config},
     {"logging", LoggingConfig_fields, &app_config.logging_config,
      &app_config.has_logging_config},
+    {"limits", DoorLimits_fields, &app_config.door_limits,
+     &app_config.has_door_limits},
 };
 
 static int sesame_settings_set(const char* name, size_t len,
@@ -119,4 +121,31 @@ int save_mqtt_config(void) {
 int save_logging_config(void) {
     return save_proto_config("sesame/logging", LoggingConfig_fields,
                              &app_config.logging_config, "logging");
+}
+
+int save_limits_config(void) {
+    return save_proto_config("sesame/limits", DoorLimits_fields,
+                             &app_config.door_limits, "limits");
+}
+
+int save_door_limits(uint16_t up_limit, uint16_t down_limit) {
+    app_config.has_door_limits = true;
+    app_config.door_limits.up_limit = up_limit;
+    app_config.door_limits.down_limit = down_limit;
+    return save_limits_config();
+}
+
+int get_door_limits(uint16_t* up_limit, uint16_t* down_limit) {
+    if (!app_config.has_door_limits ||
+        (app_config.door_limits.up_limit == 0 &&
+         app_config.door_limits.down_limit == 0)) {
+        return -ENOENT;
+    }
+    if (up_limit != NULL) {
+        *up_limit = (uint16_t)app_config.door_limits.up_limit;
+    }
+    if (down_limit != NULL) {
+        *down_limit = (uint16_t)app_config.door_limits.down_limit;
+    }
+    return 0;
 }

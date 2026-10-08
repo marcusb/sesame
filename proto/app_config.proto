@@ -35,9 +35,15 @@ message LoggingConfig {
     SyslogConfig syslog_config = 1;
 }
 
+message DoorLimits {
+    uint32 up_limit = 1;
+    uint32 down_limit = 2;
+}
+
 message AppConfig {
     int32 config_version = 1;
     NetworkConfig network_config = 2;
     MqttConfig mqtt_config = 3;
     LoggingConfig logging_config = 4;
+    DoorLimits door_limits = 5;
 }

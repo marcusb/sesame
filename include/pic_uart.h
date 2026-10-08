@@ -18,6 +18,7 @@ typedef enum pic_cmd {
     PIC_CMD_STATUS_REQ = 10,
     PIC_CMD_0x04 = 11,
     PIC_CMD_DOOR_RAW_CLOSE = 12,
+    PIC_CMD_SET_LIMITS = 13,
 } pic_cmd_t;
 
 extern struct k_msgq pic_queue;
@@ -55,5 +56,7 @@ void pic_get_stats(pic_stats_t* stats);
 int pic_send_audio(uint8_t val);
 int pic_send_alert(uint8_t val);
 int pic_send_status_req(void);
+int pic_send_limits(uint16_t up, uint16_t down);
+bool pic_get_limits(uint16_t* up, uint16_t* down);
 int pic_send_cmd_0x04(void);
 int pic_send_door_raw(uint8_t val);

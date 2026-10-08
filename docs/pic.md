@@ -160,11 +160,14 @@ frame is constructed by `function_066` and queued for UART1 TX back to the
 MW300. Response types are 0x91 (`DCM_MSG_ALERT_ACK`) for alerts (`label_284`
 writes `0x91` into the type field) and 0x92 (`DCM_MSG_AUDIO_ACK`) for audio.
 
-### Door Status Request (0x15)
+### Door Status Request & Limits Update (0x15)
 
-The PIC assembles a `DCM_MSG_DOOR_STATUS_UPDATE` (0x16) response containing
-the current position, travel limits, open/closed state, and direction, then
-sends it back to the MW300 on UART1.
+The MW300 sends `DCM_MSG_DOOR_STATUS_REQUEST` (0x15, 22-byte payload) to query
+the PIC status or restore door limits. If the `update_limits` flag (payload
+byte offset 14..15) is set to 1, the PIC updates its in-memory travel limits
+(`up_limit` from offset 16..17, `down_limit` from offset 20..21) and marks its
+calibrated limits flag (`0x157 = 1`). In either case, the PIC replies with a
+`DCM_MSG_STATUS_UPDATE_EXT` (0x16) frame reflecting the door status and limits.
 
 ### Response Correlation (0x94)
 
@@ -189,13 +192,13 @@ Outgoing frames to the MW300 are built in a staging buffer at 0x2348:
 
 These are the types the MW300 sends and the PIC accepts:
 
-| Type | Name                          | Payload                              | Notes                                                     |
-| ---- | ----------------------------- | ------------------------------------ | --------------------------------------------------------- |
-| 0x04 | `DCM_MSG_0x04`                | 9 bytes (zeroed)                     | Sent every 30 s alongside status request; purpose unknown |
-| 0x10 | `DCM_MSG_DOOR_CMD`            | `{val, 0}` — val=1 open, val=0 close | Forwarded to main board                                   |
-| 0x11 | `DCM_MSG_ALERT_CMD`           | `{val, 5, 0}`                        | Visual alert; val=1 activate                              |
-| 0x12 | `DCM_MSG_AUDIO_CMD`           | `{val, unk1, 0}`                     | Buzzer; val=1 beep, val=2 alert tone, val=5 self-test     |
-| 0x15 | `DCM_MSG_DOOR_STATUS_REQUEST` | 12 bytes incl. pos, limits           | Triggers 0x16 response                                    |
+| Type | Name                          | Payload                                  | Notes                                                     |
+| ---- | ----------------------------- | ---------------------------------------- | --------------------------------------------------------- |
+| 0x04 | `DCM_MSG_0x04`                | 9 bytes (zeroed)                         | Sent every 30 s alongside status request; purpose unknown |
+| 0x10 | `DCM_MSG_DOOR_CMD`            | `{val, 0}` — val=1 open, val=0 close     | Forwarded to main board                                   |
+| 0x11 | `DCM_MSG_ALERT_CMD`           | `{val, 5, 0}`                            | Visual alert; val=1 activate                              |
+| 0x12 | `DCM_MSG_AUDIO_CMD`           | `{val, unk1, 0}`                         | Buzzer; val=1 beep, val=2 alert tone, val=5 self-test     |
+| 0x15 | `DCM_MSG_DOOR_STATUS_REQUEST` | 22 bytes incl. update flag & limits      | Triggers 0x16 response; restores limits if flag is set    |
 
 ## Known Message Types (PIC → MW300)
 
@@ -207,7 +210,7 @@ These are the types the MW300 sends and the PIC accepts:
 | 0x90 | `DCM_MSG_DOOR_RESPONSE`      | 2 bytes  | ACK for door command; seq echoes the DOOR_CMD                     |
 | 0x91 | `DCM_MSG_ALERT_ACK`          | —        | ACK for alert command                                             |
 | 0x92 | `DCM_MSG_AUDIO_ACK`          | —        | ACK for audio command; MW300 uses receipt to set `self_test_done` |
-| 0x95 | `DCM_MSG_SENSOR_VERSION`     | 21 bytes | PIC fw version, caps, and initial door state sent at boot         |
+| 0x95 | `DCM_MSG_SENSOR_VERSION`     | 21 bytes | PIC fw version, hardware capabilities, and status flags           |
 
 ### Extended Door Status Wire Layout (0x16)
 
@@ -218,7 +221,7 @@ The 28-byte payload of `DCM_MSG_STATUS_UPDATE_EXT` (0x16) is structured as follo
 | 0–3    | 4B   | `time`          | Uptime / timestamp counter (uint32)               |
 | 4–5    | 2B   | `reserved`      | Always 0x0000 in wire frames (uint16)             |
 | 6      | 1B   | `state`         | `door_open_state_t` (0=CLOSED, 1=OPEN, etc.)      |
-| 7      | 1B   | `direction`     | `door_direction_t` (0=STOPPED, 1=UP, 2=DOWN)     |
+| 7      | 1B   | `direction`     | `door_direction_t` (0=DOWN, 1=UP, 2=STOPPED)      |
 | 8–9    | 2B   | `pos`           | Raw optical encoder count (uint16)                |
 | 10–11  | 2B   | `up_limit`      | Calibrated open travel limit (uint16)             |
 | 12–13  | 2B   | `motor_current` | Motor load reading (0xFFFF in status frames)      |

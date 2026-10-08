@@ -122,13 +122,18 @@ static_assert(sizeof(dcm_audio_cmd_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
     uint32_t time;
+    uint16_t reserved;
     door_open_state_t state;
     door_direction_t direction;
     uint16_t pos;
+    uint16_t reserved1;
+    uint16_t reserved2;
+    uint16_t update_limits;
     uint16_t up_limit;
+    uint16_t reserved3;
     uint16_t down_limit;
 } __attribute__((packed)) dcm_door_status_req_msg_t;
-static_assert(sizeof(dcm_door_status_req_msg_t) == 12, "msg size");
+static_assert(sizeof(dcm_door_status_req_msg_t) == 22, "msg size");
 static_assert(sizeof(dcm_door_status_req_msg_t) < MAX_DCM_MSG_SIZE, "msg size");
 
 typedef struct {
@@ -164,17 +169,15 @@ static_assert(sizeof(dcm_status_update_ext_msg_t) < MAX_DCM_MSG_SIZE, "msg size"
 
 typedef struct {
     uint32_t time;
-    door_open_state_t state;
-    door_direction_t direction;
-    uint16_t pos;
-    uint16_t up_limit;
-    uint16_t down_limit;
-    uint8_t hw_caps;  // hardware capability bitfield (e.g. 0x08 or 0x0d)
+    uint16_t msg_info;     // 0x0004
+    uint16_t status_flags; // e.g. 0x00b0
+    uint32_t reserved;     // 4 zero bytes
+    uint8_t hw_caps;       // hardware capability bitfield (e.g. 0x08 or 0x0d)
     uint8_t major;
     uint8_t minor;
     uint8_t patch;
     char suffix;
-    uint8_t extra[4];  // trailing status / calibration bytes
+    uint8_t extra[4];      // trailing status / calibration bytes
 } __attribute__((packed)) dcm_sensor_version_msg_t;
 static_assert(sizeof(dcm_sensor_version_msg_t) == 21, "msg size");
 static_assert(sizeof(dcm_sensor_version_msg_t) < MAX_DCM_MSG_SIZE, "msg size");

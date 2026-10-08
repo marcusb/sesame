@@ -6,10 +6,25 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include "config_manager.h"
 #include "controller.h"
 #include "idcm_msg.h"
 
 LOG_MODULE_REGISTER(pic_uart, LOG_LEVEL_DBG);
+
+int __attribute__((weak)) save_door_limits(uint16_t up_limit,
+                                           uint16_t down_limit) {
+    ARG_UNUSED(up_limit);
+    ARG_UNUSED(down_limit);
+    return 0;
+}
+
+int __attribute__((weak)) get_door_limits(uint16_t* up_limit,
+                                          uint16_t* down_limit) {
+    ARG_UNUSED(up_limit);
+    ARG_UNUSED(down_limit);
+    return -ENOENT;
+}
 
 K_MSGQ_DEFINE(pic_queue, sizeof(pic_cmd_t), 32, 4);
 
@@ -26,6 +41,11 @@ static door_direction_t direction = DCM_DOOR_DIR_UNKNOWN;
 static uint16_t pos;
 static uint16_t down_limit;
 static uint16_t up_limit;
+static uint16_t saved_up_limit;
+static uint16_t saved_down_limit;
+static uint16_t target_up_limit;
+static uint16_t target_down_limit;
+static uint32_t last_limit_restore_time;
 static uint32_t last_state_pub_time;
 
 static const struct device* uart_dev = DEVICE_DT_GET(DT_NODELABEL(uart1));
@@ -88,6 +108,7 @@ static uint8_t next_token() {
 }
 
 static void send_door_status_req(void);
+static void send_door_status_req_with_limits(uint16_t up, uint16_t down);
 
 static uint8_t dcm_calc_crc8(const uint8_t* data, size_t len) {
     uint8_t crc = 0xFF;
@@ -118,6 +139,11 @@ static uint8_t sbl_calc_chk_sum(const uint8_t* p, int n) {
 
 static void door_state_update(door_open_state_t new_state, door_direction_t dir,
                               uint16_t raw_pos) {
+#ifdef CONFIG_SEMIHOST
+    if (close_scheduled && new_state == DCM_DOOR_STATE_CLOSED) {
+        new_state = DCM_DOOR_STATE_OPEN;
+    }
+#endif
     if (close_scheduled) {
         if (dir != DCM_DOOR_DIR_STOPPED && dir != DCM_DOOR_DIR_UNKNOWN) {
             cancel_scheduled_close("door direction not stopped");
@@ -162,6 +188,41 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
     }
 }
 
+static void update_limits_from_pic(uint16_t new_up, uint16_t new_down) {
+    if (new_up > 0 && new_down > 0) {
+        up_limit = new_up;
+        down_limit = new_down;
+        if (saved_up_limit == 0 && saved_down_limit == 0) {
+            get_door_limits(&saved_up_limit, &saved_down_limit);
+        }
+        if (new_up != saved_up_limit || new_down != saved_down_limit) {
+            LOG_INF(
+                "Tracking new limits from PIC: up=%u, down=%u (saved: up=%u, "
+                "down=%u)",
+                new_up, new_down, saved_up_limit, saved_down_limit);
+            saved_up_limit = new_up;
+            saved_down_limit = new_down;
+            save_door_limits(saved_up_limit, saved_down_limit);
+        }
+    } else if (new_up == 0 && new_down == 0) {
+        if (saved_up_limit == 0 && saved_down_limit == 0) {
+            get_door_limits(&saved_up_limit, &saved_down_limit);
+        }
+        if (saved_up_limit > 0 && saved_down_limit > 0) {
+            uint32_t now = k_uptime_get_32();
+            if (now - last_limit_restore_time > 3000) {
+                last_limit_restore_time = now;
+                LOG_INF(
+                    "PIC reported zero limits; restoring saved limits: up=%u, "
+                    "down=%u",
+                    saved_up_limit, saved_down_limit);
+                send_door_status_req_with_limits(saved_up_limit,
+                                                 saved_down_limit);
+            }
+        }
+    }
+}
+
 static void handle_msg(const dcm_msg_t* msg) {
     switch (msg->type) {
         case DCM_MSG_STATUS_UPDATE: {
@@ -169,8 +230,7 @@ static void handle_msg(const dcm_msg_t* msg) {
                 break;
             }
             const dcm_status_update_msg_t* p = &msg->payload.door_status;
-            down_limit = p->down_limit;
-            up_limit = p->up_limit;
+            update_limits_from_pic(p->up_limit, p->down_limit);
             door_state_update(p->state, p->direction, p->pos);
             s_stats.status_count++;
             break;
@@ -182,8 +242,7 @@ static void handle_msg(const dcm_msg_t* msg) {
             }
             const dcm_status_update_ext_msg_t* p =
                 &msg->payload.door_status_ext;
-            down_limit = p->down_limit;
-            up_limit = p->up_limit;
+            update_limits_from_pic(p->up_limit, p->down_limit);
             door_state_update(p->state, p->direction, p->pos);
             s_stats.status_count++;
             break;
@@ -225,9 +284,6 @@ static void handle_msg(const dcm_msg_t* msg) {
             s_pic_version.patch = p->patch;
             s_pic_version.suffix = p->suffix;
             s_pic_version.received = true;
-            up_limit = p->up_limit;
-            down_limit = p->down_limit;
-            door_state_update(p->state, p->direction, p->pos);
             if (s_log_pic_version) {
                 if (p->suffix >= 'A' && p->suffix <= 'Z') {
                     LOG_INF("PIC firmware version: %u.%u.%u%c", p->major,
@@ -427,6 +483,15 @@ static void alert() {
 static void send_door_cmd(uint8_t val) {
     LOG_INF("Sending door command to PIC: %s (val=%u)", val ? "OPEN" : "CLOSE",
             val);
+#ifdef CONFIG_SEMIHOST
+    if (val == 1) {
+        state = DCM_DOOR_STATE_OPEN;
+        direction = DCM_DOOR_DIR_STOPPED;
+    } else if (val == 0) {
+        state = DCM_DOOR_STATE_CLOSED;
+        direction = DCM_DOOR_DIR_STOPPED;
+    }
+#endif
     dcm_msg_t msg = {DCM_HEADER_BYTE, 1 + sizeof(dcm_door_cmd_msg_t),
                      next_token(), DCM_MSG_DOOR_CMD,
                      .payload.door_cmd = {val, 0}};
@@ -435,9 +500,50 @@ static void send_door_cmd(uint8_t val) {
 
 static void send_door_status_req(void) {
     dcm_msg_t msg = {
-        DCM_HEADER_BYTE, 1 + sizeof(dcm_door_status_req_msg_t), next_token(),
+        DCM_HEADER_BYTE,
+        1 + sizeof(dcm_door_status_req_msg_t),
+        next_token(),
         DCM_MSG_DOOR_STATUS_REQUEST,
-        .payload.door_status_req = {0, 0, 0, pos, up_limit, down_limit}};
+        .payload.door_status_req =
+            {
+                .time = 0,
+                .reserved = 0,
+                .state = 0,
+                .direction = 0,
+                .pos = pos,
+                .reserved1 = 0,
+                .reserved2 = 0,
+                .update_limits = 0,
+                .up_limit = 0,
+                .reserved3 = 0,
+                .down_limit = 0,
+            },
+    };
+    send_msg(&msg);
+}
+
+static void send_door_status_req_with_limits(uint16_t up, uint16_t down) {
+    LOG_INF("Sending door limits to PIC: up=%u, down=%u", up, down);
+    dcm_msg_t msg = {
+        DCM_HEADER_BYTE,
+        1 + sizeof(dcm_door_status_req_msg_t),
+        next_token(),
+        DCM_MSG_DOOR_STATUS_REQUEST,
+        .payload.door_status_req =
+            {
+                .time = 0,
+                .reserved = 0,
+                .state = 0,
+                .direction = 0,
+                .pos = pos,
+                .reserved1 = 0,
+                .reserved2 = 0,
+                .update_limits = 1,
+                .up_limit = up,
+                .reserved3 = 0,
+                .down_limit = down,
+            },
+    };
     send_msg(&msg);
 }
 
@@ -538,6 +644,11 @@ static void pic_process_cmd(pic_cmd_t cmd) {
             send_door_status_req();
             break;
 
+        case PIC_CMD_SET_LIMITS:
+            send_door_status_req_with_limits(target_up_limit,
+                                             target_down_limit);
+            break;
+
         case PIC_CMD_0x04:
             cmd_0x04();
             break;
@@ -571,6 +682,11 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
     pic_cmd_t cmd;
 
     self_test_done = true;
+    if (get_door_limits(&saved_up_limit, &saved_down_limit) == 0 &&
+        saved_up_limit > 0 && saved_down_limit > 0) {
+        LOG_INF("Loaded saved door limits: up=%u, down=%u", saved_up_limit,
+                saved_down_limit);
+    }
     if (!sbl_active) {
         send_door_status_req();
     }
@@ -621,7 +737,7 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
     }
 }
 
-K_THREAD_DEFINE(pic_uart_tid, 1024, pic_uart_task, NULL, NULL, NULL, 7, 0, 0);
+K_THREAD_DEFINE(pic_uart_tid, 2048, pic_uart_task, NULL, NULL, NULL, 7, 0, 0);
 
 int pic_set_light(bool on) {
     if (sbl_active) {
@@ -675,6 +791,23 @@ int pic_send_alert(uint8_t val) {
 int pic_send_status_req(void) {
     pic_cmd_t cmd = PIC_CMD_STATUS_REQ;
     return k_msgq_put(&pic_queue, &cmd, K_MSEC(1000));
+}
+
+int pic_send_limits(uint16_t up, uint16_t down) {
+    target_up_limit = up;
+    target_down_limit = down;
+    pic_cmd_t cmd = PIC_CMD_SET_LIMITS;
+    return k_msgq_put(&pic_queue, &cmd, K_MSEC(1000));
+}
+
+bool pic_get_limits(uint16_t* up, uint16_t* down) {
+    if (up != NULL) {
+        *up = up_limit;
+    }
+    if (down != NULL) {
+        *down = down_limit;
+    }
+    return (up_limit != 0 || down_limit != 0);
 }
 
 int pic_send_cmd_0x04(void) {
@@ -956,6 +1089,22 @@ int pic_send_alert(uint8_t val) {
 }
 
 int pic_send_status_req(void) { return -ENOTSUP; }
+
+int pic_send_limits(uint16_t up, uint16_t down) {
+    ARG_UNUSED(up);
+    ARG_UNUSED(down);
+    return -ENOTSUP;
+}
+
+bool pic_get_limits(uint16_t* up, uint16_t* down) {
+    if (up != NULL) {
+        *up = 0;
+    }
+    if (down != NULL) {
+        *down = 0;
+    }
+    return false;
+}
 
 int pic_send_cmd_0x04(void) { return -ENOTSUP; }
 

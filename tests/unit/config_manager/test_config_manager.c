@@ -87,3 +87,26 @@ ZTEST(config_manager, test_save_and_load_logging_config) {
     zassert_equal(app_config.logging_config.syslog_config.syslog_port, 514,
                   "Syslog port mismatch");
 }
+
+ZTEST(config_manager, test_save_and_load_door_limits) {
+    memset(&app_config, 0, sizeof(app_config));
+
+    int ret = save_door_limits(32888, 32768);
+    zassert_equal(ret, 0, "save_door_limits failed: %d", ret);
+
+    memset(&app_config, 0, sizeof(app_config));
+
+    ret = load_config();
+    zassert_equal(ret, 0, "load_config failed: %d", ret);
+
+    zassert_true(app_config.has_door_limits, "door limits not loaded");
+    zassert_equal(app_config.door_limits.up_limit, 32888, "up_limit mismatch");
+    zassert_equal(app_config.door_limits.down_limit, 32768,
+                  "down_limit mismatch");
+
+    uint16_t up = 0, down = 0;
+    ret = get_door_limits(&up, &down);
+    zassert_equal(ret, 0, "get_door_limits failed: %d", ret);
+    zassert_equal(up, 32888, "get_door_limits up mismatch");
+    zassert_equal(down, 32768, "get_door_limits down mismatch");
+}

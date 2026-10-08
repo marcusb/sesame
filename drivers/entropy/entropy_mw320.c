@@ -3,12 +3,14 @@
 #include <zephyr/drivers/entropy.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
+#include <zephyr/spinlock.h>
 
 #define SRAM1_BGN DT_REG_ADDR(DT_NODELABEL(sram1))
 #define SRAM1_LEN DT_REG_SIZE(DT_NODELABEL(sram1))
 
 static uint8_t s_entropy_pool[32];
 static size_t s_entropy_idx = 0;
+static struct k_spinlock s_entropy_lock;
 
 static void mix_pool(uint32_t counter) {
     // Simple mixing function (FNV-1a style)
@@ -23,6 +25,7 @@ static void mix_pool(uint32_t counter) {
 
 static int entropy_mw320_get_entropy(const struct device* dev, uint8_t* buffer,
                                      uint16_t length) {
+    k_spinlock_key_t key = k_spin_lock(&s_entropy_lock);
     while (length > 0) {
         size_t to_copy = MIN(length, sizeof(s_entropy_pool) - s_entropy_idx);
         if (to_copy == 0) {
@@ -36,6 +39,7 @@ static int entropy_mw320_get_entropy(const struct device* dev, uint8_t* buffer,
         buffer += to_copy;
         length -= to_copy;
     }
+    k_spin_unlock(&s_entropy_lock, key);
     return 0;
 }
 

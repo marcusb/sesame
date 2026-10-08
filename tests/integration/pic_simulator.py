@@ -12,6 +12,7 @@ from pic_protocol import (
     DcmAudioCmd,
     DcmDoorAck,
     DcmDoorCmd,
+    DcmDoorStatusReq,
     DcmDoorStatusUpdate,
     DcmDoorStatusUpdateExt,
     DcmFrame,
@@ -47,6 +48,10 @@ class PicSimulator:
         self.state = initial_state
         self.direction = DoorDirection.STOPPED
         self.motor_current = 0
+        self.version_major = 1
+        self.version_minor = 0
+        self.version_patch = 7
+        self.version_suffix = b"P"
 
         self.seq_counter = 0xA0
         self.running = True
@@ -107,11 +112,10 @@ class PicSimulator:
 
     def send_sensor_version(self, seq: int):
         version = DcmSensorVersion(
-            state=self.state,
-            direction=self.direction,
-            pos=self.pos,
-            up_limit=self.up_limit,
-            down_limit=self.down_limit,
+            major=self.version_major,
+            minor=self.version_minor,
+            patch=self.version_patch,
+            suffix=self.version_suffix,
             time=0,
         )
         self.send_msg(DcmMsgType.SENSOR_VERSION, version, seq=seq)
@@ -186,7 +190,16 @@ class PicSimulator:
                 )
 
         elif frame.msg_type == DcmMsgType.DOOR_STATUS_REQUEST:
+            if (
+                isinstance(frame.payload, DcmDoorStatusReq)
+                and frame.payload.update_limits != 0
+            ):
+                if frame.payload.up_limit != 0 and frame.payload.up_limit != 0xFFFF:
+                    self.up_limit = frame.payload.up_limit
+                if frame.payload.down_limit != 0 and frame.payload.down_limit != 0xFFFF:
+                    self.down_limit = frame.payload.down_limit
             if self.auto_reply_status_req:
+                self.send_status_update()
                 self.send_sensor_version(seq=frame.seq)
 
         elif frame.msg_type == DcmMsgType.DOOR_CMD:

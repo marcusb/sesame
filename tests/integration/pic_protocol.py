@@ -138,32 +138,49 @@ class DcmAudioCmd:
 @dataclass
 class DcmDoorStatusReq:
     time: int = 0
+    reserved: int = 0
     state: DoorOpenState = DoorOpenState.CLOSED
     direction: DoorDirection = DoorDirection.STOPPED
     pos: int = 32768
+    reserved1: int = 0
+    reserved2: int = 0
+    update_limits: int = 0
     up_limit: int = 32888
+    reserved3: int = 0
     down_limit: int = 32768
 
     def pack(self) -> bytes:
         return struct.pack(
-            "<IBBHHH",
+            "<IHBBHHHHHHH",
             self.time,
+            self.reserved,
             int(self.state),
             int(self.direction),
             self.pos,
+            self.reserved1,
+            self.reserved2,
+            self.update_limits,
             self.up_limit,
+            self.reserved3,
             self.down_limit,
         )
 
     @classmethod
     def unpack(cls, data: bytes) -> "DcmDoorStatusReq":
-        t, st, d, pos, up, down = struct.unpack("<IBBHHH", data[:12])
+        t, res, st, d, pos, r1, r2, upd, up, r3, down = struct.unpack(
+            "<IHBBHHHHHHH", data[:22]
+        )
         return cls(
             time=t,
+            reserved=res,
             state=DoorOpenState(st),
             direction=DoorDirection(d),
             pos=pos,
+            reserved1=r1,
+            reserved2=r2,
+            update_limits=upd,
             up_limit=up,
+            reserved3=r3,
             down_limit=down,
         )
 
@@ -251,12 +268,10 @@ class DcmDoorStatusUpdateExt:
 @dataclass
 class DcmSensorVersion:
     time: int = 0
-    state: DoorOpenState = DoorOpenState.CLOSED
-    direction: DoorDirection = DoorDirection.STOPPED
-    pos: int = 32768
-    up_limit: int = 0
-    down_limit: int = 0
-    hw_caps: int = 8
+    msg_info: int = 4
+    status_flags: int = 0xB0
+    reserved: int = 0
+    hw_caps: int = 0x0D
     major: int = 1
     minor: int = 0
     patch: int = 7
@@ -265,13 +280,11 @@ class DcmSensorVersion:
 
     def pack(self) -> bytes:
         return struct.pack(
-            "<IBBHHHBBBBc4s",
+            "<IHHIBBBBc4s",
             self.time,
-            int(self.state),
-            int(self.direction),
-            self.pos,
-            self.up_limit,
-            self.down_limit,
+            self.msg_info,
+            self.status_flags,
+            self.reserved,
             self.hw_caps,
             self.major,
             self.minor,
@@ -284,25 +297,21 @@ class DcmSensorVersion:
     def unpack(cls, data: bytes) -> "DcmSensorVersion":
         (
             t,
-            st,
-            d,
-            pos,
-            up,
-            down,
+            info,
+            flags,
+            res,
             caps,
             maj,
             min_,
             pat,
             suf,
             extra,
-        ) = struct.unpack("<IBBHHHBBBBc4s", data[:21])
+        ) = struct.unpack("<IHHIBBBBc4s", data[:21])
         return cls(
             time=t,
-            state=DoorOpenState(st),
-            direction=DoorDirection(d),
-            pos=pos,
-            up_limit=up,
-            down_limit=down,
+            msg_info=info,
+            status_flags=flags,
+            reserved=res,
             hw_caps=caps,
             major=maj,
             minor=min_,
