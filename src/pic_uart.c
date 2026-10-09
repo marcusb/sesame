@@ -722,6 +722,7 @@ static void pic_uart_task(void* p1, void* p2, void* p3) {
     }
     if (!sbl_active) {
         send_door_status_req();
+        pic_set_light(false);
     }
 
     uint32_t door_poll_tstamp = k_uptime_get_32() - DOOR_POLL_TICKS + 500;
