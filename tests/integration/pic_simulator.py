@@ -13,9 +13,10 @@ from pic_protocol import (
     DcmDoorAck,
     DcmDoorCmd,
     DcmDoorStatusReq,
-    DcmDoorStatusUpdate,
     DcmDoorStatusUpdateExt,
     DcmFrame,
+    DcmLightAck,
+    DcmLightCmd,
     DcmMsgType,
     DcmOpsEvent,
     DcmSensorVersion,
@@ -63,6 +64,8 @@ class PicSimulator:
         self.auto_ack_audio = True
         self.auto_ack_alert = True
         self.auto_ack_door = True
+        self.auto_ack_light = True
+        self.light_state = False
         self.auto_reply_status_req = True
         self.auto_simulate_motion = False
 
@@ -218,6 +221,16 @@ class PicSimulator:
                         threading.Thread(
                             target=self.simulate_close, daemon=True
                         ).start()
+
+        elif frame.msg_type == DcmMsgType.LIGHT_CMD:
+            cmd_val = frame.payload.val if isinstance(frame.payload, DcmLightCmd) else 0
+            self.light_state = bool(cmd_val)
+            if self.auto_ack_light:
+                self.send_msg(
+                    DcmMsgType.LIGHT_ACK,
+                    DcmLightAck(state=1 if self.light_state else 0),
+                    seq=frame.seq,
+                )
 
     def simulate_open(self, steps: int = 4, step_delay: float = 0.05):
         """Simulates opening motion up to up_limit."""

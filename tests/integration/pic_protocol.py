@@ -12,6 +12,7 @@ class DcmMsgType(enum.IntEnum):
     DOOR_CMD = 0x10
     ALERT_CMD = 0x11
     AUDIO_CMD = 0x12
+    LIGHT_CMD = 0x13
     STATUS_UPDATE = 0x14
     DOOR_STATUS_REQUEST = 0x15
     STATUS_UPDATE_EXT = 0x16
@@ -20,6 +21,7 @@ class DcmMsgType(enum.IntEnum):
     DOOR_ACK = 0x90
     ALERT_ACK = 0x91
     AUDIO_ACK = 0x92
+    LIGHT_ACK = 0x93
     SENSOR_VERSION = 0x95
 
 
@@ -396,6 +398,35 @@ class DcmAudioAck:
 
 
 @dataclass
+class DcmLightCmd:
+    val: int  # 1 = on, 0 = off
+    reserved: int = 0
+
+    def pack(self) -> bytes:
+        return struct.pack("<BB", self.val, self.reserved)
+
+    @classmethod
+    def unpack(cls, data: bytes) -> "DcmLightCmd":
+        val, res = struct.unpack("<BB", data[:2])
+        return cls(val=val, reserved=res)
+
+
+@dataclass
+class DcmLightAck:
+    state: int  # 1 = on, 0 = off
+    reserved: bytes = b"\x00\x00"
+
+    def pack(self) -> bytes:
+        return struct.pack("<B", self.state) + self.reserved
+
+    @classmethod
+    def unpack(cls, data: bytes) -> "DcmLightAck":
+        state = data[0]
+        res = data[1:3] if len(data) >= 3 else b"\x00\x00"
+        return cls(state=state, reserved=res)
+
+
+@dataclass
 class DcmRawPayload:
     data: bytes
 
@@ -412,6 +443,7 @@ PayloadType = Union[
     DcmDoorCmd,
     DcmAlertCmd,
     DcmAudioCmd,
+    DcmLightCmd,
     DcmDoorStatusReq,
     DcmDoorStatusUpdate,
     DcmDoorStatusUpdateExt,
@@ -420,6 +452,7 @@ PayloadType = Union[
     DcmDoorAck,
     DcmAlertAck,
     DcmAudioAck,
+    DcmLightAck,
     DcmRawPayload,
 ]
 
@@ -428,6 +461,7 @@ PAYLOAD_TYPE_MAP: dict[int, Any] = {
     DcmMsgType.DOOR_CMD: DcmDoorCmd,
     DcmMsgType.ALERT_CMD: DcmAlertCmd,
     DcmMsgType.AUDIO_CMD: DcmAudioCmd,
+    DcmMsgType.LIGHT_CMD: DcmLightCmd,
     DcmMsgType.DOOR_STATUS_REQUEST: DcmDoorStatusReq,
     DcmMsgType.STATUS_UPDATE: DcmDoorStatusUpdate,
     DcmMsgType.STATUS_UPDATE_EXT: DcmDoorStatusUpdateExt,
@@ -436,6 +470,7 @@ PAYLOAD_TYPE_MAP: dict[int, Any] = {
     DcmMsgType.DOOR_ACK: DcmDoorAck,
     DcmMsgType.ALERT_ACK: DcmAlertAck,
     DcmMsgType.AUDIO_ACK: DcmAudioAck,
+    DcmMsgType.LIGHT_ACK: DcmLightAck,
     DcmMsgType.SENSOR_VERSION: DcmSensorVersion,
 }
 
