@@ -112,16 +112,18 @@ set(VERSION_FILE ${CMAKE_CURRENT_SOURCE_DIR}/deps/zephyr/VERSION ${CMAKE_CURRENT
 set(VERSION_TYPE KERNEL APP)
 
 # Tell MCUboot to sign the image with this version
-set(NEW_APP_VERSION_CONF "CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION=\"${APP_FIRMWARE_VERSION}\"\n")
-if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/app_version.conf")
-    file(READ "${CMAKE_CURRENT_BINARY_DIR}/app_version.conf" CURRENT_APP_VERSION_CONF)
-else()
-    set(CURRENT_APP_VERSION_CONF "")
+if(NOT "${BOARD}" MATCHES "native_sim")
+    set(NEW_APP_VERSION_CONF "CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION=\"${APP_FIRMWARE_VERSION}\"\n")
+    if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/app_version.conf")
+        file(READ "${CMAKE_CURRENT_BINARY_DIR}/app_version.conf" CURRENT_APP_VERSION_CONF)
+    else()
+        set(CURRENT_APP_VERSION_CONF "")
+    endif()
+    if(NOT "${CURRENT_APP_VERSION_CONF}" STREQUAL "${NEW_APP_VERSION_CONF}")
+        file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf "${NEW_APP_VERSION_CONF}")
+    endif()
+    list(APPEND EXTRA_CONF_FILE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf)
 endif()
-if(NOT "${CURRENT_APP_VERSION_CONF}" STREQUAL "${NEW_APP_VERSION_CONF}")
-    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf "${NEW_APP_VERSION_CONF}")
-endif()
-list(APPEND EXTRA_CONF_FILE ${CMAKE_CURRENT_BINARY_DIR}/app_version.conf)
 # Load Zephyr build system
 set(MW320_SDK_DIR ${CMAKE_SOURCE_DIR}/mw320_sdk CACHE PATH "MW320 SDK directory" FORCE)
 
