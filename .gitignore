@@ -27,6 +27,7 @@ CWSettingsWindows.stg
 *.exe
 *.hex
 *.bin
+!tests/integration/partition_table.bin
 *.elf
 *.out
 *.rom

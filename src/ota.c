@@ -1,13 +1,12 @@
 #include "ota.h"
 
 #include <bootutil/boot_status.h>
+#include <bootutil/bootutil_public.h>
+#include <core_cm4.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <zephyr/retention/blinfo.h>
-
-// application
-#include <bootutil/bootutil_public.h>
+#include <zephyr/devicetree.h>
 #include <zephyr/dfu/flash_img.h>
 #include <zephyr/dfu/mcuboot.h>
 #include <zephyr/kernel.h>
@@ -15,19 +14,13 @@
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/sys/reboot.h>
 
-#include "controller.h"
-
-LOG_MODULE_REGISTER(ota, LOG_LEVEL_INF);
-
-// application
+#include "88MW320.h"
 #include "controller.h"
 #include "leds.h"
 
+LOG_MODULE_REGISTER(ota, LOG_LEVEL_INF);
+
 ota_status_t ota_status = OTA_STATUS_NONE;
-
-#include <core_cm4.h>
-
-#include "88MW320.h"
 
 int my_boot_fetch_active_slot() {
     if (SCB->VTOR >= 0x20000000) {
@@ -108,9 +101,6 @@ int ota_finish(ota_upd_state_t* ota_state) {
     sys_reboot(SYS_REBOOT_COLD);
     return res;
 }
-
-extern int boot_read_swap_state(const struct flash_area* fap,
-                                struct boot_swap_state* state);
 
 bool my_boot_is_img_confirmed(void) {
     int active_slot = my_boot_fetch_active_slot();

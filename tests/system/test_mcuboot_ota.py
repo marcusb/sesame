@@ -18,9 +18,11 @@ def mcuboot_images():
 
     versions = get_mcuboot_test_versions()
 
-    if not test_bin.exists():
-        # Build test mcuboot binary if not already present
-        test_bin.parent.mkdir(parents=True, exist_ok=True)
+    # Ensure test mcuboot binary is up-to-date
+    test_bin.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.run(["ninja", "-C", "build/mcuboot_test"], cwd=str(repo_root), check=True)
+    except Exception:
         cmd = [
             "west",
             "build",
@@ -156,6 +158,9 @@ def test_mcuboot_ota(hardware_device, openocd, mcuboot_images):
     assert (
         mb.get("confirmed") is False
     ), f"Expected unconfirmed test boot, got confirmed={mb.get('confirmed')}"
+    assert (
+        mb.get("gen_level") == 0
+    ), f"Expected gen_level 0 for unconfirmed test boot, got {mb.get('gen_level')}"
 
     # Step 4: Test rollback on unconfirmed reboot
     print("\n[Step 4] Testing rollback on unconfirmed reboot...")
@@ -163,7 +168,7 @@ def test_mcuboot_ota(hardware_device, openocd, mcuboot_images):
     with semihosting_keepalive(openocd):
         reboot_device(openocd, ctrl_v4, logs, step_start)
         print(
-            "Reboot triggered, waiting for MCUboot to detect unconfirmed reboot and rollback..."
+            "Reboot triggered, waiting for Boot2 to detect gen_level 0 and rollback..."
         )
         wait_for_bootloader_boot(
             logs,
@@ -210,6 +215,9 @@ def test_mcuboot_ota(hardware_device, openocd, mcuboot_images):
     assert (
         mb.get("confirmed") is False
     ), f"Expected unconfirmed test boot, got {mb.get('confirmed')}"
+    assert (
+        mb.get("gen_level") == 0
+    ), f"Expected gen_level 0 for unconfirmed test boot, got {mb.get('gen_level')}"
 
     print("Promoting test MCUboot via POST /promote/mcuboot...")
     promote_mcuboot(ctrl_v4)
@@ -218,6 +226,9 @@ def test_mcuboot_ota(hardware_device, openocd, mcuboot_images):
     assert (
         mb.get("confirmed") is True
     ), f"Expected confirmed True after promotion, got {mb.get('confirmed')}"
+    assert (
+        mb.get("gen_level") > 0
+    ), f"Expected gen_level > 0 after promotion, got {mb.get('gen_level')}"
     print(f"Promotion confirmed: {mb}")
 
     print("Rebooting device to verify promoted MCUboot persists...")

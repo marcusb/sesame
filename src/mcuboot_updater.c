@@ -3,18 +3,17 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/flash.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/storage/flash_map.h>
-#include <zephyr/sys/crc.h>
 #include <zephyr/sys/reboot.h>
 
+#include "boot_utils.h"
 #include "mcuboot_info.h"
-
-#ifdef CONFIG_SOC_88MW320
-#include "mflash_drv.h"
-#define BOOT_FLAGS ((volatile uint32_t*)0x480C0024)
-#endif
+#include "partition.h"
 
 LOG_MODULE_REGISTER(mcuboot_upd, LOG_LEVEL_INF);
 
@@ -38,23 +37,17 @@ struct seg_hdr {
     uint32_t crc;
 } __attribute__((packed));
 
-/* Marvell soft_crc32: reflected CRC32 polynomial 0xEDB88320 with initial 0 and
- * no inversion */
-static uint32_t calc_mrvl_crc32(const uint8_t* data, size_t len) {
-    static const uint32_t table[16] = {
-        0x00000000U, 0x1db71064U, 0x3b6e20c8U, 0x26d930acU,
-        0x76dc4190U, 0x6b6b51f4U, 0x4db26158U, 0x5005713cU,
-        0xedb88320U, 0xf00f9344U, 0xd6d6a3e8U, 0xcb61b38cU,
-        0x9b64c2b0U, 0x86d3d2d4U, 0xa00ae278U, 0xbdbdf21cU,
-    };
-
-    uint32_t crc = 0;
-    for (size_t i = 0; i < len; i++) {
-        uint8_t byte = data[i];
-        crc = (crc >> 4) ^ table[(crc ^ byte) & 0x0f];
-        crc = (crc >> 4) ^ table[(crc ^ ((uint32_t)byte >> 4)) & 0x0f];
+static const struct device* get_flash_dev(void) {
+    const struct device* dev = NULL;
+#if DT_HAS_COMPAT_STATUS_OKAY(nxp_mw320_flash_controller)
+    dev = DEVICE_DT_GET_ONE(nxp_mw320_flash_controller);
+#elif DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash_controller))
+    dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller));
+#endif
+    if (!dev || !device_is_ready(dev)) {
+        return NULL;
     }
-    return crc;
+    return dev;
 }
 
 int mcuboot_validate_image(const uint8_t* data, size_t len) {
@@ -98,7 +91,7 @@ int mcuboot_validate_image(const uint8_t* data, size_t len) {
         }
 
         uint32_t computed_crc =
-            calc_mrvl_crc32(data + shdrs[i].offset, shdrs[i].len);
+            partition_calc_crc32(data + shdrs[i].offset, shdrs[i].len);
         if (computed_crc != shdrs[i].crc) {
             LOG_ERR("Segment %u CRC mismatch (calc 0x%08x != hdr 0x%08x)", i,
                     computed_crc, shdrs[i].crc);
@@ -163,16 +156,21 @@ int mcuboot_updater_complete(void) {
         return rc;
     }
 
-#if defined(CONFIG_SOC_88MW320)
+    const struct device* flash_dev = get_flash_dev();
+    if (!flash_dev) {
+        LOG_ERR("Flash device not ready");
+        mcuboot_updater_reset();
+        return -ENODEV;
+    }
+
     uint32_t active_slot = g_mcuboot_info.slot;
     uint32_t target_slot = active_slot ^ 1;
     uint32_t target_addr =
         (target_slot == 0) ? MCUBOOT_SLOT_0_ADDR : MCUBOOT_SLOT_1_ADDR;
-    uint32_t trailer_addr = target_addr + MCUBOOT_TRAILER_OFFSET;
 
     size_t erase_size = ROUND_UP(s_ram_buf_len, 4096);
-    if (erase_size > (MCUBOOT_SLOT_SIZE - 4096)) {
-        erase_size = MCUBOOT_SLOT_SIZE - 4096;
+    if (erase_size > MCUBOOT_SLOT_SIZE) {
+        erase_size = MCUBOOT_SLOT_SIZE;
     }
 
     LOG_INF(
@@ -180,35 +178,19 @@ int mcuboot_updater_complete(void) {
         "%zu)...",
         target_slot, target_addr, s_ram_buf_len, erase_size);
 
-    k_sched_lock();
-
-    rc = mflash_drv_erase(target_addr, erase_size);
+    rc = flash_erase(flash_dev, target_addr, erase_size);
     if (rc != 0) {
-        k_sched_unlock();
         LOG_ERR("Flash erase failed: %d", rc);
         mcuboot_updater_reset();
         return -EIO;
     }
 
-    rc = mflash_drv_write(target_addr, (uint32_t*)s_ram_buf, s_ram_buf_len);
+    rc = flash_write(flash_dev, target_addr, s_ram_buf, s_ram_buf_len);
     if (rc != 0) {
-        k_sched_unlock();
         LOG_ERR("Flash write failed: %d", rc);
         mcuboot_updater_reset();
         return -EIO;
     }
-
-    /* Write unconfirmed test trailer to target slot */
-    struct mcuboot_slot_trailer trailer = {
-        .magic = MCUBOOT_TRAILER_MAGIC,
-        .boot_count = 0,
-        .confirmed = 0,
-        .reserved = 0,
-    };
-    mflash_drv_erase(trailer_addr, 4096);
-    mflash_drv_write(trailer_addr, (uint32_t*)&trailer, sizeof(trailer));
-
-    k_sched_unlock();
 
     /* Read back and verify image */
     uint8_t verify_chunk[256];
@@ -218,8 +200,8 @@ int mcuboot_updater_complete(void) {
         if (verified + to_read > s_ram_buf_len) {
             to_read = s_ram_buf_len - verified;
         }
-        rc = mflash_drv_read(target_addr + verified, (uint32_t*)verify_chunk,
-                             to_read);
+        rc = flash_read(flash_dev, target_addr + verified, verify_chunk,
+                        to_read);
         if (rc != 0 ||
             memcmp(verify_chunk, s_ram_buf + verified, to_read) != 0) {
             LOG_ERR("Flash verification mismatch at offset %zu!", verified);
@@ -229,108 +211,95 @@ int mcuboot_updater_complete(void) {
         verified += to_read;
     }
 
-    /* Update Boot2 partition table */
-    uint32_t boot_flags = *BOOT_FLAGS;
-    uint32_t active_pt_addr =
-        (boot_flags & 0x100) ? BOOT2_PART2_ADDR : BOOT2_PART1_ADDR;
-    uint32_t passive_pt_addr = (active_pt_addr == BOOT2_PART2_ADDR)
-                                   ? BOOT2_PART1_ADDR
-                                   : BOOT2_PART2_ADDR;
-
+    /* Update Boot2 partition table: set target slot gen_level to
+     * OTA_TEST_MODE_FLAG */
     struct boot2_partition_table pt_hdr;
-    mflash_drv_read(active_pt_addr, (uint32_t*)&pt_hdr, sizeof(pt_hdr));
-
     struct boot2_partition_entry entries[BOOT2_PART_MAX_ENTRIES];
-    uint32_t num_entries = pt_hdr.partition_entries_no;
-    if (num_entries > BOOT2_PART_MAX_ENTRIES) {
-        num_entries = BOOT2_PART_MAX_ENTRIES;
+    rc = partition_read_active_table(&pt_hdr, entries, BOOT2_PART_MAX_ENTRIES);
+    if (rc != 0) {
+        LOG_ERR("Failed to read active partition table: %d", rc);
+        mcuboot_updater_reset();
+        return -EIO;
     }
-    mflash_drv_read(active_pt_addr + sizeof(pt_hdr), (uint32_t*)entries,
-                    num_entries * sizeof(struct boot2_partition_entry));
 
     int fw_indices[2] = {-1, -1};
-    int fw_count = 0;
-    for (uint32_t i = 0; i < num_entries; i++) {
-        if (entries[i].type == BOOT2_COMP_FW) {
-            if (fw_count < 2) {
-                fw_indices[fw_count++] = i;
-            }
-        }
-    }
-
-    if (fw_count == 2) {
-        int act_idx = fw_indices[active_slot];
+    int fw_count = partition_find_fw_entries(
+        entries, pt_hdr.partition_entries_no, fw_indices);
+    if (fw_count == 2 && target_slot < 2 && fw_indices[target_slot] >= 0) {
         int tgt_idx = fw_indices[target_slot];
-        entries[tgt_idx].gen_level = entries[act_idx].gen_level + 1;
+        entries[tgt_idx].gen_level = OTA_TEST_MODE_FLAG;
         pt_hdr.gen_level++;
-        pt_hdr.crc = calc_mrvl_crc32((uint8_t*)&pt_hdr, sizeof(pt_hdr) - 4);
 
-        k_sched_lock();
-        mflash_drv_erase(passive_pt_addr, 4096);
-        mflash_drv_write(passive_pt_addr, (uint32_t*)&pt_hdr, sizeof(pt_hdr));
-        uint32_t e_size = num_entries * sizeof(struct boot2_partition_entry);
-        mflash_drv_write(passive_pt_addr + sizeof(pt_hdr), (uint32_t*)entries,
-                         e_size);
-        uint32_t e_crc = calc_mrvl_crc32((uint8_t*)entries, e_size);
-        mflash_drv_write(passive_pt_addr + sizeof(pt_hdr) + e_size,
-                         (uint32_t*)&e_crc, sizeof(e_crc));
-        k_sched_unlock();
+        uint32_t passive_pt_addr = 0;
+        partition_get_table_addrs(NULL, &passive_pt_addr);
+
+        rc = partition_write_table(passive_pt_addr, &pt_hdr, entries);
+        if (rc != 0) {
+            LOG_ERR("Failed to write updated partition table: %d", rc);
+            mcuboot_updater_reset();
+            return -EIO;
+        }
 
         LOG_INF(
             "Updated Boot2 partition table written to 0x%04x: slot %u "
-            "gen_level=%u",
+            "gen_level=0x%08x",
             passive_pt_addr, target_slot, entries[tgt_idx].gen_level);
     } else {
         LOG_ERR("Expected 2 firmware partitions, found %d!", fw_count);
+        mcuboot_updater_reset();
+        return -EINVAL;
     }
 
     LOG_INF("MCUboot A/B update complete! Rebooting into slot %u for test...",
             target_slot);
     mcuboot_updater_reset();
     return 0;
-#else
-    LOG_INF("Simulated MCUboot update complete (host / native_sim)");
-    g_mcuboot_info.slot ^= 1;
-    g_mcuboot_info.gen_level++;
-    g_mcuboot_info.confirmed = 0;
-    mcuboot_updater_reset();
-    return 0;
-#endif
 }
 
 int mcuboot_updater_promote(void) {
-#if defined(CONFIG_SOC_88MW320)
     uint32_t slot = g_mcuboot_info.slot;
-    uint32_t slot_addr =
-        (slot == 0) ? MCUBOOT_SLOT_0_ADDR : MCUBOOT_SLOT_1_ADDR;
-    uint32_t trailer_addr = slot_addr + MCUBOOT_TRAILER_OFFSET;
 
-    struct mcuboot_slot_trailer trailer;
-    mflash_drv_read(trailer_addr, (uint32_t*)&trailer, sizeof(trailer));
-    trailer.magic = MCUBOOT_TRAILER_MAGIC;
-    trailer.boot_count = 1;
-    trailer.confirmed = 1;
-
-    k_sched_lock();
-    mflash_drv_erase(trailer_addr, 4096);
-    int ret =
-        mflash_drv_write(trailer_addr, (uint32_t*)&trailer, sizeof(trailer));
-    k_sched_unlock();
-
-    if (ret != 0) {
-        LOG_ERR("Failed to write MCUboot promotion trailer: %d", ret);
+    struct boot2_partition_table pt_hdr;
+    struct boot2_partition_entry entries[BOOT2_PART_MAX_ENTRIES];
+    int rc =
+        partition_read_active_table(&pt_hdr, entries, BOOT2_PART_MAX_ENTRIES);
+    if (rc != 0) {
+        LOG_ERR("Failed to read active partition table for promotion: %d", rc);
         return -EIO;
     }
 
-    g_mcuboot_info.confirmed = 1;
-    struct mcuboot_info* info = (struct mcuboot_info*)MCUBOOT_INFO_ADDR;
-    if (info->magic == MCUBOOT_INFO_MAGIC) {
-        info->confirmed = 1;
+    int fw_indices[2] = {-1, -1};
+    int fw_count = partition_find_fw_entries(
+        entries, pt_hdr.partition_entries_no, fw_indices);
+    if (fw_count != 2 || slot >= 2 || fw_indices[slot] < 0) {
+        LOG_ERR("Cannot promote: invalid FW partitions (count=%d, slot=%u)",
+                fw_count, slot);
+        return -EINVAL;
     }
-    LOG_INF("MCUboot slot %u successfully promoted to confirmed!", slot);
-    return 0;
-#else
+
+    int act_idx = fw_indices[slot];
+    int other_idx = fw_indices[slot ^ 1];
+    uint32_t other_gen = entries[other_idx].gen_level;
+    uint32_t new_gen = other_gen + 1;
+
+    entries[act_idx].gen_level = new_gen;
+    pt_hdr.gen_level++;
+
+    uint32_t passive_pt_addr = 0;
+    partition_get_table_addrs(NULL, &passive_pt_addr);
+
+    rc = partition_write_table(passive_pt_addr, &pt_hdr, entries);
+    if (rc != 0) {
+        LOG_ERR("Failed to write promoted partition table: %d", rc);
+        return -EIO;
+    }
+
+    g_mcuboot_info.gen_level = new_gen;
     g_mcuboot_info.confirmed = 1;
+    boot_info_write(g_mcuboot_info.version_str, slot, new_gen, 1);
+
+    LOG_INF(
+        "MCUboot slot %u successfully promoted to confirmed (gen_level=%u)!",
+        slot, new_gen);
     return 0;
-#endif
 }

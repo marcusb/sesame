@@ -58,7 +58,7 @@ static void wifi_button_pressed(const struct device* dev,
 }
 #endif
 
-#include "mcuboot_info.h"
+#include "boot_utils.h"
 
 struct mcuboot_info g_mcuboot_info;
 
@@ -68,20 +68,16 @@ void matter_task_start(void);
 
 int main(void) {
     LOG_INF("Sesame app starting up");
-#if defined(CONFIG_SOC_88MW320)
-    const struct mcuboot_info* retained =
-        (const struct mcuboot_info*)MCUBOOT_INFO_ADDR;
-    if (retained->magic == MCUBOOT_INFO_MAGIC) {
+    const struct mcuboot_info* retained = boot_info_read();
+    if (retained) {
         memcpy(&g_mcuboot_info, retained, sizeof(g_mcuboot_info));
         LOG_INF("MCUboot retained info: ver=%s, slot=%u, gen=%u, confirmed=%s",
                 g_mcuboot_info.version_str, g_mcuboot_info.slot,
                 g_mcuboot_info.gen_level,
                 g_mcuboot_info.confirmed ? "true" : "false");
     } else {
-        LOG_WRN("MCUboot retained info magic mismatch (0x%08x)",
-                retained->magic);
+        LOG_WRN("MCUboot retained info not available or invalid");
     }
-#endif
     leds_init();
 
     // Force timer inclusion for chip-gn

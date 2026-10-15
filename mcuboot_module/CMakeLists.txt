@@ -1,6 +1,11 @@
 zephyr_library()
 zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include)
 
+zephyr_library_sources(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/partition.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/boot_utils.c
+)
+
 if(TARGET drivers__serial)
     set_property(TARGET drivers__serial PROPERTY ALLOW_EMPTY TRUE)
 endif()

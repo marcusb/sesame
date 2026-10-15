@@ -239,6 +239,8 @@ target_sources(app PRIVATE
     src/time_util.c
     src/log_ring_buf.c
     src/ws_logs.c
+    src/partition.c
+    src/boot_utils.c
 )
 
 if(CONFIG_BOOTLOADER_MCUBOOT)

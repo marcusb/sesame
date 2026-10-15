@@ -5,7 +5,7 @@
 		zephyr,bootloader-info = &boot_info0;
 	};
 
-	sram@2001fc00 {
+	retained_sram: sram@2001fc00 {
 		compatible = "zephyr,memory-region", "mmio-sram";
 		reg = <0x2001fc00 1024>;
 		zephyr,memory-region = "RetainedMem";

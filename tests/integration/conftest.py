@@ -31,6 +31,23 @@ def cleanup_flash():
             pass
 
 
+def init_sim_flash(flash_path="flash.bin", flash_size=0x400000):
+    """Initializes simulated flash.bin with hardware Boot2 partition tables at offset 0x4000."""
+    pt_file = os.path.join(os.path.dirname(__file__), "partition_table.bin")
+    if not os.path.exists(pt_file):
+        return
+
+    with open(pt_file, "rb") as f:
+        pt_data = f.read()
+
+    with open(flash_path, "wb") as f:
+        f.write(b"\xff" * 0x4000)
+        f.write(pt_data)
+        remaining = flash_size - 0x4000 - len(pt_data)
+        if remaining > 0:
+            f.write(b"\xff" * remaining)
+
+
 @pytest.fixture(scope="session")
 def mqtt_server():
     """Starts an embedded MQTT 3.1.1 server on a free local port."""
@@ -87,6 +104,7 @@ def zephyr_app(request, mqtt_server):
         pytest.fail(f"{zephyr_exe} not found. Please build integration target first.")
 
     cleanup_flash()
+    init_sim_flash()
 
     # If test requested config fixture, ensure it is instantiated before zephyr_app boots
     if "config" in request.fixturenames:
