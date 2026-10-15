@@ -151,23 +151,6 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
         new_state = DCM_DOOR_STATE_OPEN;
     }
 #endif
-    if (close_scheduled) {
-        if (dir != DCM_DOOR_DIR_STOPPED && dir != DCM_DOOR_DIR_UNKNOWN) {
-            cancel_scheduled_close("door direction not stopped");
-        } else if (new_state == DCM_DOOR_STATE_CLOSED) {
-            cancel_scheduled_close("door reached closed");
-        } else if (has_last_raw_pos && raw_pos != last_raw_pos) {
-            cancel_scheduled_close("door position changed");
-        }
-    }
-    last_raw_pos = raw_pos;
-    has_last_raw_pos = true;
-
-    bool update = state != new_state || direction != dir;
-    state = new_state;
-    direction = dir;
-    LOG_INF("door status: state=%d, dir=%d, pos=%u, down_lim=%u, up_lim=%u",
-            state, dir, raw_pos, down_limit, up_limit);
     if (up_limit != down_limit) {
         if (up_limit > down_limit && raw_pos + 4 >= up_limit) {
             pos = 100;
@@ -185,6 +168,30 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
             pos = val;
         }
     }
+
+    if (raw_pos <= down_limit + 4 && dir == DCM_DOOR_DIR_STOPPED) {
+        new_state = DCM_DOOR_STATE_CLOSED;
+    } else {
+        new_state = DCM_DOOR_STATE_OPEN;
+    }
+
+    if (close_scheduled) {
+        if (dir != DCM_DOOR_DIR_STOPPED && dir != DCM_DOOR_DIR_UNKNOWN) {
+            cancel_scheduled_close("door direction not stopped");
+        } else if (new_state == DCM_DOOR_STATE_CLOSED) {
+            cancel_scheduled_close("door reached closed");
+        } else if (has_last_raw_pos && raw_pos != last_raw_pos) {
+            cancel_scheduled_close("door position changed");
+        }
+    }
+    last_raw_pos = raw_pos;
+    has_last_raw_pos = true;
+
+    bool update = state != new_state || direction != dir;
+    state = new_state;
+    direction = dir;
+    LOG_INF("door status: state=%d, dir=%d, pos=%u, down_lim=%u, up_lim=%u",
+            state, dir, raw_pos, down_limit, up_limit);
     uint32_t now = k_uptime_get_32();
     if (update || dir != DCM_DOOR_DIR_STOPPED ||
         now > last_state_pub_time + STATE_UPDATE_INTERVAL) {

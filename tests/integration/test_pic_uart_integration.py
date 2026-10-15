@@ -421,7 +421,9 @@ def test_scheduled_close_cancellation(zephyr_app, config, paho_client):
     assert pic_sim.wait_for_frame(DcmMsgType.ALERT_CMD, timeout=8.0) is not None
 
     time.sleep(0.1)
-    pic_sim.send_status_update(state=DoorOpenState.CLOSED)
+    pic_sim.send_status_update(
+        state=DoorOpenState.CLOSED, pos=pic_sim.down_limit
+    )
     _wait_for_firmware_log(
         zephyr_app,
         "Cancelling scheduled close: door reached closed",
