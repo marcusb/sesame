@@ -50,7 +50,17 @@ int mcuboot_updater_complete(void);
 /**
  * Aborts the update and frees RAM buffer.
  */
+/**
+ * Aborts the update and frees RAM buffer.
+ */
 void mcuboot_updater_abort(void);
+
+/**
+ * Promotes the currently running MCUboot image by marking it confirmed.
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int mcuboot_updater_promote(void);
 
 #ifdef __cplusplus
 }

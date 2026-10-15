@@ -1,12 +1,12 @@
 import contextlib
-from pathlib import Path
 import re
 import socket
 import threading
 import time
+from pathlib import Path
 
-from RangeHTTPServer import RangeRequestHandler
 import requests
+from RangeHTTPServer import RangeRequestHandler
 
 
 def get_system_test_versions():
@@ -24,9 +24,7 @@ def get_system_test_versions():
 
 def get_mcuboot_test_versions():
     repo_root = Path(__file__).resolve().parents[2]
-    version_file = (
-        repo_root / "bootloader" / "mcuboot" / "boot" / "zephyr" / "VERSION"
-    )
+    version_file = repo_root / "bootloader" / "mcuboot" / "boot" / "zephyr" / "VERSION"
     if version_file.exists():
         content = version_file.read_text()
         major = int(re.search(r"VERSION_MAJOR\s*=\s*(\d+)", content).group(1))
@@ -88,7 +86,7 @@ def wait_for_boot(
     timeout=60,
 ):
     """Wait for firmware to complete boot, asserting active slot and version from MCUboot logs."""
-    offset_str = "0x30000" if expected_slot == 0 else "0x1a0000"
+    offset_str = "0x50000" if expected_slot == 0 else "0x1b0000"
     slot_name = "primary" if expected_slot == 0 else "secondary"
     version_str = f"Image version: {expected_version}"
     start_time = time.time()
@@ -205,9 +203,7 @@ def post_mcuboot(ip, bin_data, timeout=30):
     )
 
 
-def reboot_device(
-    openocd, device_ip, logs=None, start_idx=None, wait_reboot_timeout=5
-):
+def reboot_device(openocd, device_ip, logs=None, start_idx=None, wait_reboot_timeout=5):
     """Reboot device via HTTP POST /restart or fallback to OpenOCD hardware reboot."""
     try:
         requests.post(f"http://{device_ip}/restart", timeout=2)
@@ -244,9 +240,7 @@ class ThrottledRangeRequestHandler(RangeRequestHandler):
         copied = 0
         bufsize = 512
         while True:
-            to_read = (
-                min(bufsize, total - copied) if total is not None else bufsize
-            )
+            to_read = min(bufsize, total - copied) if total is not None else bufsize
             if to_read <= 0:
                 break
             buf = source.read(to_read)

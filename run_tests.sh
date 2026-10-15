@@ -79,7 +79,7 @@ run_system() {
     # / ota_image_tool invocations are needed here.
 
     echo "Preparing device: erasing image-1..."
-    ./tools/OpenOCD/flashprog.py --erase 0,0x1a0000,0x170000
+    ./tools/OpenOCD/flashprog.py --erase 0,0x1b0000,0x160000
 
     # Storage (AppConfig + Matter fabric) is mapped to in-RAM sim_flash by
     # sysbuild/sesame_test.overlay, so it starts clean on every boot

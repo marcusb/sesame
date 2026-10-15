@@ -1,4 +1,5 @@
 zephyr_library()
+zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include)
 
 if(TARGET drivers__serial)
     set_property(TARGET drivers__serial PROPERTY ALLOW_EMPTY TRUE)

@@ -435,6 +435,53 @@ def send_mcuboot_upgrade_request(hostname, bin_data, timeout=30):
         return {"status": "success"}
 
 
+def send_mcuboot_promote_request(hostname):
+    """Send the /promote/mcuboot POST to confirm the running MCUboot image."""
+    target = device_url(hostname, "/promote/mcuboot")
+    s = make_session()
+    r = s.post(target, timeout=10)
+    r.raise_for_status()
+    return r.status_code
+
+
+def cmd_promote_mcuboot(args):
+    hostname = args.hostname
+
+    print(f"═══ MCUboot Promote: {hostname} ═══")
+    print()
+
+    info = get_device_version(hostname)
+    if not info:
+        print(f"  ✗ Could not reach {hostname}")
+        sys.exit(1)
+
+    mb = info.get("mcuboot", {})
+    print(f"  MCUboot:   {mb.get('version', '?')}")
+    print(f"  Slot:      {mb.get('slot', '?')}")
+    print(f"  Gen Level: {mb.get('gen_level', '?')}")
+    print(f"  Confirmed: {mb.get('confirmed', '?')}")
+
+    if mb.get("confirmed"):
+        print("\n  MCUboot is already confirmed, nothing to do")
+        return
+
+    print("\n  Promoting MCUboot image...")
+    try:
+        status = send_mcuboot_promote_request(hostname)
+        print(f"  → HTTP {status}")
+    except Exception as e:
+        print(f"  ✗ Promote failed: {e}")
+        sys.exit(1)
+
+    time.sleep(1)
+    verify = get_device_version(hostname)
+    verify_mb = verify.get("mcuboot", {}) if verify else {}
+    if verify_mb and verify_mb.get("confirmed"):
+        print("  ✓ MCUboot confirmed!")
+    else:
+        print(f"  ⚠ Promote sent but confirmed={verify_mb.get('confirmed', '?')}")
+
+
 def cmd_upgrade_mcuboot(args):
     hostname = args.hostname
     image = args.image or find_default_mcuboot_image()
@@ -458,9 +505,13 @@ def cmd_upgrade_mcuboot(args):
     print(f"  Querying {hostname}...")
     pre_info = get_device_version(hostname)
     if pre_info:
-        print(f"  Firmware:  {pre_info['version']}")
-        print(f"  Slot:      {pre_info.get('slot', '?')}")
-        print(f"  Confirmed: {pre_info.get('confirmed', '?')}")
+        print(f"  Firmware:  {pre_info['version']} (slot {pre_info.get('slot', '?')})")
+        pre_mb = pre_info.get("mcuboot", {})
+        print(
+            f"  MCUboot:   {pre_mb.get('version', '?')} "
+            f"(slot {pre_mb.get('slot', '?')}, gen_level {pre_mb.get('gen_level', '?')}, "
+            f"confirmed: {pre_mb.get('confirmed', '?')})"
+        )
     else:
         print("  ⚠ Could not query device version (continuing anyway)")
     print()
@@ -487,9 +538,28 @@ def cmd_upgrade_mcuboot(args):
 
     print()
     print("  Device is back online!")
-    print(f"  Firmware:  {post_info['version']}")
-    print(f"  Slot:      {post_info.get('slot', '?')}")
-    print(f"  Confirmed: {post_info.get('confirmed', '?')}")
+    print(f"  Firmware:  {post_info['version']} (slot {post_info.get('slot', '?')})")
+    post_mb = post_info.get("mcuboot", {})
+    print(
+        f"  MCUboot:   {post_mb.get('version', '?')} "
+        f"(slot {post_mb.get('slot', '?')}, gen_level {post_mb.get('gen_level', '?')}, "
+        f"confirmed: {post_mb.get('confirmed', '?')})"
+    )
+
+    if getattr(args, "promote", False) and post_mb and not post_mb.get("confirmed"):
+        print("\n  Auto-promoting MCUboot image...")
+        try:
+            status = send_mcuboot_promote_request(hostname)
+            print(f"  → HTTP {status}")
+            time.sleep(1)
+            v = get_device_version(hostname)
+            v_mb = v.get("mcuboot", {}) if v else {}
+            if v_mb.get("confirmed"):
+                print("  ✓ MCUboot confirmed!")
+        except Exception as e:
+            print(f"  ✗ MCUboot promote failed: {e}")
+            sys.exit(1)
+
     print()
     print("  ✓ MCUboot upgrade complete!")
 
@@ -536,14 +606,26 @@ def main():
     pr.add_argument("hostname", help="Device hostname or IP")
     pr.set_defaults(func=cmd_promote)
 
+    # promote-mcuboot subcommand
+    prm = subparsers.add_parser(
+        "promote-mcuboot", help="Confirm the currently running MCUboot image"
+    )
+    prm.add_argument("hostname", help="Device hostname or IP")
+    prm.set_defaults(func=cmd_promote_mcuboot)
+
     # upgrade-mcuboot subcommand
     mc = subparsers.add_parser(
-        "upgrade-mcuboot", help="Upload and flash new MCUboot bootloader in-place"
+        "upgrade-mcuboot", help="Upload and flash new MCUboot bootloader in A/B slots"
     )
     mc.add_argument("hostname", help="Device hostname or IP")
     mc.add_argument(
         "--image",
         help="Path to MCUboot binary (default: build/mcuboot/zephyr/mcuboot.bin)",
+    )
+    mc.add_argument(
+        "--promote",
+        action="store_true",
+        help="Automatically promote (confirm) the MCUboot image after successful boot",
     )
     mc.add_argument(
         "--timeout",

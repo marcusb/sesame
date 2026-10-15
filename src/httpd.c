@@ -20,6 +20,7 @@
 #include "ota.h"
 #endif
 #include "log_ring_buf.h"
+#include "mcuboot_info.h"
 #include "mcuboot_updater.h"
 #include "pic_uart.h"
 #include "pic_updater.h"
@@ -135,7 +136,21 @@ static int version_handler(struct http_client_ctx* client,
                            const struct http_request_ctx* req,
                            struct http_response_ctx* res, void* user_data) {
     if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
-        static char buf[128];
+        static char buf[384];
+        const struct mcuboot_info* mb = mcuboot_get_info();
+        char mcuboot_buf[128];
+        if (mb->magic == MCUBOOT_INFO_MAGIC) {
+            snprintf(mcuboot_buf, sizeof(mcuboot_buf),
+                     "\"mcuboot\":{\"version\":\"%s\",\"slot\":%u,\"gen_"
+                     "level\":%u,\"confirmed\":%s}",
+                     mb->version_str, mb->slot, mb->gen_level,
+                     mb->confirmed ? "true" : "false");
+        } else {
+            snprintf(mcuboot_buf, sizeof(mcuboot_buf),
+                     "\"mcuboot\":{\"version\":\"unknown\",\"slot\":0,\"gen_"
+                     "level\":0,\"confirmed\":false}");
+        }
+
 #ifdef CONFIG_BOOTLOADER_MCUBOOT
         int slot = my_boot_fetch_active_slot();
         bool confirmed =
@@ -144,19 +159,20 @@ static int version_handler(struct http_client_ctx* client,
         if (slot == 0 || slot == 1) {
             len = snprintf(
                 buf, sizeof(buf),
-                "{\"version\":\"%s\",\"slot\":%d,\"confirmed\":%s}\n",
-                SESAME_VERSION_STR, slot, confirmed ? "true" : "false");
+                "{\"version\":\"%s\",\"slot\":%d,\"confirmed\":%s,%s}\n",
+                SESAME_VERSION_STR, slot, confirmed ? "true" : "false",
+                mcuboot_buf);
         } else {
-            len = snprintf(
-                buf, sizeof(buf),
-                "{\"version\":\"%s\",\"slot\":\"none\",\"confirmed\":false}\n",
-                SESAME_VERSION_STR);
+            len = snprintf(buf, sizeof(buf),
+                           "{\"version\":\"%s\",\"slot\":\"none\","
+                           "\"confirmed\":false,%s}\n",
+                           SESAME_VERSION_STR, mcuboot_buf);
         }
 #else
         int len = snprintf(
             buf, sizeof(buf),
-            "{\"version\":\"%s\",\"slot\":\"none\",\"confirmed\":false}\n",
-            SESAME_VERSION_STR);
+            "{\"version\":\"%s\",\"slot\":\"none\",\"confirmed\":false,%s}\n",
+            SESAME_VERSION_STR, mcuboot_buf);
 #endif
         static const struct http_header headers[] = {
             {.name = "Content-Type", .value = "application/json"}};
@@ -531,6 +547,37 @@ static int mcuboot_upgrade_handler(struct http_client_ctx* client,
     return 0;
 }
 
+static int mcuboot_promote_handler(struct http_client_ctx* client,
+                                   enum http_transaction_status status,
+                                   const struct http_request_ctx* req,
+                                   struct http_response_ctx* res,
+                                   void* user_data) {
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        LOG_INF("mcuboot_promote_handler called!");
+        int ret = mcuboot_updater_promote();
+        static const struct http_header headers[] = {
+            {.name = "Content-Type", .value = "application/json"}};
+        res->headers = headers;
+        res->header_count = 1;
+
+        if (ret == 0) {
+            static const char ok_body[] = "{\"status\":\"success\"}\n";
+            res->status = HTTP_200_OK;
+            res->body = (const uint8_t*)ok_body;
+            res->body_len = sizeof(ok_body) - 1;
+        } else {
+            static const char err_body[] =
+                "{\"status\":\"error\",\"message\":\"Failed to promote "
+                "MCUboot\"}\n";
+            res->status = HTTP_500_INTERNAL_SERVER_ERROR;
+            res->body = (const uint8_t*)err_body;
+            res->body_len = sizeof(err_body) - 1;
+        }
+        res->final_chunk = true;
+    }
+    return 0;
+}
+
 #ifdef CONFIG_CHIP
 static int matter_commission_handler(struct http_client_ctx* client,
                                      enum http_transaction_status status,
@@ -758,6 +805,13 @@ static struct http_resource_detail_dynamic mcuboot_upgrade_detail = {
     .user_data = NULL,
 };
 
+static struct http_resource_detail_dynamic mcuboot_promote_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
+    .cb = mcuboot_promote_handler,
+    .user_data = NULL,
+};
+
 static struct http_resource_detail_static logs_page_detail = {
     .common =
         {
@@ -819,8 +873,11 @@ HTTP_RESOURCE_DEFINE(fwupgrade_resource, httpd_service, "/fwupgrade",
                      &fwupgrade_detail);
 HTTP_RESOURCE_DEFINE(mcuboot_upgrade_resource, httpd_service,
                      "/fwupgrade/mcuboot", &mcuboot_upgrade_detail);
+HTTP_RESOURCE_DEFINE(mcuboot_promote_resource, httpd_service,
+                     "/promote/mcuboot", &mcuboot_promote_detail);
 HTTP_RESOURCE_DEFINE(promote_resource, httpd_service, "/promote",
                      &promote_detail);
+
 HTTP_RESOURCE_DEFINE(open_resource, httpd_service, "/open", &open_detail);
 HTTP_RESOURCE_DEFINE(close_resource, httpd_service, "/close", &close_detail);
 HTTP_RESOURCE_DEFINE(light_resource, httpd_service, "/light", &light_detail);
