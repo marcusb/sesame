@@ -12,6 +12,8 @@
 
 LOG_MODULE_REGISTER(leds, LOG_LEVEL_DBG);
 
+#if DT_NODE_EXISTS(DT_NODELABEL(led_wifi_green))
+
 #define LED_STACK_SIZE 1024
 #define LED_PRIORITY 7
 
@@ -23,8 +25,6 @@ static uint16_t wifi_led_pattern = 0x0000;
 
 static struct net_mgmt_event_callback l4_mgmt_cb;
 static struct net_mgmt_event_callback wifi_mgmt_cb;
-
-#if DT_NODE_EXISTS(DT_NODELABEL(led_wifi_green))
 
 static const struct gpio_dt_spec ota_red =
     GPIO_DT_SPEC_GET(DT_NODELABEL(led_ota_red), gpios);
@@ -121,8 +121,18 @@ void leds_init(void) {
 
 #else
 
-void set_ota_led_pattern(uint8_t x1, uint8_t x2, uint8_t x3, uint8_t x4) {}
-void set_wifi_led_pattern(uint8_t x1, uint8_t x2, uint8_t x3, uint8_t x4) {}
+void set_ota_led_pattern(uint8_t x1, uint8_t x2, uint8_t x3, uint8_t x4) {
+    ARG_UNUSED(x1);
+    ARG_UNUSED(x2);
+    ARG_UNUSED(x3);
+    ARG_UNUSED(x4);
+}
+void set_wifi_led_pattern(uint8_t x1, uint8_t x2, uint8_t x3, uint8_t x4) {
+    ARG_UNUSED(x1);
+    ARG_UNUSED(x2);
+    ARG_UNUSED(x3);
+    ARG_UNUSED(x4);
+}
 void leds_init(void) {}
 
 #endif
