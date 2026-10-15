@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 COMMAND=$1
 
 setup_test_env() {
@@ -55,6 +57,19 @@ run_system() {
     (
         source third_party/connectedhomeip/scripts/activate.sh
         west build -b genie_idcm/88mw320/cpu0 -d build/sesame_test .
+    )
+
+    echo "Building mcuboot_test target..."
+    (
+        source third_party/connectedhomeip/scripts/activate.sh
+        west build -b genie_idcm/88mw320/cpu0 -d build/mcuboot_test bootloader/mcuboot/boot/zephyr -- \
+            -DBOARD_ROOT="${REPO_ROOT}" -DSOC_ROOT="${REPO_ROOT}" -DDTS_ROOT="${REPO_ROOT}" \
+            -DZEPHYR_EXTRA_MODULES="${REPO_ROOT}/modules/mw320_sdk;${REPO_ROOT}/mcuboot_module" \
+            -DEXTRA_CONF_FILE="${REPO_ROOT}/sysbuild/mcuboot.conf" \
+            -DDTC_OVERLAY_FILE="${REPO_ROOT}/sysbuild/mcuboot.overlay" \
+            "-DCONFIG_BOOT_SIGNATURE_KEY_FILE=\"${REPO_ROOT}/bootloader/mcuboot/root-rsa-2048.pem\"" \
+            -DCONFIG_BOOT_DIRECT_XIP=y -DCONFIG_BOOT_DIRECT_XIP_REVERT=y -DCONFIG_BOOT_SIGNATURE_TYPE_RSA=y \
+            "-DEXTRA_CFLAGS=\"-DMCUBOOT_VERSION_STR=\\\"v2.4.1\\\"\""
     )
 
     SESAME_TEST_DIR="build/sesame_test/zephyr"

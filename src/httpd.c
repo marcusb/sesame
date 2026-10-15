@@ -20,6 +20,7 @@
 #include "ota.h"
 #endif
 #include "log_ring_buf.h"
+#include "mcuboot_updater.h"
 #include "pic_uart.h"
 #include "pic_updater.h"
 #include "ws_logs.h"
@@ -437,6 +438,99 @@ static int picupdate_handler(struct http_client_ctx* client,
     return 0;
 }
 
+static bool s_mcuboot_update_in_progress;
+static bool s_mcuboot_update_failed;
+static struct http_client_ctx* s_mcuboot_update_client;
+
+static int mcuboot_upgrade_handler(struct http_client_ctx* client,
+                                   enum http_transaction_status status,
+                                   const struct http_request_ctx* req,
+                                   struct http_response_ctx* res,
+                                   void* user_data) {
+    if (status == HTTP_SERVER_TRANSACTION_ABORTED) {
+        if (s_mcuboot_update_in_progress && client == s_mcuboot_update_client) {
+            LOG_WRN("MCUboot upgrade connection aborted by client");
+            mcuboot_updater_abort();
+            s_mcuboot_update_in_progress = false;
+            s_mcuboot_update_client = NULL;
+        }
+        return 0;
+    }
+
+    if (status == HTTP_SERVER_TRANSACTION_COMPLETE) {
+        return 0;
+    }
+
+    if (s_mcuboot_update_in_progress && client != s_mcuboot_update_client) {
+        if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+            static const struct http_header headers[] = {
+                {.name = "Content-Type", .value = "application/json"}};
+            static const char busy_body[] =
+                "{\"status\":\"error\",\"message\":\"MCUboot upgrade already "
+                "in "
+                "progress\"}\n";
+            res->headers = headers;
+            res->header_count = 1;
+            res->status = HTTP_503_SERVICE_UNAVAILABLE;
+            res->body = (const uint8_t*)busy_body;
+            res->body_len = sizeof(busy_body) - 1;
+            res->final_chunk = true;
+        }
+        return 0;
+    }
+
+    if (!s_mcuboot_update_in_progress) {
+        s_mcuboot_update_in_progress = true;
+        s_mcuboot_update_failed = false;
+        s_mcuboot_update_client = client;
+        mcuboot_updater_reset();
+    }
+
+    if (!s_mcuboot_update_failed && req->data && req->data_len > 0) {
+        int ret = mcuboot_updater_process_chunk(req->data, req->data_len);
+        if (ret != 0) {
+            LOG_ERR("mcuboot_updater_process_chunk failed: %d", ret);
+            s_mcuboot_update_failed = true;
+        }
+    }
+
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        int ret = 0;
+        if (!s_mcuboot_update_failed) {
+            ret = mcuboot_updater_complete();
+        } else {
+            mcuboot_updater_abort();
+            ret = -1;
+        }
+        s_mcuboot_update_in_progress = false;
+        s_mcuboot_update_client = NULL;
+
+        static const struct http_header headers[] = {
+            {.name = "Content-Type", .value = "application/json"}};
+        res->headers = headers;
+        res->header_count = 1;
+
+        if (ret == 0 && !s_mcuboot_update_failed) {
+            static const char ok_body[] = "{\"status\":\"success\"}\n";
+            res->status = HTTP_200_OK;
+            res->body = (const uint8_t*)ok_body;
+            res->body_len = sizeof(ok_body) - 1;
+
+            ctrl_msg_t msg = {.type = CTRL_MSG_RESTART};
+            k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
+        } else {
+            static const char err_body[] =
+                "{\"status\":\"error\",\"message\":\"MCUboot upgrade "
+                "failed\"}\n";
+            res->status = HTTP_400_BAD_REQUEST;
+            res->body = (const uint8_t*)err_body;
+            res->body_len = sizeof(err_body) - 1;
+        }
+        res->final_chunk = true;
+    }
+    return 0;
+}
+
 #ifdef CONFIG_CHIP
 static int matter_commission_handler(struct http_client_ctx* client,
                                      enum http_transaction_status status,
@@ -657,6 +751,13 @@ static struct http_resource_detail_dynamic picupdate_detail = {
     .user_data = NULL,
 };
 
+static struct http_resource_detail_dynamic mcuboot_upgrade_detail = {
+    .common = {.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+               .bitmask_of_supported_http_methods = BIT(HTTP_POST)},
+    .cb = mcuboot_upgrade_handler,
+    .user_data = NULL,
+};
+
 static struct http_resource_detail_static logs_page_detail = {
     .common =
         {
@@ -716,6 +817,8 @@ HTTP_RESOURCE_DEFINE(restart_resource, httpd_service, "/restart",
                      &restart_resource_detail);
 HTTP_RESOURCE_DEFINE(fwupgrade_resource, httpd_service, "/fwupgrade",
                      &fwupgrade_detail);
+HTTP_RESOURCE_DEFINE(mcuboot_upgrade_resource, httpd_service,
+                     "/fwupgrade/mcuboot", &mcuboot_upgrade_detail);
 HTTP_RESOURCE_DEFINE(promote_resource, httpd_service, "/promote",
                      &promote_detail);
 HTTP_RESOURCE_DEFINE(open_resource, httpd_service, "/open", &open_detail);

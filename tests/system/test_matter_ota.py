@@ -24,7 +24,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from test_ota import (  # noqa: E402
+from ota_fixture import (  # noqa: E402
     get_system_test_versions,
     semihosting_keepalive,
     wait_for_boot,

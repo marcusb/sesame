@@ -243,8 +243,13 @@ target_sources(app PRIVATE
 
 if(CONFIG_BOOTLOADER_MCUBOOT)
     target_sources(app PRIVATE
+        src/mcuboot_updater.c
         src/ota.c
         src/ota_client.c
+    )
+else()
+    target_sources(app PRIVATE
+        src/mcuboot_updater.c
     )
 endif()
 

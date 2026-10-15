@@ -79,3 +79,42 @@ def test_ws_logs_streaming(zephyr_app):
         ), "Expected standard [YYYY-MM-DD timestamped log lines"
     finally:
         ws.close()
+
+
+def test_http_mcuboot_upgrade_invalid(zephyr_app):
+    """
+    Verifies that POST /fwupgrade/mcuboot rejects invalid/garbage binary payloads with 400 Bad Request.
+    """
+    garbage_data = b"This is not a valid Marvell MCUboot image"
+    req = urllib.request.Request(
+        "http://127.0.0.1:8080/fwupgrade/mcuboot",
+        data=garbage_data,
+        headers={"Content-Type": "application/octet-stream"},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)
+        assert False, "Expected 400 Bad Request for invalid MCUboot image"
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+        body = e.read().decode("utf-8")
+        assert "MCUboot upgrade failed" in body
+
+
+def test_http_mcuboot_upgrade_valid(zephyr_app):
+    """
+    Verifies that POST /fwupgrade/mcuboot accepts a valid mcuboot.bin image.
+    """
+    with open("build/mcuboot/zephyr/mcuboot.bin", "rb") as f:
+        mcuboot_bin = f.read()
+
+    req = urllib.request.Request(
+        "http://127.0.0.1:8080/fwupgrade/mcuboot",
+        data=mcuboot_bin,
+        headers={"Content-Type": "application/octet-stream"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=5) as response:
+        assert response.status == 200
+        data = json.loads(response.read().decode("utf-8"))
+        assert data.get("status") == "success"
