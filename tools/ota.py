@@ -4,15 +4,13 @@
 Usage:
     uv run tools/ota.py upgrade HOSTNAME [--image FILE] [--promote]
     uv run tools/ota.py promote HOSTNAME
+    uv run tools/ota.py upgrade-mcuboot HOSTNAME [--image FILE]
 """
 
 import argparse
 import http.server
-import json
-import re
 import socket
 import struct
-import subprocess
 import sys
 import threading
 import time
@@ -299,7 +297,7 @@ def cmd_upgrade(args):
             sys.exit(1)
 
         print()
-        print(f"  Device is back online!")
+        print("  Device is back online!")
         print(f"  Version:   {post_info['version']}")
         print(f"  Slot:      {post_info.get('slot', '?')}")
         print(f"  Confirmed: {post_info.get('confirmed', '?')}")
@@ -330,7 +328,7 @@ def cmd_upgrade(args):
                 time.sleep(1)
                 verify = get_device_version(hostname)
                 if verify and verify.get("confirmed"):
-                    print(f"  ✓ Image confirmed!")
+                    print("  ✓ Image confirmed!")
                 else:
                     print(
                         f"  ⚠ Promote sent but confirmed={verify.get('confirmed') if verify else '?'}"
@@ -359,10 +357,10 @@ def cmd_promote(args):
     print(f"  Confirmed: {info.get('confirmed', '?')}")
 
     if info.get("confirmed"):
-        print(f"\n  Image is already confirmed, nothing to do")
+        print("\n  Image is already confirmed, nothing to do")
         return
 
-    print(f"\n  Promoting image...")
+    print("\n  Promoting image...")
     try:
         status = send_promote_request(hostname)
         print(f"  → HTTP {status}")
@@ -373,11 +371,127 @@ def cmd_promote(args):
     time.sleep(1)
     verify = get_device_version(hostname)
     if verify and verify.get("confirmed"):
-        print(f"  ✓ Image confirmed!")
+        print("  ✓ Image confirmed!")
     else:
         print(
             f"  ⚠ Promote sent but confirmed={verify.get('confirmed') if verify else '?'}"
         )
+
+
+def validate_mcuboot_image(path):
+    """Validate that the image is a valid Marvell boot2 firmware image."""
+    import os
+
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Image file not found: {path}")
+
+    size = os.path.getsize(path)
+    if size < 20:
+        raise ValueError(f"Image too small: {size} bytes")
+    if size > 128 * 1024:
+        raise ValueError(
+            f"Image exceeds maximum MCUboot partition size (128KB): {size} bytes"
+        )
+
+    with open(path, "rb") as f:
+        hdr = f.read(20)
+
+    magic_str, magic_sig = struct.unpack_from("<II", hdr, 0)
+    if magic_str != 0x4C56524D or magic_sig != 0x2E9CF17B:
+        raise ValueError(
+            f"Bad Marvell firmware header: magic_str=0x{magic_str:08x}, "
+            f"magic_sig=0x{magic_sig:08x} (expected MRVL / 0x2e9cf17b)"
+        )
+    return size
+
+
+def find_default_mcuboot_image():
+    """Find the default MCUboot binary from the build directory."""
+    import pathlib
+
+    candidates = [
+        pathlib.Path("build/mcuboot/zephyr/mcuboot.bin"),
+    ]
+    for p in candidates:
+        if p.exists():
+            return str(p)
+    return None
+
+
+def send_mcuboot_upgrade_request(hostname, bin_data, timeout=30):
+    """Send the raw MCUboot binary to the device via POST /fwupgrade/mcuboot."""
+    target = device_url(hostname, "/fwupgrade/mcuboot")
+    s = make_session()
+    r = s.post(
+        target,
+        data=bin_data,
+        headers={"Content-Type": "application/octet-stream"},
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    try:
+        return r.json()
+    except Exception:
+        return {"status": "success"}
+
+
+def cmd_upgrade_mcuboot(args):
+    hostname = args.hostname
+    image = args.image or find_default_mcuboot_image()
+
+    if not image:
+        print("✗ No MCUboot image specified and no default found in build/")
+        sys.exit(1)
+
+    print(f"═══ MCUboot Upgrade: {hostname} ═══")
+    print()
+
+    try:
+        image_size = validate_mcuboot_image(image)
+    except Exception as e:
+        print(f"✗ Failed to validate MCUboot image: {e}")
+        sys.exit(1)
+
+    print(f"  Image:   {image} ({image_size:,} bytes)")
+    print()
+
+    print(f"  Querying {hostname}...")
+    pre_info = get_device_version(hostname)
+    if pre_info:
+        print(f"  Firmware:  {pre_info['version']}")
+        print(f"  Slot:      {pre_info.get('slot', '?')}")
+        print(f"  Confirmed: {pre_info.get('confirmed', '?')}")
+    else:
+        print("  ⚠ Could not query device version (continuing anyway)")
+    print()
+
+    with open(image, "rb") as f:
+        bin_data = f.read()
+
+    print(f"  Uploading MCUboot image to {hostname}...")
+    try:
+        resp = send_mcuboot_upgrade_request(hostname, bin_data, timeout=args.timeout)
+        status_msg = resp.get("status") if isinstance(resp, dict) else resp
+        print(f"  → Status: {status_msg}")
+    except Exception as e:
+        print(f"  ✗ MCUboot upgrade request failed: {e}")
+        sys.exit(1)
+
+    print("  Upload complete. Waiting for device reboot...")
+    time.sleep(3)
+
+    post_info = wait_for_device(hostname, timeout=args.timeout)
+    if not post_info:
+        print(f"\n  ✗ Device did not come back online within {args.timeout}s")
+        sys.exit(1)
+
+    print()
+    print("  Device is back online!")
+    print(f"  Firmware:  {post_info['version']}")
+    print(f"  Slot:      {post_info.get('slot', '?')}")
+    print(f"  Confirmed: {post_info.get('confirmed', '?')}")
+    print()
+    print("  ✓ MCUboot upgrade complete!")
 
 
 def main():
@@ -421,6 +535,23 @@ def main():
     pr = subparsers.add_parser("promote", help="Confirm the currently running image")
     pr.add_argument("hostname", help="Device hostname or IP")
     pr.set_defaults(func=cmd_promote)
+
+    # upgrade-mcuboot subcommand
+    mc = subparsers.add_parser(
+        "upgrade-mcuboot", help="Upload and flash new MCUboot bootloader in-place"
+    )
+    mc.add_argument("hostname", help="Device hostname or IP")
+    mc.add_argument(
+        "--image",
+        help="Path to MCUboot binary (default: build/mcuboot/zephyr/mcuboot.bin)",
+    )
+    mc.add_argument(
+        "--timeout",
+        type=int,
+        default=90,
+        help="Timeout in seconds to wait for device reboot (default: 90)",
+    )
+    mc.set_defaults(func=cmd_upgrade_mcuboot)
 
     args = parser.parse_args()
     args.func(args)
