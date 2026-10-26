@@ -146,11 +146,6 @@ static uint8_t sbl_calc_chk_sum(const uint8_t* p, int n) {
 
 static void door_state_update(door_open_state_t new_state, door_direction_t dir,
                               uint16_t raw_pos) {
-#ifdef CONFIG_SEMIHOST
-    if (close_scheduled && new_state == DCM_DOOR_STATE_CLOSED) {
-        new_state = DCM_DOOR_STATE_OPEN;
-    }
-#endif
     if (up_limit != down_limit) {
         if (up_limit > down_limit && raw_pos + 4 >= up_limit) {
             pos = 100;
@@ -174,6 +169,14 @@ static void door_state_update(door_open_state_t new_state, door_direction_t dir,
     } else {
         new_state = DCM_DOOR_STATE_OPEN;
     }
+
+#ifdef CONFIG_SEMIHOST
+    if ((state == DCM_DOOR_STATE_OPEN || close_scheduled) &&
+        new_state == DCM_DOOR_STATE_CLOSED) {
+        new_state = DCM_DOOR_STATE_OPEN;
+        pos = 100;
+    }
+#endif
 
     if (close_scheduled) {
         if (dir != DCM_DOOR_DIR_STOPPED && dir != DCM_DOOR_DIR_UNKNOWN) {
@@ -524,9 +527,11 @@ static void send_door_cmd(uint8_t val) {
     if (val == 1) {
         state = DCM_DOOR_STATE_OPEN;
         direction = DCM_DOOR_DIR_STOPPED;
+        pos = 100;
     } else if (val == 0) {
         state = DCM_DOOR_STATE_CLOSED;
         direction = DCM_DOOR_DIR_STOPPED;
+        pos = 0;
     }
 #endif
     dcm_msg_t msg = {DCM_HEADER_BYTE, 1 + sizeof(dcm_door_cmd_msg_t),
