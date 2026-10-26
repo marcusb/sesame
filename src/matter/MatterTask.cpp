@@ -22,7 +22,6 @@
 
 extern "C" {
 #include "network.h"
-#include "pic_uart.h"
 #if defined(CONFIG_SOC_88MW320) && defined(CONFIG_WATCHDOG)
 #include "mw_watchdog.h"
 #endif
@@ -157,9 +156,6 @@ extern "C" void matter_task_start(void) {
 
     (void)chip::Server::GetInstance().Init(initParams);
 
-    bool current_light = pic_get_light();
-    chip::app::Clusters::OnOff::Attributes::OnOff::Set(2, current_light);
-
     CHIP_ERROR netErr = sNetworkCommissioningInstance.Init();
     if (netErr != CHIP_NO_ERROR) {
         LOG_ERR("Failed to init NetworkCommissioning: %d",
@@ -254,19 +250,7 @@ static SesameWindowCoveringDelegate sWindowCoveringDelegate;
 void MatterPostAttributeChangeCallback(
     const app::ConcreteAttributePath& attributePath, uint8_t type,
     uint16_t size, uint8_t* value) {
-    if (attributePath.mEndpointId == 2 &&
-        attributePath.mClusterId == chip::app::Clusters::OnOff::Id &&
-        attributePath.mAttributeId ==
-            chip::app::Clusters::OnOff::Attributes::OnOff::Id) {
-        bool turn_on = (*value != 0);
-        LOG_INF("Matter: Light OnOff changed to %s", turn_on ? "ON" : "OFF");
-        if (pic_get_light() != turn_on) {
-            ctrl_msg_t msg = {};
-            msg.type = CTRL_MSG_LIGHT_CONTROL;
-            msg.msg.light_control.on = turn_on;
-            k_msgq_put(&ctrl_queue, &msg, K_NO_WAIT);
-        }
-    }
+    // Implementation not needed for basic operation, just logging
 }
 
 void MatterWindowCoveringClusterServerAttributeChangedCallback(
@@ -336,18 +320,4 @@ bool matter_commission_open(uint32_t timeout_s) {
                 chip::System::Clock::Seconds16(timeout_s),
                 chip::CommissioningWindowAdvertisement::kDnssdOnly);
     return err == CHIP_NO_ERROR;
-}
-
-extern "C" void matter_update_light_state(bool on) {
-    (void)chip::DeviceLayer::PlatformMgr().ScheduleWork(
-        [](intptr_t arg) {
-            bool val = static_cast<bool>(arg);
-            LOG_INF("Matter: light state updated to %s", val ? "ON" : "OFF");
-            bool currentVal = false;
-            chip::app::Clusters::OnOff::Attributes::OnOff::Get(2, &currentVal);
-            if (currentVal != val) {
-                chip::app::Clusters::OnOff::Attributes::OnOff::Set(2, val);
-            }
-        },
-        static_cast<intptr_t>(on));
 }

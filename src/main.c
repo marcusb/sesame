@@ -247,9 +247,6 @@ int main(void) {
                 }
                 case CTRL_MSG_LIGHT_STATE_UPDATE:
                     publish_light_state(msg.msg.light_state.on);
-#ifdef CONFIG_CHIP
-                    matter_update_light_state(msg.msg.light_state.on);
-#endif
                     break;
                 default:
                     break;
